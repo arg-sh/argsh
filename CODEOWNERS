@@ -1,0 +1,4 @@
+# All files not owned by other teams must be reviewed by the core team
+*                                               @arg-sh/core 
+/www/                                           @arg-sh/docs
+/libraries/                                     @arg-sh/bash
