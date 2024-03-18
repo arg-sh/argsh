@@ -103,18 +103,29 @@ lint::docs() {
   "
 }
 
+lint::vale() {
+  local alert_level="${vale?"need to specify alert level"}"
+  binary::exists docker || exit 1
+  docker run --rm -it $(docker::user) jdkato/vale:latest sh -c "
+    cd /workspace/www/vale
+    ./run-vale.sh docs content \"${alert_level}\"
+  "
+}
+
 lint::main() {
   local -a usage
-  local docs argsh
+  local docs argsh vale="suggestion"
   args=(
-    'docs|:+' "Only run linters for the documentation"
-    'argsh|:+' "Only run linters for the arg.sh library"
+    'docs|d:+' "Only run linters for the documentation"
+    'argsh|a:+' "Only run linters for the arg.sh library"
+    'vale|v' "Only run vale for the documentation"
   )
   :args "Run linters for different parts of the project" "${@}"
   set -x
   args::run "${*}" \
     "${argsh:-0}" lint::argsh \
-    "${docs:-0}" lint::docs
+    "${docs:-0}" lint::docs \
+    "${vale:-0}" lint::vale
 }
 
 

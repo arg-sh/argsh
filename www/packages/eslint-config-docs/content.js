@@ -17,7 +17,6 @@ module.exports = {
   },
   plugins: ["prettier", "markdown"],
   ignorePatterns: [
-    "**/content/references/**",
     "**/content/**/events-list.md"
   ],
   rules: {

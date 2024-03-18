@@ -37,13 +37,6 @@ The documentation content is written in Markdown format and is located in the [w
 
 You’ll also find MDX files. MDX files combine the power of Markdown with React. So, the content of the file can contain JSX components and import statements, among other features. You can learn more about [MDX in docusaurus’s guide.](https://docusaurus.io/docs/markdown-features/react).
 
-:::note
-
-Documentation pages under the `www/apps/docs/content/references` directory are generated automatically from the source code under the `packages/medusa` directory. So, you can't directly make changes to them. Instead, you'll have to make changes to the comments in the original source code.
-
-:::
-
-
 ## Style Guide
 
 When you contribute to the documentation content, make sure to follow the [documentation style guide](https://www.notion.so/Style-Guide-Docs-fad86dd1c5f84b48b145e959f36628e0).
@@ -54,7 +47,7 @@ When you contribute to the documentation content, make sure to follow the [docum
 
 If you’re fixing errors in an existing documentation page, you can scroll down to the end of the page and click on the “Edit this page” link. You’ll be redirected to the GitHub edit form of that page and you can make edits directly and submit a pull request (PR).
 
-If you’re adding a new page or contributing to the codebase, you need to fork the repository, create a new branch, and make all changes necessary in your repository. Then, once you’re done,  create a PR in the Medusa repository.
+If you’re adding a new page or contributing to the codebase, you need to fork the repository, create a new branch, and make all changes necessary in your repository. Then, once you’re done, create a PR in the argsh repository.
 
 ### Base Branch
 
@@ -92,7 +85,7 @@ When the documentation page is tutorial documentation, the label in the sidebar 
 
 ### Sidebar Icon
 
-To add an icon to the sidebar item, start by checking if the icon is already exported in the file `www/apps/docs/src/theme/Icon`. If not, you can either export the icon from the [@medusajs/icons](https://arg.sh/ui/icons/overview), or add the new icon as a React component in the `www/apps/docs/src/theme/Icon/Icon<Name>/index.tsx` file, where `<Name>` is the camel-case name of your icon. The icon must be added to the React component as an SVG element.
+To add an icon to the sidebar item, start by checking if the icon is already exported in the file `www/apps/docs/src/theme/Icon`. If not, you can either export the icon from the [@medusajs/icons](https://docs.medusajs.com/ui/icons/overview), or add the new icon as a React component in the `www/apps/docs/src/theme/Icon/Icon<Name>/index.tsx` file, where `<Name>` is the camel-case name of your icon. The icon must be added to the React component as an SVG element.
 
 For example:
   
@@ -321,23 +314,19 @@ import TabItem from '@theme/TabItem';
 
 
 <Tabs groupId="request-type" isCodeTabs={true}>
-  <TabItem value="client" label="Medusa JS Client" default>
+  <TabItem value="globally" label="Install global" default>
 
-    ```ts
-    medusa.admin.uploads.create(file) // file is an instance of File
-    .then(({ uploads }) => {
-      const key = uploads[0].key
-    })
+    ```bash
+    curl -sL https://get.arg.sh | sudo tee /usr/local/bin/argsh > /dev/null
+    sudo chmod +x /usr/local/bin/argsh
     ```
 
   </TabItem>
-  <TabItem value="curl" label="cURL">
+  <TabItem value="locally" label="Withing a project">
 
     ```bash
-    curl -L -X POST '<BACKEND_URL>/admin/uploads' \
-      -H 'x-medusa-access-token: <API_TOKEN>' \
-      -H 'Content-Type: text/csv' \
-      -F 'files=@"<FILE_PATH_1>"'
+    curl -sL https://get.arg.sh > .bin/argsh
+    chmod +x .bin/argsh
     ```
 
   </TabItem>
@@ -375,7 +364,7 @@ For example:
 
 ~~~md
 ```bash noReport
-medusa new my-medusa-store
+make minify
 ```
 ~~~
 
@@ -396,7 +385,7 @@ source ~/.bashrc
 
 ## Linting with Vale
 
-Medusa uses [Vale](https://vale.sh/) to lint documentation pages and perform checks on incoming PRs into the repository.
+Argsh uses [Vale](https://vale.sh/) to lint documentation pages and perform checks on incoming PRs into the repository.
 
 ### Result of Vale PR Checks
 
@@ -406,22 +395,12 @@ You can check the result of running the "lint" action on your PR by clicking the
 
 If you want to check your work locally, you can do that by:
 
-1. [Installing Vale](https://vale.sh/docs/vale-cli/installation/) on your machine.
-2. Changing to the `www/vale` directory:
-
-```bash
-cd www/vale
-```
-
-3\. Running the `run-vale` script:
+1. [Installing direnv](https://direnv.net/) and running `direnv allow` in the root directory of the argsh repository.
+2. Linting with `vale`:
 
 ```bash
 # to lint content for the main documentation
-./run-vale.sh docs content error references
-# to lint content for the API reference
-./run-vale.sh api-reference app/_mdx error
-# to lint content for the Medusa UI documentation
-./run-vale.sh ui src/content/docs error
+make lint --vale error
 ```
 
 ### VS Code Extension
@@ -518,4 +497,4 @@ console.log("This block can't use semi colons")
 
 ## Need Additional Help
 
-If you need any additional help while contributing, you can join argsh's [Discord server](https://discord.com/servers/907385605422448742) and ask argsh’s core team as well as the community any questions.
+If you need any additional help while contributing, you can join argsh's [Discord server](https://discord.gg/VsQpUQX3Zr) and ask argsh’s core team as well as the community any questions.

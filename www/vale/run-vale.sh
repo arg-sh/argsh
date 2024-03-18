@@ -1,32 +1,28 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-list=""
-app="www/"
-path="../apps/$1/$2"
-alertLevel=$3
-exception="$path/$4"
+:add_to_list() {
+  declare -p list || return 1
+  local -r file="${1}"
 
-if [ ${#alertLevel} -eq 0 ]; then
-  alertLevel="suggestion"
-fi
-
-# get directories in content other than reference
-for i in `find $path -type d -maxdepth 1 -not -path $exception -not -path $path`
-do
   if [ ${#list} -gt 0 ]; then
     list+=' '
   fi
-  list+="$app${i#../}"
-done
-#get files in content (not nested)
-for i in `find $path -type f -maxdepth 1 -not -path $exception`
-do
-  if [ ${#list} -gt 0 ]; then
-    list+=' '
-  fi
-  list+="$app${i#../}"
-done
+  list+="www/${file#../}"
+}
 
-# echo $list
-cd ../..
-exec vale $list --minAlertLevel $alertLevel
+main() {
+  local list=""
+  local -r path="../apps/${1}/${2}"
+  local -r alert_level="${3:-"suggestion"}"
+
+  # get directories in content other than reference
+  find "${path}" -type d -maxdepth 1 -not -path "${path}" -exec add_to_list {} \;
+  #get files in content (not nested)
+  find "${path}" -type f -maxdepth 1 -exec add_to_list {} \;
+
+  cd ../..
+  exec vale "${list}" --minAlertLevel "${alert_level}"
+}
+
+[[ "${BASH_SOURCE[0]}" != "${0}" ]] || main "${@}"
