@@ -49,7 +49,7 @@ jobs:
 
       - name: Get Directories to Scan
         working-directory: www/vale
-        run: ./get-files.sh docs content references
+        run: ./get-files.sh docs content
         id: directories
 
       - name: Vale Linter

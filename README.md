@@ -93,7 +93,7 @@ For more convoluted language, see the [LICENSE](https://github.com/arg-sh/argsh/
 
 Thanks to the following tools and projects developing this project is possible:
 
-- [medusajs](https://github.com/medusajs/medusa/): From where the base of this docs is copied.
+- [medusajs](https://github.com/medusajs/medusa/): From where the base of this docs, github and more is copied.
 - [Google Styleguide](https://google.github.io/styleguide/shellguide.html): Google's Shell Style Guide used as base for the argsh styleguide.
 - [Catppuccin](https://github.com/catppuccin/catppuccin): Base for the readme.md and general nice color palettes.
 
