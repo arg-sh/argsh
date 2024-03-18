@@ -1,0 +1,9 @@
+{
+  "recommendations": [
+    "jetmartin.bats",
+    "timonwong.shellcheck",
+    "mads-hartmann.bash-ide-vscode",
+    "rogalmic.bash-debug",
+    "ChrisChinchilla.vale-vscode"
+  ]
+}

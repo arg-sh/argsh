@@ -1,0 +1,919 @@
+#!/usr/bin/gawk -f
+# vim: ft=awk ts=4 sw=4
+
+BEGIN {
+    if (! style) {
+        style = "github"
+    }
+
+    styles["github", "h1", "from"] = ".*"
+    styles["github", "h1", "to"] = "# &\n"
+
+    styles["github", "h2", "from"] = ".*"
+    styles["github", "h2", "to"] = "## &\n"
+
+    styles["github", "h3", "from"] = ".*"
+    styles["github", "h3", "to"] = "### &\n"
+
+    styles["github", "h4", "from"] = ".*"
+    styles["github", "h4", "to"] = "#### &\n"
+
+    styles["github", "strong", "from"] = ".*"
+    styles["github", "strong", "to"] = "**&**"
+
+    styles["github", "code", "from"] = ".*"
+    styles["github", "code", "to"] = "```&"
+
+    styles["github", "/code", "to"] = "```"
+
+    styles["github", "argN", "from"] = "^(\\$[0-9]+)[[:blank:]]+(\\S+)[[:blank:]]+"
+    styles["github", "argN", "to"] = "**\\1** (\\2): "
+
+    styles["github", "arg@", "from"] = "^\\$@[[:blank:]]+(\\S+)[[:blank:]]+"
+    styles["github", "arg@", "to"] = "**...** (\\1): "
+
+    styles["github", "set", "from"] = "^(\\S+) (\\S+)"
+    styles["github", "set", "to"] = "**\\1** (\\2):"
+
+    styles["github", "li", "from"] = ".*"
+    styles["github", "li", "to"] = "* &"
+
+    styles["github", "dt", "from"] = ".*"
+    styles["github", "dt", "to"] = "* &\n"
+
+    styles["github", "dd", "from"] = "^.*$"
+    styles["github", "dd", "to"] = "  &"
+
+    styles["github", "i", "from"] = ".*"
+    styles["github", "i", "to"] = "_&_"
+
+    styles["github", "anchor", "from"] = ".*"
+    styles["github", "anchor", "to"] = "[&](#&)"
+
+    styles["github", "exitcode", "from"] = "([>!]?[0-9]{1,3}) (.*)"
+    styles["github", "exitcode", "to"] = "**\\1**: \\2"
+
+    stderr_section_flag = 0
+
+    debug_enable = ENVIRON["SHDOC_DEBUG"] == "1"
+    debug_fd = ENVIRON["SHDOC_DEBUG_FD"]
+    if (!debug_fd) {
+        debug_fd = 2
+    }
+    debug_file = "/dev/fd/" debug_fd
+}
+
+# @description Display the given error message with its line number on stderr.
+#              and exit with error.
+# @arg $message string A error message.
+# @exitcode 1
+function error(message) {
+    error_message_color="\033[1;31m"
+    color_clear="\033[1;0m"
+    printf("%sline %4s, error : %s%s\n",\
+        error_message_color, NR, message, color_clear) > "/dev/stderr"
+    exit 1
+}
+
+# @description Display the given warning message with its line number on stderr.
+# @arg $message string A warning message.
+function warn(message) {
+    warn_message_color="\033[1;34m"
+    color_clear="\033[1;0m"
+    printf("%sline %4s, warning : %s%s\n", \
+        warn_message_color, NR, message, color_clear) > "/dev/stderr"
+}
+
+# @description Process a line of text as a function declaration.
+#   This is a function called when encountering a function declaration,
+#   or a line starting by a opening bracket `{` with a previous line matching
+#   a function declaration.
+#
+# @param text The line containing the function declaration,
+#        with or without opening bracket.
+#
+# @set is_internal Set internal to 0.
+# @set func_name Set the function name.
+# @set doc Add function documentation to doc output.
+# @set toc Add link to function documentation to table of contents.
+function process_function(text) {
+    if ( \
+        (length(docblock) == 0 && description == "") \
+        || in_example \
+    ) {
+        # If docblock and description are empty,
+        # or if function in example section,
+        # skip function declaration.
+        return
+    }
+
+    debug("→ function")
+    if (is_internal) {
+        debug("→ → function: it is internal, skip")
+        is_internal = 0
+    } else {
+        debug("→ → function: register")
+
+        is_internal = 0
+
+        func_name = gensub(\
+            /^[[:blank:]]*(function([[:blank:]])+)?([a-zA-Z0-9_\-:-\\.]+)[[:blank:]]*.*/, \
+            "\\3", \
+            "g", \
+            text \
+        )
+
+        # Add function documentation to output.
+        doc = concat(doc, render_docblock(func_name, description, docblock))
+        # Add function link to table of contents.
+        toc = concat(toc, render_toc_item(func_name))
+    }
+
+    # Function document has been added to output.
+    # Reset variables to allow for another function documentation processing.
+    reset()
+
+    # Process next line.
+    next
+}
+
+function render(type, text) {
+    return gensub( \
+        styles[style, type, "from"],
+        styles[style, type, "to"],
+        "g",
+        text \
+    )
+}
+
+function render_toc_link(text) {
+    # URL processing
+    # @see Regexp sourced from https://stackoverflow.com/questions/3183444/check-for-valid-link-url
+
+    # If text start by '/', './' or '../', assume it is a relative link.
+    if (text ~ /^\.{0,2}\//) {
+        return "[" text "](" text ")"
+    }
+
+    # If text contains URLs, but not a markdown links, transform the URLs in markdown links.
+    # Assume a URL is in a markdown link if it follow '](' string.
+    if ("  " text " " ~ /[^\]]([^a-z(]|\()[a-z]+:\/\/[-[:alnum:]+&@#\/%?=~_|!:,.;]*[-[:alnum:]\+&@#\/%=~_|]/) {
+        # Add space at the end of text to allow for easy detection of URLs.
+        text = "  " text " "
+        # Enclose URLs in markdown links.
+        text = gensub(/([^\]]([^a-z(]|\())([a-z]+:\/\/[-[:alnum:]+&@#\/%?=~_|!:,.;]*[-[:alnum:]\+&@#\/%=~_|])/, "\\1[\\3](\\3)", "g", text)
+        # Trim spaces added to ease unenclosed URL regex creation.
+        gsub(/^[[:blank:]]*/, "", text)
+        gsub(/[[:blank:]]*$/, "", text)
+        return text
+    }
+
+    # If title contains a markdown link, return as is.
+    if (text ~ /\[[^\]]*\]([^)]*)/) {
+        return text
+    }
+
+    url = text
+    if (style == "github") {
+      # @see https://github.com/jch/html-pipeline/blob/master/lib/html/pipeline/toc_filter.rb#L44-L45
+      url = tolower(url)
+      gsub(/[^[:alnum:] _-]/, "", url)
+      gsub(/_/, "", url)
+      gsub(/ /, "-", url)
+    }
+
+    return "[" text "](#" url ")"
+}
+
+function render_toc_item(title) {
+    return "* " render_toc_link(title)
+}
+
+function unindent(text) {
+    split(text, text_lines, "\n")
+
+    # find a maximum level indent as a starting point
+    # find a first non empty line
+    start = 0
+    max_indent = 0
+    for (i = 0; i < length(text_lines); i++) {
+        if (text_lines[i] != "" && start == 0) {
+            start = i
+        }
+
+        match(text_lines[i], /^[ ]*/)
+        if (RLENGTH > max_indent) {
+            max_indent = RLENGTH
+        }
+    }
+
+    # find a minimum level of indentation
+    indent = max_indent
+    for (i = start; i < length(text_lines); i++) {
+        match(text_lines[i], /^[ ]*/)
+        if (RLENGTH < indent) {
+            indent = RLENGTH
+        }
+    }
+
+    # remove the minimum level of indentation and join text_lines
+    for (i = start; i < length(text_lines); i++) {
+        text_lines[i] = substr(text_lines[i], indent + 1)
+        if (i == start) {
+            result = text_lines[i]
+        } else {
+            result = result "\n" text_lines[i]
+        }
+    }
+
+    return result
+}
+
+function reset() {
+    debug("→ reset()")
+
+    delete docblock
+    description = ""
+}
+
+function handle_description() {
+    debug("→ handle_description")
+
+    # Remove empty lines at the start of description.
+    sub(/^[[:space:]\n]*\n/, "", description)
+    # Remove empty lines at the end of description.
+    sub(/[[:space:]\n]*$/, "", description)
+
+    if (description == "") {
+        debug("→ → description: empty")
+        return;
+    }
+
+    if (section != "" && section_description == "") {
+      debug("→ → section description: added")
+      section_description = description
+      return;
+    }
+
+    if (file_description == "") {
+        debug("→ → file description: added")
+        file_description = description
+        return;
+    }
+}
+
+function concat(x, text) {
+    if (x == "") {
+        x = text
+    } else {
+        x = x "\n" text
+    }
+
+    return x
+}
+
+function push(arr, value) {
+    arr[length(arr)] = value
+}
+
+function join(arr) {
+    for (i = 0; i < length(lines); i++) {
+        if (i == 0) {
+            result = lines[i]
+        } else {
+            result = result "\n" lines[i]
+        }
+    }
+
+    return result
+}
+
+# @description Remove leading and trailing space from line(s) of text.
+# @param text A text.
+# @return The trimmed text.
+function trim(text) {
+    gsub(/(^[[:blank:]]+|[[:blank:]]+$)/, "", text)
+    return text
+}
+
+function docblock_set(key, value) {
+    docblock[key] = value
+}
+
+function docblock_concat(key, value) {
+    if (key in docblock) {
+        docblock[key] = concat(docblock[key], value)
+    } else {
+        docblock[key] = value
+    }
+}
+
+# @description Add a value as the new last item of a docblock.
+#
+# @param docblock_name  Name of the modified docblock.
+# @param value          Added item value.
+#
+# @set docblock[docblock_name] docblock with value added as its last item.
+function docblock_push(key, value) {
+    new_item_index = length(docblock[key])
+    # Reinitialize docblock key value if it is empty to allow for array storage.
+    if(new_item_index == 0)
+    {
+        delete docblock[key]
+    }
+    if(isarray(value))
+    {
+
+        # Value is an array. Add its contents key by key to the docblock.
+        # Note that is only allow for single dimension value array.
+        for (i in value) {
+            docblock[key][new_item_index][i] = value[i]
+        }
+    }
+    else {
+        docblock[key][new_item_index] = value
+    }
+}
+
+# @description Append a text to the last item of a docblock.
+#
+# @param docblock_name  Name of the modified docblock.
+# @param text           Appended text.
+#
+# @set docblock[docblock_name] docblock with text appended to last item.
+function docblock_append(docblock_name, text) {
+    # Detect last docblock item index.
+    last_item_index = length(docblock[docblock_name]) - 1
+
+    # Ensure there is no issue if docblock[docblock_name] is empty.
+    if(last_item_index < 0) {
+        last_item_index = 0
+    }
+
+    # Append text to last docblock item.
+    docblock[docblock_name][last_item_index] = docblock[docblock_name][last_item_index] text
+}
+
+# @description Render a docblock as an unordered list.
+#
+# @param dockblock      Dockblock array.
+# @param dockblock_name Name of the rendered docblock.
+# @param title          Title of the rendered section.
+#
+# @stdout A unordered list of the dockblock entries.
+function render_docblock_list(docblock, docblock_name, title) {
+    push(lines, render("h4", title))
+    # Initialize list item.
+    item = ""
+    # For each dockblock line.
+    for (i in docblock[docblock_name]) {
+        docblock[docblock_name][i]
+        # Ident additionnal lines to add them to the markdown list item.
+        gsub(/\n/, "\n  ", docblock[docblock_name][i])
+        item = render("li", docblock[docblock_name][i])
+        push(lines, item)
+    }
+
+    # Add empty line to signal end of list in markdown.
+    push(lines, "")
+}
+
+# @description Process a text as an @option tag content.
+#   The @option accept the folling format:
+#
+#   # @option <option> <description>
+#
+#   Where <option> allows:
+#
+#   - **-o** : single letter short option, signaled by single dash.
+#       Allow for all letters in the A-Z and a-z ranges.
+#   - **-o<argument> : single letter short option with argument.
+#       Argument must be between < and >.
+#   - **--option** : long option, signaled by double dash.
+#   - **--option=<argument> : long option with argument.
+#       Argument must be between < and >.
+#   - **-o | --option** : long option with short option version.
+#
+#   To achieve this, process_at_option uses a complex regular expression.
+#   which is decomposed below:
+#
+#   ```awk
+#   # Set optional arg (- and -- options) regex
+#   short_option_regex = "-[[:alnum:]]([[:blank:]]*<[^>]+>)?"
+#   long_option_regex = "--[[:alnum:]][[:alnum:]-]*((=|[[:blank:]]+)<[^>]+>)?"
+#   pipe_separator_regex = "([[:blank:]]*\\|?[[:blank:]]+)"
+#   description_regex = "([^[:blank:]|<-].*)?"
+#   
+#   # Build regex matching all options
+#   short_or_long_option_regex = sprintf("(%s|%s)", short_option_regex, long_option_regex)
+# 
+#   # Build regex matching multiple options separated by spaces or pipe.
+#   all_options_regex = sprintf("(%s%s)+", short_or_long_option_regex, pipe_separator_regex)
+# 
+#   # Build final regex.
+#   optional_arg_regex = sprintf("^(%s)%s$", all_options_regex, description_regex)
+#   ```
+# 
+#   Final regex with non-matching groups (unsupported by gawk).
+# 
+#   `^((?:(?:-[[:alnum:]](?:[[:blank:]]*<[^>]+>)?|--[[:alnum:]][[:alnum:]-]*(?:(?:=|[[:blank:]]+)<[^>]+>)?)(?:[[:blank:]]*\|?[[:blank:]]+))+)([^[:blank:]|<-].*)?$`
+#
+# @param text   The text to process as an @option entry.
+# 
+# @set dockblock["option"] A docblock for correctly formated options.
+# @set dockblock["option-bad"] A docblock for badly formated options.
+function process_at_option(text) {
+
+    # Test if @arg is a command-line option description (starting by - or --).
+    if(match(text, /^(((-[[:alnum:]]([[:blank:]]*<[^>]+>)?|--[[:alnum:]][[:alnum:]-]*((=|[[:blank:]]+)<[^>]+>)?)([[:blank:]]*\|?[[:blank:]]+))+)([^[:blank:]|<-].*)?$/, contents)) {
+        debug(" → → found correctly formated @option.")
+
+        # Fetch matched values.
+        term = trim(contents[1])
+        option_description["definition"] = trim(contents[8])
+
+        # Trim spaces around pipes.
+        gsub(/[[:blank:]]+\|[[:blank:]]+/, " | ", term)
+
+        # Add term (-option | --option) to option description.
+        option_description["term"] = term
+
+        # Add values to optional-arg docblock.
+        docblock_push("option", option_description)
+
+    } else {
+        # Warn of badly formated @option.
+        warn("Invalid format: @option " text)
+
+        # For backward compatibility,
+        # process badly formated @arg as badly formated option.
+        docblock_push("option-bad", text)
+    }
+}
+
+function render_docblock(func_name, description, docblock) {
+    debug("→ render_docblock")
+    debug("→ → func_name: [" func_name "]")
+    debug("→ → description: [" description "]")
+
+    # Reset lines variable to allow for a new array creation.
+    delete lines
+
+    if (section != "") {
+      lines[0] = render("h2", section)
+      if (section_description != "") {
+        push(lines, section_description)
+        # Add empty line to signal end of description.
+        push(lines, "")
+      }
+      section = ""
+      section_description = ""
+      push(lines, render("h3", func_name))
+    } else {
+      lines[0] = render("h3", func_name)
+    }
+
+    if (description != "") {
+        push(lines, description)
+        # Add empty line to signal end of description.
+        push(lines, "")
+    }
+
+    if ("example" in docblock) {
+        push(lines, render("h4", "Example"))
+        push(lines, render("code", "bash"))
+        push(lines, unindent(docblock["example"]))
+        push(lines, render("/code"))
+        push(lines, "")
+    }
+
+    if ("option" in docblock || "option-bad" in docblock) {
+        push(lines, render("h4", "Options"))
+
+        if ("option" in docblock) {
+            for (i in docblock["option"]) {
+                # Add strong around options, but exclude pipes.
+                term = render("strong", docblock["option"][i]["term"])
+                gsub(/[[:blank:]]+\|[[:blank:]]+/, "** | **", term)
+                # Escape < an >.
+                gsub(/</, "\\<", term)
+                gsub(/>/, "\\>", term)
+                # Render definition list term (dt)
+                item = render("dt", term)
+                push(lines, item)
+                # Render definition list definition (dd)
+                item = render("dd", docblock["option"][i]["definition"] "\n")
+                push(lines, item)
+            }
+        }
+
+        if ("option-bad" in docblock) {
+            for (i in docblock["option-bad"]) {
+                item = render("li", docblock["option-bad"][i])
+                push(lines, item)
+            }
+
+            # Add empty line to signal end of list in markdown.
+            push(lines, "")
+        }
+    }
+
+    if ("arg" in docblock) {
+        push(lines, render("h4", "Arguments"))
+
+        # Sort args by indexes (i.e. by argument number.)
+        asorti(docblock["arg"], sorted_indexes)
+        for (i in sorted_indexes) {
+            item = docblock["arg"][sorted_indexes[i]]
+            # Render numbered arguments ($[0-9]+).
+            item = render("argN", item)
+            # Render catch-all argument ($@).
+            item = render("arg@", item)
+            item = render("li", item)
+            push(lines, item)
+        }
+
+        # Add empty line to signal end of list in markdown.
+        push(lines, "")
+    }
+
+    if ("noargs" in docblock) {
+        push(lines, render("i", "Function has no arguments."))
+
+        # Add empty line to signal end of list in markdown.
+        push(lines, "")
+    }
+
+    if ("set" in docblock) {
+        push(lines, render("h4", "Variables set"))
+        for (i in docblock["set"]) {
+            item = docblock["set"][i]
+            item = render("set", item)
+            item = render("li", item)
+            push(lines, item)
+        }
+
+        # Add empty line to signal end of list in markdown.
+        push(lines, "")
+    }
+
+    if ("exitcode" in docblock) {
+        push(lines, render("h4", "Exit codes"))
+        for (i in docblock["exitcode"]) {
+            item = render("li", render("exitcode", docblock["exitcode"][i]))
+            push(lines, item)
+        }
+
+        # Add empty line to signal end of list in markdown.
+        push(lines, "")
+    }
+
+    if ("stdin" in docblock) {
+        render_docblock_list(docblock, "stdin", "Input on stdin")
+    }
+
+    if ("stdout" in docblock) {
+        render_docblock_list(docblock, "stdout", "Output on stdout")
+    }
+
+    if ("stderr" in docblock) {
+        render_docblock_list(docblock, "stderr", "Output on stderr")
+    }
+
+    if ("see" in docblock) {
+        push(lines, render("h4", "See also"))
+        for (i in docblock["see"]) {
+            item = render("li", render_toc_link(docblock["see"][i]))
+            push(lines, item)
+        }
+
+        # Add empty line to signal end of list in markdown.
+        push(lines, "")
+    }
+
+    result = join(lines)
+    return result
+}
+
+function debug(msg) {
+    if (debug_enable) {
+        print "DEBUG: " msg > debug_file
+    }
+}
+
+{
+    debug("line: [" $0 "]")
+}
+
+/^[[:space:]]*# @internal/ {
+    debug("→ @internal")
+    is_internal = 1
+
+    next
+}
+
+/^[[:space:]]*# @(name|file)/ {
+    debug("→ @name|@file")
+    sub(/^[[:space:]]*# @(name|file) /, "")
+    file_title = $0
+
+    next
+}
+
+/^[[:space:]]*# @brief/ {
+    debug("→ @brief")
+    sub(/^[[:space:]]*# @brief /, "")
+    file_brief = $0
+
+    next
+}
+
+/^[[:space:]]*# @description/ {
+    debug("→ @description")
+    in_description = 1
+    in_example = 0
+
+    handle_description()
+
+    reset()
+}
+
+in_description {
+    if (/^[^[[:space:]]*#]|^[[:space:]]*# @[^d]|^[[:space:]]*[^#]|^[[:space:]]*$/) {
+        debug("→ → in_description: leave")
+
+        in_description = 0
+
+        handle_description()
+    } else {
+        debug("→ → in_description: concat")
+        sub(/^[[:space:]]*# @description[[:space:]]*/, "")
+        sub(/^[[:space:]]*#[[:space:]]*/, "")
+        sub(/^[[:space:]]*#$/, "")
+
+        description = concat(description, $0)
+        next
+    }
+}
+
+/^[[:space:]]*# @section/ {
+  debug("→ @section")
+  sub(/^[[:space:]]*# @section /, "")
+  section = $0
+
+  next
+}
+
+/^[[:space:]]*# @example/ {
+    debug("→ @example")
+
+    in_example = 1
+
+
+    next
+}
+
+in_example {
+    if (! /^[[:space:]]*#[ ]{1,}/) {
+        debug("→ → in_example: leave")
+        in_example = 0
+    } else {
+        debug("→ → in_example: concat")
+        sub(/^[[:space:]]*#/, "")
+
+        docblock_concat("example", $0)
+        next
+    }
+
+}
+
+# Select @option lines with content.
+/^[[:blank:]]*#[[:blank:]]+@option[[:blank:]]+[^[:blank:]]/ {
+    debug("→ @option")
+    option_text = $0
+
+    # Remove '# @option ' tag.
+    sub(/^[[:blank:]]*#[[:blank:]]+@option[[:blank:]]+/, "", option_text)
+
+    # Trim text.
+    option_text = trim(option_text)
+
+    # Process @option text.
+    process_at_option(option_text)
+
+    # Stop processing current line, and process next line.
+    next
+}
+
+# Select @arg lines with content.
+/^[[:blank:]]*#[[:blank:]]+@arg[[:blank:]]+[^[:blank:]]/ {
+    debug("→ @arg")
+    
+    arg_text = $0
+
+    # Remove '# @arg ' tag.
+    sub(/^[[:blank:]]*#[[:blank:]]+@arg[[:blank:]]+/, "", arg_text)
+
+    # Trim text.
+    arg_text = trim(arg_text)
+
+    # Test if @arg is a numbered item (or $@).
+    if(match(arg_text, /^\$([0-9]+|@)[[:space:]]/, contents)) {
+        debug(" → → found arg $" arg_number)
+
+        # Fetch matched values.
+        arg_number = contents[1]
+
+        # Zero pad argument number for sorting.
+        if(arg_number ~ /[0-9]+/){
+            arg_number = sprintf("%03d", arg_number)
+        }
+
+        # Add arg description to arg docblock.
+        # arg_number is used as indice for sorting.
+        docblock["arg"][arg_number] = arg_text
+
+        # Stop processing current line, and process next line.
+        next
+    }
+
+    # Ignore badly formated @arg.
+    warn("Invalid format, processed as @option: @arg " arg_text)
+
+    # Process @arg as option, if badly formated.
+    process_at_option(arg_text)
+
+    # Stop processing current line, and process next line.
+    next
+}
+
+# Select @noargs line with no additionnal text.
+/^[[:space:]]*#[[:blank:]]+@noargs[[:blank:]]*$/ {
+    debug("→ @noargs")
+    docblock["noargs"] = 1
+
+    # Stop processing current line, and process next line.
+    next
+}
+
+/^[[:space:]]*# @set/ {
+    debug("→ @set")
+    sub(/^[[:space:]]*# @set /, "")
+
+    docblock_push("set", $0)
+
+    next
+}
+
+/^[[:space:]]*# @exitcode/ {
+    debug("→ @exitcode")
+    sub(/^[[:space:]]*# @exitcode /, "")
+
+    docblock_push("exitcode", $0)
+
+    next
+}
+
+/^[[:space:]]*# @see/ {
+    debug("→ @see")
+    sub(/[[:space:]]*# @see /, "")
+
+    docblock_push("see", $0)
+
+    next
+}
+
+# Previous line added a new docblock item.
+# Check if current line has the needed indentation
+# for it to be a multiple lines docblock item.
+multiple_line_docblock_name {
+    # Check if current line indentation does match the previous line docblock item.
+    if ($0 ~ multiple_line_identation_regex ) {
+        debug("→ @" multiple_line_docblock_name " - new line")
+        
+        # Current line has the same indentation as the stderr section.
+    
+        # Remove indentation and trailing spaces.
+        sub(/^[[:space:]]*#[[:space:]]+/, "")
+        sub(/[[:space:]]+$/, "")
+
+        # Push matched message to corresponding docblock.
+        docblock_append(multiple_line_docblock_name, "\n" $0)
+
+        # Stop processing current line, and process next line.
+        next
+    } else {
+        # End previous line docblock item.
+        multiple_line_docblock_name = ""
+    }
+}
+
+# Process similarly @stdin, @stdout and @stderr entries.
+# Allow for multiple lines entries.
+match($0, /^([[:blank:]]*#[[:blank:]]+)@(stdin|stdout|stderr)[[:blank:]]+(.*[^[:blank:]])[[:blank:]]*$/, contents) {
+    # Fetch matched values.
+    indentation = contents[1]
+    docblock_name = contents[2]
+    text = contents[3]
+
+    debug("→ @" docblock_name)
+
+    # Push matched message to corresponding docblock.
+    docblock_push(docblock_name, text)
+
+    # Signal the start of a multiple line section.
+    multiple_line_docblock_name = docblock_name
+    multiple_line_identation_regex = "^" indentation "[[:blank:]]+[^[:blank:]].*$"
+
+    # Stop processing current line, and process next line.
+    next
+}
+
+# If docblock if not empty, and description is set,
+# and if this is not an example,
+# this regex matches:
+# - `function function_name () {`
+# - `function_name () {`
+# - `function_name {`
+/^[[:blank:]]*(function[[:blank:]]+)?([a-zA-Z0-9_\-:-\\.]+)[[:blank:]]*(\([[:blank:]]*\))?[[:blank:]]*\{/ \
+{
+    process_function($0)
+}
+
+# If line look like a function declaration but is missing opening bracket,
+/^[[:blank:]]*(function[[:blank:]]+)?([a-zA-Z0-9_\-:-\\.]+)[[:blank:]]*(\([[:blank:]]*\))?/ \
+{
+    # store it for future use
+    debug("→ look like a function declaration, store line")
+    function_declaration = $0
+    next
+}
+
+# Handle lone opening bracket if previous line is a function declaration.
+/^[[:blank:]]*\{/ \
+    && function_declaration != "" {
+    debug("→ multi-line function declaration.")
+    # Process function declaration.
+    process_function(function_declaration)
+}
+
+# Skip empty lines (allow for break in comment),
+# if function_declaration is not empty (i.e. waiting for an opening bracket).
+/^[[:blank:]]*$/ \
+    && function_declaration != "" {
+    debug("→ waiting for opening bracket.")
+    next
+}
+
+# Handle non comment lines.
+/^[^#]*$/ {
+    debug("→ break")
+
+    # Line is not an opening bracket,
+    # this is not a function declaration.
+    function_declaration = ""
+
+    # Add current (section) description to output.
+    handle_description();
+
+    # Reset docblock.
+    reset()
+
+    # Skip current line.
+    next
+}
+
+# Handle everything else. This should never occur.
+{
+    debug("→ NOT HANDLED")
+}
+
+END {
+    debug("→ END {")
+    debug("→ → file_title:       [" file_title "]")
+    debug("→ → file_brief:       [" file_brief "]")
+    debug("→ → file_description: [" file_description "]")
+    debug("→ END }")
+
+    if (file_title != "") {
+        # print render("h1", file_title)
+
+        # if (file_brief != "") {
+        #     print file_brief "\n" 
+        # }
+
+        if (file_description != "") {
+            # print render("h2", "Overview")
+            print file_description "\n" 
+        }
+    }
+
+    if (toc != "") {
+        print render("h2", "Index")
+        print toc "\n" 
+    }
+
+    print doc
+
+    ## TODO: add examples section
+}

@@ -1,0 +1,4 @@
+[ pos3 ] invalid usage
+➜ invalid type (int): wrong
+
+Use "bats-exec-test -h" for more information

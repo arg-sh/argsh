@@ -1,0 +1,41 @@
+import Link from "@docusaurus/Link";
+import ExternalLink from "@site/src/theme/Icon/Twitter";
+
+<Link to="https://github.com/arg-sh/argsh/blob/main/libraries/args.usage.sh" alt="source code">
+Source code
+</Link>
+This file contains functions for usage information
+
+## Index
+
+* [:usage](#usage)
+
+### :usage
+
+Print usage information
+
+#### Example
+
+```bash
+ local -a usage
+ usage=(
+   command "Description of command"
+   [...]
+ )
+:usage "Title" "${@}"
+```
+
+#### Arguments
+
+* **$1** (string): The title of the usage
+* **...** (array): User arguments
+
+#### Variables set
+
+* **usage** (array): Usage information for the command
+
+#### Exit codes
+
+* **0**: If user arguments are correct
+* **2**: If user arguments are incorrect
+

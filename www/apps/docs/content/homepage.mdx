@@ -1,0 +1,81 @@
+---
+id: homepage
+title: argsh documentation
+description: "argsh is an open source collection of code snippets and styleguide how to use them."
+slug: /
+hide_table_of_contents: true
+hide_footer: true
+---
+
+import DocCardList from '@theme/DocCardList';
+import DocCard from '@theme/DocCard';
+import Icons from '@theme/Icon';
+
+# Argsh Documentation
+
+This project is a collection of code snippets and a styleguide to write bash code in a consistent way.
+Argsh provides you building blocks to write quickly and efficiently bash code.
+
+## Why?
+
+Bash is a powerful tool (and widly available), but it's also a language that is easy to write in a way that is hard to read and maintain.
+As such Bash is used often but used as little as possible, resulting in poor quality scripts that are hard to maintain and understand.
+
+Not only is this happaning as Bash is seen as a "glue" language, but also because there is no hardend styleguide, easy testing and good documentation around it.
+
+The Google Shell Style Guide says it itself:
+
+> If you are writing a script that is more than 100 lines long, or that uses non-straightforward control flow logic, you should rewrite it in a more structured language _now_.
+
+You can write bad code in every other language too, but there is lots of effort to make it better.
+So let's make it better for bash too. Let's make Bash a more structured language.
+
+This is what argsh is trying to do.
+
+<DocCard item={{
+  type: 'link',
+  href: '/getting-started',
+  label: 'Get Started',
+  customProps: {
+    icon: Icons['bolt-solid'],
+    html: 'Jump right in and start using argsh within minutes.',
+    className: 'card-highlighted'
+  }
+}} />
+
+## Goals
+
+Argsh is quit early in development, and there are a few goals we want to achieve.
+You can find them [here](https://github.com/arg-sh/argsh#goals).
+
+## Explore argsh
+
+<DocCardList colSize={4} items={[
+  {
+    type: 'link',
+    href: '/styleguide',
+    label: 'Styleguide',
+    customProps: {
+      icon: Icons['puzzle-solid'],
+      description: 'Be consistent with your bash code using the argsh styleguide.'
+    }
+  },
+  {
+    type: 'link',
+    href: '/development/overview',
+    label: 'Develop with argsh',
+    customProps: {
+      icon: Icons['server-stack-solid'],
+      description: 'Learn how to develop quickly and efficiently with argsh.'
+    }
+  },
+  {
+    type: 'link',
+    href: '/troubleshooting',
+    label: 'Having Trouble?',
+    customProps: {
+      icon: Icons['users-solid'],
+      description: 'Look into our troubleshooting guide to find solutions to common problems.'
+    }
+  }
+]} />

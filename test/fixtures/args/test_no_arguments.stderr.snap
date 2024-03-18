@@ -1,0 +1,4 @@
+[ pos1 ] invalid usage
+➜ missing required argument: pos1
+
+Use "bats-exec-test -h" for more information

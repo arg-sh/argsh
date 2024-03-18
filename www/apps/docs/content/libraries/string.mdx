@@ -1,0 +1,113 @@
+import Link from "@docusaurus/Link";
+import ExternalLink from "@site/src/theme/Icon/Twitter";
+
+<Link to="https://github.com/arg-sh/argsh/blob/main/libraries/string.sh" alt="source code">
+Source code
+</Link>
+This file contains functions for manipulating strings
+
+## Index
+
+* [string::drop-index](#stringdrop-index)
+* [string::random](#stringrandom)
+* [string::trim-left](#stringtrim-left)
+* [string::trim-right](#stringtrim-right)
+* [string::trim](#stringtrim)
+
+### string::drop-index
+
+drops length characters from the string at index
+
+#### Example
+
+```bash
+string::drop-index "hello" 1 2 # hlo
+```
+
+#### Arguments
+
+* **$1** (string): The string to drop characters from
+* **$2** (integer): The index to start dropping characters
+* **$3** (integer): The number of characters to drop
+
+#### Output on stdout
+
+* The string with characters dropped
+
+### string::random
+
+Generate a random string. First character is always a letter.
+
+#### Example
+
+```bash
+string::random 10 # a2jKl9C4bs
+string::random    # t4UsOP3z5Rd8sW6nX2t1C7z9L0s3R4d8cAH32ns2Ds
+```
+
+#### Arguments
+
+* **$1** (integer): [42] The length of the string
+* **$2** (string): [a-zA-Z0-9] The characters to use in the string
+
+#### Output on stdout
+
+* The random string
+
+### string::trim-left
+
+Left trim a string
+
+#### Example
+
+```bash
+string::trim-left "  hello  " # "hello  "
+```
+
+#### Arguments
+
+* **$1** (string): The string to trim
+* **$2** (string): [ \n\t] The characters to trim
+
+#### Output on stdout
+
+* The trimmed string
+
+### string::trim-right
+
+Right trim a string
+
+#### Example
+
+```bash
+string::trim-right "  hello  " # "  hello"
+```
+
+#### Arguments
+
+* **$1** (string): The string to trim
+* **$2** (string): [ \n\t] The characters to trim
+
+#### Output on stdout
+
+* The trimmed string
+
+### string::trim
+
+Trim a string
+
+#### Example
+
+```bash
+string::trim "  hello  " # "hello"
+```
+
+#### Arguments
+
+* **$1** (string): The string to trim
+* **$2** (string): [ \n\t] The characters to trim
+
+#### Output on stdout
+
+* The trimmed string
+

@@ -1,0 +1,4 @@
+[ arg4| ] invalid usage
+➜ invalid type (float): wrong
+
+Use "bats-exec-test -h" for more information

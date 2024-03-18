@@ -1,0 +1,38 @@
+This is a test
+
+Usage:
+  bats-exec-test :main <pos1> <pos2> <pos3>
+
+Arguments:
+   pos1 string             Positional parameter 1
+   pos2 string             Positional parameter 2
+   pos3 int                Positional parameter 3 with type
+
+Options:
+       --arg1 string (default: def)
+           Argument 1 with default value
+   -2, --arg2 string
+           Argument 2 with short option
+   -3, --arg3 int
+           Argument 3 with short option and type
+       --arg4 float
+           Argument 4 with type
+   -5, --arg5 
+           Argument 5 with short option and no value
+ ! -6, --arg6 string
+           Argument 6 with short option and required
+   -7, --arg7 custom
+           Argument 7 with short option and custom type
+ ! -8, --arg8 string
+           Argument 8 with short option and type and required
+ ! -9, --arg9 
+           Argument 9 with short option and no value and required
+       --arr1 ...string
+           Array 1 with values
+       --arr2 ...
+           Array 2 with no value
+   -a, --arr3 ...string (default: a b)
+           Array 3 with default values
+   -h, --help 
+           Show this help message
+

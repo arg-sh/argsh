@@ -1,0 +1,146 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC1091 disable=SC2034 disable=SC2046
+set -euo pipefail
+
+: "${PATH_BASE:="$(git rev-parse --show-toplevel)"}"
+: "${MIN_COVERAGE:="70"}"
+
+source "${PATH_BASE}/argsh.min.sh"
+# trap error::stacktrace EXIT
+
+generate::docs() {
+  :args "Generate library documentation for docs" "${@}"
+
+  local file name out line write=0
+  local -a lines
+  for file in "${PATH_BASE}"/libraries/*.sh; do
+    name="${file##*/}"
+    name="${name%.sh}"
+    out="${PATH_BASE}/www/workspaces/docs/content/libraries/${name}.mdx"
+    echo "Generating ${out}"
+    {
+      echo 'import Link from "@docusaurus/Link";'
+      echo 'import ExternalLink from "@site/src/theme/Icon/Twitter";'
+      echo
+      echo '<Link to="https://github.com/arg-sh/argsh/blob/main/libraries/'"${name}"'.sh" alt="source code">'
+      echo 'Source code'
+      echo '</Link>'
+    } >"${out}"
+    shdoc <"${file}" >>"${out}"
+  done
+}
+
+minify::argsh() {
+  :args "Minify argsh libraries" "${@}"
+
+  local -r file="${PATH_BASE}/argsh.min.sh" #"$(mktemp)"
+  for f in "${PATH_BASE}"/libraries/*.sh; do
+    cat "${f}"
+    echo
+  done >"${file}.tmp"
+  obfus -i "${file}.tmp" -o "${file}" -A
+  rm "${file}.tmp"
+
+  local -r content="$(cat "${file}")"
+  {
+    echo '#!/usr/bin/env bash'
+    echo '# shellcheck disable=SC2178 disable=SC2120 disable=SC1090'
+    echo -n "${content}"
+    # shellcheck disable=SC2016
+    echo -n '; [[ "${BASH_SOURCE[0]}" != "${0}" ]] || argsh::shebang "${@}"'
+  } >"${file}"
+  chmod +x "${file}"
+}
+
+coverage::argsh() {
+  :args "Generate coverage report for argsh" "${@}"
+  binary::exists docker || exit 1
+  binary::jq
+  docker run --rm -it $(docker::user) kleisterio/coverage:latest bash -c "
+    kcov \
+      --clean \
+      --bash-dont-parse-binary-dir \
+      --include-pattern=.sh \
+      --exclude-pattern=tests \
+      --include-path=. ./coverage/ bats ./libraries/
+  " 1>/dev/null
+  local coverage json="${PATH_BASE}/coverage/argsh.json"
+  cp "${PATH_BASE}"/coverage/bats.*/coverage.json "${json}"
+  coverage="$(jq -r '.percent_covered | tonumber | floor' "${json}")"
+  echo "Coverage is ${coverage}% of required ${MIN_COVERAGE}%"
+  (( coverage > MIN_COVERAGE ))
+    exit 1
+}
+
+test::argsh() {
+  binary::exists docker || exit 1
+  docker run --rm -it $(docker::user) \
+    bats/bats:latest /workspace/libraries/
+}
+
+test::docs() {
+  binary::exists docker || exit 1
+  docker run --rm -it $(docker::user) node:21-alpine sh -c "
+    cd /workspace/www
+    [ -d node_modules ] || yarn --silent --frozen-lockfile
+    yarn build
+  "
+}
+
+lint::argsh() {
+  binary::exists docker || exit 1
+  docker run --rm -it $(docker::user) \
+    koalaman/shellcheck:stable '/workspace/libraries/arg.sh'
+}
+
+lint::docs() {
+  binary::exists docker || exit 1
+  docker run --rm -it $(docker::user) node:21-alpine sh -c "
+    cd /workspace/www
+    [ -d node_modules ] || yarn --silent --frozen-lockfile
+    yarn lint:content
+    yarn lint
+  "
+}
+
+lint::main() {
+  local -a usage
+  local docs argsh
+  args=(
+    'docs|:+' "Only run linters for the documentation"
+    'argsh|:+' "Only run linters for the arg.sh library"
+  )
+  :args "Run linters for different parts of the project" "${@}"
+  set -x
+  args::run "${*}" \
+    "${argsh:-0}" lint::argsh \
+    "${docs:-0}" lint::docs
+}
+
+
+test::main() {
+  local -a usage
+  local docs argsh
+  args=(
+    'docs|:+' "Only run tests for the documentation"
+    'argsh|:+' "Only run tests for the arg.sh library"
+  )
+  :args "Run tests for different parts of the project" "${@}"
+  args::run "${*}" \
+    "${argsh:-0}" test::argsh \
+    "${docs:-0}" test::docs
+}
+
+main() {
+  local -a usage
+  usage=(
+    coverage::argsh "Generate coverage report for argsh"
+    test::main "Run tests"
+    lint::main "Run linters"
+    generate::docs "Generate documentation"
+    minify::argsh "Minify argsh libraries"
+  )
+  :usage "Helper to manage this project" "${@}"
+}
+
+[[ "${BASH_SOURCE[0]}" != "${0}" ]] || main "${@}"

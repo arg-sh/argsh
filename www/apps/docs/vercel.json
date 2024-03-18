@@ -1,0 +1,10 @@
+{
+  "trailingSlash": false,
+  "redirects": [ ],
+  "framework": "docusaurus-3",
+  "installCommand": "yarn install",
+  "buildCommand": "turbo run build",
+  "outputDirectory": "build",
+  "ignoreCommand": "bash ../../ignore-build-script.sh",
+  "devCommand": "yarn dev"
+}
