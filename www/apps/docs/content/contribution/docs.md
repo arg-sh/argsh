@@ -364,7 +364,7 @@ For example:
 
 ~~~md
 ```bash noReport
-make minify
+argsh minify
 ```
 ~~~
 
@@ -400,7 +400,7 @@ If you want to check your work locally, you can do that by:
 
 ```bash
 # to lint content for the main documentation
-make lint --vale error
+argsh lint --vale error
 ```
 
 ### VS Code Extension
@@ -452,7 +452,7 @@ direnv allow
 2\. Then execute the following command anywhere:
 
 ```bash
-make lint
+argsh lint
 ```
 
 This will fix any fixable errors, and show errors that require your action.

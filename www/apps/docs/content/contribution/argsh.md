@@ -44,7 +44,7 @@ In the body of the PR, explain clearly what the PR does. If the PR solves an iss
 If you make changes to the libraries, you need to generate a minified version of the library. You can do this by running the following command:
 
 ```bash
-make minify
+argsh minify
 ```
 
 ## Testing
@@ -54,7 +54,7 @@ All libraries should have tests. Create a new test file (`*.bats`) alongside the
 You can run the tests by running the following command:
 
 ```bash
-make test --argsh
+argsh test --argsh
 ```
 
 ### Coverage
@@ -64,7 +64,7 @@ We strive to have 100% test coverage for all libraries. When you add a new libra
 You can run the coverage report by running the following command:
 
 ```bash
-make coverage
+argsh coverage
 ```
 
 ## Documentation
@@ -74,7 +74,7 @@ The documentation for the libraries is automatically generated from the source c
 You can generate the documentation by running the following command:
 
 ```bash
-make generate
+argsh generate
 ```
 
 ## Code Style
@@ -86,5 +86,5 @@ Use our [style guide](https://arg.sh/styleguide) to make sure your code is consi
 To lint the code, run the following command:
 
 ```bash
-make lint --argsh
+argsh lint --argsh
 ```

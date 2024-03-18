@@ -61,6 +61,7 @@ That beeing said, most of it is quite rough. But it's a start. The best time tha
 
 #### Short term goals
 
+- [ ] Make `.bin/argsh` more generic for other projects to use
 - [ ] Design a logo
 - [ ] Provide a set of code snippets
 - [ ] A complete styleguide
