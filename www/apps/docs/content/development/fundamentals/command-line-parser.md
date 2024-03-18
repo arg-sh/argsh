@@ -1,5 +1,5 @@
 ---
-description: ''
+description: 'Learn how to use the command line parser to parse command line arguments in argsh.'
 ---
 
 # Command Line Parser
@@ -8,26 +8,26 @@ In this document, you’ll learn how to use the command line parser to parse com
 
 ## Overview
 
-The implementation of the command line parser in argsh is inspired by the [cobra](https://github.com/spf13/cobra) library for Go. 
+The implementation of the command line parser in argsh is inspired by the [cobra](https://github.com/spf13/cobra) library for Go and used as a reference for the implementation. 
 
-- Easy subcommand-based CLIs: app server, app fetch, etc.
-- Fully POSIX-compliant flags (including short & long versions)
-- Nested subcommands
-- 🚧 (not fully implemented) Global, local and cascading flags
-- 🚧 (not yet) Intelligent suggestions (app srver... did you mean app server?)
-- Automatic help generation for commands and flags
-- Grouping help for subcommands
-- Automatic help flag recognition of -h, --help, etc.
-- 🚧 (not yet) Automatically generated shell autocomplete for your application (bash, zsh, fish, powershell)
-- 🚧 (not yet) Automatically generated man pages for your application
-- 🚧 (kindof) Command aliases so you can change things without breaking them
-- 🚧 (not yet) The flexibility to define your own help, usage, etc.
+- [x] Easy subcommand-based CLIs: app server, app fetch, etc.
+- [x] Fully POSIX-compliant flags (including short & long versions)
+- [x] Nested subcommands
+- [ ] Global, local and cascading flags
+- [ ] Intelligent suggestions (app srver... did you mean app server?)
+- [x] Automatic help generation for commands and flags
+- [x] Grouping help for subcommands
+- [x] Automatic help flag recognition of -h, --help, etc.
+- [ ] Automatically generated shell autocomplete for your application (bash, zsh, fish, powershell)
+- [ ] Automatically generated man pages for your application
+- [ ] Command aliases so you can change things without breaking them
+- [ ] The flexibility to define your own help, usage, etc.
 
 ## Usage
 
 Argsh provides a simple way to define commands and flags. It consists of two parts, a root command `:usage` and arguments `:args`.
 
-::: warning
+:::warn
 argsh is still in development and prune to change.
 :::
 
@@ -35,7 +35,7 @@ argsh is still in development and prune to change.
 
 To use the command line parser, you need to include the `argsh` library in your script or install it. Read more about how to set up argsh in the [getting started guide](/getting-started).
 
-::: note
+:::note
 If you are using argsh in the shebang line, your script will be executed within a function scope. So wouldn't need to implement a `main` function and can use `local` variables directly.
 :::
 
@@ -66,7 +66,7 @@ esac
 
 ### Arguments
 
-The `:args` function is used to define the arguments and flags for a command. It takes a array defining available arguments and flags.
+The [:args](../../libraries/args) function is used to define the arguments and flags for a command. It takes a array defining available arguments and flags.
 
 ```bash
 local arg1 arg2 flag
@@ -111,7 +111,7 @@ local -a args=(
 :args "Brief description of your command" "${@}"
 ```
 
-::: note
+:::note
 Short flags are defined with a single character and long flags are always in front of the short flag. The long flag has to correspond to a variable with the same name.
 :::
 
