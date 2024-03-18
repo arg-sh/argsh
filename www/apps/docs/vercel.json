@@ -1,7 +1,7 @@
 {
   "trailingSlash": false,
   "redirects": [ ],
-  "framework": "docusaurus-3",
+  "framework": "docusaurus-2",
   "installCommand": "yarn install",
   "buildCommand": "turbo run build",
   "outputDirectory": "build",
