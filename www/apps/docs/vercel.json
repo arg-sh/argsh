@@ -1,6 +1,17 @@
 {
   "trailingSlash": false,
-  "redirects": [ ],
+  "redirects": [
+    {
+      "source": "/",
+      "has": [
+        {
+          "type": "host",
+          "value": "get.arg.sh"
+        }
+      ],
+      "destination": "https://raw.githubusercontent.com/arg-sh/argsh/main/argsh.min.sh"
+    }
+  ],
   "framework": "docusaurus-2",
   "installCommand": "yarn install",
   "buildCommand": "turbo run build",
