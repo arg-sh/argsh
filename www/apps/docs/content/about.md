@@ -21,9 +21,12 @@ This docs is build upon [docusaurus](https://docusaurus.io/) and is copied from 
 
 This site is provided by
 
+```plaintext
 Jan Guth
 Trnovo 44a
 5252 Trnovo pri Gorici
+Slovenia
+```
 
 Email: jan.guth@gmail.com
 
