@@ -21,14 +21,14 @@ This docs is build upon [docusaurus](https://docusaurus.io/) and is copied from 
 
 This site is provided by
 
-```plaintext
+```plaintext noReport noCopy
 Jan Guth
 Trnovo 44a
 5252 Trnovo pri Gorici
 Slovenia
 ```
 
-Email: jan.guth@gmail.com
+email: jan.guth@gmail.com
 
 <!-- vale docs.We = YES -->
 

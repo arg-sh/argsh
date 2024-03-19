@@ -16,7 +16,7 @@ generate::docs() {
   for file in "${PATH_BASE}"/libraries/*.sh; do
     name="${file##*/}"
     name="${name%.sh}"
-    out="${PATH_BASE}/www/workspaces/docs/content/libraries/${name}.mdx"
+    out="${PATH_BASE}/www/apps/docs/content/libraries/${name}.mdx"
     echo "Generating ${out}"
     {
       echo 'import Link from "@docusaurus/Link";'

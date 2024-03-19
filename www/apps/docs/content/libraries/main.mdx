@@ -1,0 +1,47 @@
+import Link from "@docusaurus/Link";
+import ExternalLink from "@site/src/theme/Icon/Twitter";
+
+<Link to="https://github.com/arg-sh/argsh/blob/main/libraries/main.sh" alt="source code">
+Source code
+</Link>
+This file contains the main function for running a bash script
+
+## Index
+
+* [bash::version](#bashversion)
+* [argsh::shebang](#argshshebang)
+
+### bash::version
+
+Verify the version of bash
+
+#### Example
+
+```bash
+bash::version 4 3 0 # succeeds (returns 0)
+```
+
+#### Arguments
+
+* **$1** (int): major version
+* **$2** (int): minor version
+* **$3** (int): patch version
+
+#### Exit codes
+
+* **0**: If the version is greater than or equal to the specified version
+* **1**: If the version is less than the specified version
+
+### argsh::shebang
+
+Run a bash script from a shebang
+
+#### Arguments
+
+* **$1** (string): file to run
+
+#### Exit codes
+
+* **1**: If the file does not exist
+* **1**: If the file is the same as the current file
+
