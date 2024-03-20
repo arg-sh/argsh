@@ -248,6 +248,19 @@ local -a args=(
 :args "Brief description of your command" "${@}"
 ```
 
+### Catch all arguments
+
+You can catch all remaining arguments by declaring a array as variable.
+
+```bash
+local pos1
+local -a rest args=(
+  'pos1' "Description of pos1"
+  'rest' "All remaining arguments or none"
+)
+:args "Brief description of your command" "${@}"
+```
+
 ## Flags
 
 Flags are defined by their name and a description. They are optional and can be called with a short or long version. You can define as many flags as you like. You can also define their type (string, number, boolean, ...) and default value. Additionally, you can define a flag as a boolean flag, meaning that it doesn't take a value and is either true `1` or false `0`.

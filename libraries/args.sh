@@ -46,7 +46,7 @@ import array
 
   local -A match=()
   local -a cli=("${@}")
-  local cmd field
+  local cmd field=""
   
   while (( ${#cli[@]} )); do
     # command
@@ -150,7 +150,7 @@ import array
     exit 0
   fi
 
-  local field i positional_index=1
+  local field="" i positional_index=1
   local -A match=()
   local -a cli=("${@}")
   
@@ -174,9 +174,9 @@ import array
   done
   
   if i="$(:args::field-positional "${positional_index}")"; then
-    field="${args[i]}"
-    is::uninitialized "${field/:*}" ||
-      :args::error_usage "missing required argument: ${field/:*}"
+    field="$(args::field_name "${args[i]}")"
+    is::uninitialized "${field}" || is::array "${field}" ||
+      :args::error_usage "missing required argument: ${field}"
   fi
 
   :args::check-required-flags
@@ -271,16 +271,22 @@ import array
   declare -p args &>/dev/null || local -a args
   declare -p positional &>/dev/null || local -a positional
   declare -p params &>/dev/null || local -a params
+  local ref
 
   for (( i=0; i < "${#args[@]}"; i+=2 )); do
     [[ ${args[i]} != *"|"* && ${args[i]} != '-' ]] || continue
-
+    ref="$(args::field_name "${args[i]}")"
+    
     positional+=("${i}")
-    if is::uninitialized "${args[i]/:*}"; then
-      params+=("[${args[i]/:*}]")
+    if is::array "${ref}"; then
+      params+=("...${ref}")
       continue
     fi
-    params+=("<${args[i]/:*}>")
+    if is::uninitialized "${ref}"; then
+      params+=("[${ref}]")
+      continue
+    fi
+    params+=("<${ref}>")
   done
 }
 
@@ -412,7 +418,8 @@ import array
 }
 
 # @description
-#   Lookup nth positional field
+#   Lookup nth positional field.
+#   If a field is an array, it will end and return the index.
 # @arg $1 int The position
 # @set args array [get] The arguments to parse
 # @stdout The field position
@@ -425,12 +432,25 @@ import array
 
   for (( i=0; i < ${#args[@]}; i+=2 )); do
     if [[ ${args[i]} != *"|"* && ${args[i]} != '-' ]]; then
-      (( --position == 0 )) || continue
-      echo "${i}"
-      return 0
+      if is::array "$(args::field_name "${args[i]}")" || (( --position == 0 )); then
+        echo "${i}"
+        return 0
+      fi
     fi
   done 
   return 1
+}
+
+# @description
+#   Get the field variable reference name
+# @arg $1 string The field to parse
+# @stdout The field variable reference name
+# @internal
+args::field_name() {
+  local field="${1}"
+  field="${field/[|:]*}"
+  field="${field#\#}"
+  echo "${field}"
 }
 
 # @description
@@ -456,11 +476,10 @@ import array
   local mods="${field#*[:]}"
   [ "${mods}" != "${field}" ] || mods=""
   # set name
-  attrs[0]="${field/[|:]*}"
+  attrs[0]="$(args::field_name "${field}")"
   # hidden
   [[ ${attrs[0]:0:1} != "#" ]] || {
     attrs[7]=1
-    attrs[0]="${attrs[0]:1}"
   }
   # shellcheck disable=SC2178
   local -n ref="${attrs[0]}"

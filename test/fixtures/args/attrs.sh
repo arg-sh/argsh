@@ -37,3 +37,16 @@ to::custom() {
   local value="$1"
   echo "${value} custom"
 }
+
+:test::attrs2() {
+  local pos1
+  # shellcheck disable=SC2034
+  local -a rest args=(
+    'pos1'    "Positional parameter 1"
+    'rest'    "Rest of the parameters"
+  )
+  :args "Description of cmd4" "${@}"
+  echo "cmd4"
+  echo "pos1: ${pos1:-}"
+  echo "rest: ${rest[*]:-}"
+}

@@ -1,0 +1,13 @@
+Description of cmd4
+
+Usage:
+  bats-exec-test :test <pos1> ...rest
+
+Arguments:
+   pos1 string             Positional parameter 1
+   rest string             Rest of the parameters
+
+Options:
+   -h, --help 
+           Show this help message
+

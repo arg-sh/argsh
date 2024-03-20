@@ -128,6 +128,29 @@ source "${PATH_FIXTURES}/attrs.sh"
   snapshot stderr
 }
 
+@test "attrs: catch rest of positionals" {
+  :validate() {
+    assert "${pos1}" = "pos1"
+    assert "${rest[*]}" = "a1 a2 a3 a4"
+  }
+  (
+    :test::attrs2 "pos1" "a1" "a2" "a3" "a4"
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+}
+
+@test "attrs: catch rest of positionals is in help" {
+  (
+    :test::attrs2 --help
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  snapshot stdout
+}
+
 # -----------------------------------------------------------------------------
 # Now test usage
 source "${PATH_FIXTURES}/usage.sh"
