@@ -1,0 +1,17 @@
+Subcommands of cmd1
+
+Usage: bats-exec-test <command> [args]
+
+Available Commands:
+  subcmd1                  Description of subcmd1
+  subcmd2                  Description of subcmd2
+
+Options:
+   -v, --verbose ...
+           Description of arg2
+   -f, --config string (default: ./config.yml)
+           Description of flag
+   -h, --help 
+           Show this help message
+
+Use "bats-exec-test [command] --help" for more information about a command.

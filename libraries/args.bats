@@ -4,57 +4,13 @@
 load ../test/helper
 load_source
 
-# Test function
-:main() {
-  local -a args arr1 arr2 arr3=("a" "b")
-  local pos1 pos2 arg1="def" arg2 arg3 arg4 arg5 arg6 arg7 arg8 arg9
-  args=(
-    'pos1'            "Positional parameter 1"
-    'pos2'            "Positional parameter 2"
-    'pos3:~int'       "Positional parameter 3 with type"
-    'arg1|'           "Argument 1 with default value"
-    'arg2|2'          "Argument 2 with short option"
-    'arg3|3:~int'     "Argument 3 with short option and type"
-    'arg4|:~float'    "Argument 4 with type"
-    'arg5|5:+'        "Argument 5 with short option and no value"
-    'arg6|6:!'        "Argument 6 with short option and required"
-    'arg7|7:~custom'  "Argument 7 with short option and custom type"
-    'arg8|8:~string!' "Argument 8 with short option and type and required"
-    'arg9|9:+!'       "Argument 9 with short option and no value and required"
-    'arr1|'           "Array 1 with values"
-    'arr2|:+'         "Array 2 with no value"
-    'arr3|a'          "Array 3 with default values"
-  )
-  :args "This is a test" "${@}"
-  :validate >&3
-  echo "■■ positional parameters"
-  echo "${pos1} ${pos2} ${pos3}"
-  echo "■■ arguments"
-  echo "${arg1} ${arg2:-} ${arg3:-} ${arg4:-} ${arg5:-} ${arg6:-} ${arg7:-} ${arg8:-} ${arg9:-}"
-  echo "${arr1[@]:-}"
-  echo "${arr2[@]:-}"
-  echo "${arr3[@]}"
-}
+# -----------------------------------------------------------------------------
+# First test the attributes
+source "${PATH_FIXTURES}/attrs.sh"
 
-to::custom() {
-  local value="$1"
-  echo "${value} custom"
-}
-
-declare stdout stderr status
-setup() {
-  :validate() { :; }
-  status=0
-  stdout="$(mktemp)"
-  stderr="$(mktemp)"
-}
-teardown() {
-  rm -f "${stdout}" "${stderr}"
-}
-
-@test "no arguments" {
+@test "attrs: no arguments" {
   (
-    :main
+    :test::attrs
   ) >"${stdout}" 2>"${stderr}" || status=$?
 
   assert "${status}" -eq 2
@@ -62,9 +18,9 @@ teardown() {
   snapshot stderr
 }
 
-@test "-h, --help" {
+@test "attrs: -h, --help" {
   (
-    :main -h
+    :test::attrs -h
   ) >"${stdout}" 2>"${stderr}" || status=$?
 
   assert "${status}" -eq 0
@@ -72,7 +28,7 @@ teardown() {
   snapshot stdout
 
   (
-    :main --help
+    :test::attrs --help
   ) >"${stdout}" 2>"${stderr}" || status=$?
 
   assert "${status}" -eq 0
@@ -80,7 +36,7 @@ teardown() {
   snapshot stdout
 }
 
-@test "positional parameters (with required arguments)" {
+@test "attrs: positional parameters (with required arguments)" {
   :validate() {
     assert "${pos1}" = "pos1"
     assert "${pos2}" = "pos2"
@@ -93,7 +49,7 @@ teardown() {
     is::uninitialized arg2 arg3 arg4 arg5 arg7 arr1 arr2
   }
   (
-    :main "pos1" "pos2" "3" --arg6 "string" --arg8 "string" --arg9
+    :test::attrs "pos1" "pos2" "3" --arg6 "string" --arg8 "string" --arg9
   ) >"${stdout}" 2>"${stderr}" || status=$?
 
   assert "${status}" -eq 0
@@ -101,7 +57,7 @@ teardown() {
   snapshot stdout
 }
 
-@test "positional parameters (with all short options)" {
+@test "attrs: positional parameters (with all short options)" {
   :validate() {
     assert "${pos1}" = "pos1"
     assert "${pos2}" = "pos2"
@@ -116,7 +72,7 @@ teardown() {
     assert "${arg9[*]}" = "1"
   }
   (
-    :main "pos1" "pos2" "3" -2 "str1" -3 1 -5 -6 "req" -7 "cus" -8 "str1" -9 -a "arr1" -a "arr2"
+    :test::attrs "pos1" "pos2" "3" -2 "str1" -3 1 -5 -6 "req" -7 "cus" -8 "str1" -9 -a "arr1" -a "arr2"
   ) >"${stdout}" 2>"${stderr}" 3>&2 || status=$?
 
   assert "${status}" -eq 0
@@ -124,7 +80,7 @@ teardown() {
   snapshot stdout
 }
 
-@test "positional parameters (with all long options)" {
+@test "attrs: positional parameters (with all long options)" {
   :validate() {
     assert "${pos1}" = "pos1"
     assert "${pos2}" = "pos2"
@@ -142,7 +98,7 @@ teardown() {
     assert "${arr3[*]}" = "a b b1 b2"
   }
   (
-    :main "pos1" "pos2" "3" \
+    :test::attrs "pos1" "pos2" "3" \
       --arg2 "str1" --arg3 1 --arg5 --arg6 "req" --arg7 "cus" --arg8 "str1" --arg9 \
       --arr1 "v1" --arr1 "v2" --arr2 --arr2 --arr2 --arr3 "b1" --arr3 "b2"
   ) >"${stdout}" 2>"${stderr}" 3>&2 || status=$?
@@ -152,9 +108,9 @@ teardown() {
   snapshot stdout
 }
 
-@test "error: invalid type for positional parameter" {
+@test "attrs: error: invalid type for positional parameter" {
   (
-    :main "pos1" "pos2" "wrong" --arg6 "s" --arg8 "s" --arg9
+    :test::attrs "pos1" "pos2" "wrong" --arg6 "s" --arg8 "s" --arg9
   ) >"${stdout}" 2>"${stderr}" || status=$?
 
   assert "${status}" -eq 2
@@ -162,12 +118,152 @@ teardown() {
   snapshot stderr
 }
 
-@test "error: invalid type for argument" {
+@test "attrs: error: invalid type for argument" {
   (
-    :main "pos1" "pos2" "3" --arg6 "s" --arg8 "s" --arg9 --arg4 "wrong"
+    :test::attrs "pos1" "pos2" "3" --arg6 "s" --arg8 "s" --arg9 --arg4 "wrong"
   ) >"${stdout}" 2>"${stderr}" || status=$?
 
   assert "${status}" -eq 2
   is_empty stdout
   snapshot stderr
+}
+
+# -----------------------------------------------------------------------------
+# Now test usage
+source "${PATH_FIXTURES}/usage.sh"
+
+@test "usage: no arguments, -h, --help" {
+  (
+    :test::usage
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  snapshot stdout
+
+  (
+    :test::usage -h
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  snapshot stdout
+
+  (
+    :test::usage --help
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  snapshot stdout
+}
+
+@test "usage: calling subcommand cmd1 and alias" {
+  (
+    :test::usage cmd1 
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  snapshot stdout
+
+  (
+    :test::usage alias
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  snapshot stdout
+}
+
+@test "usage: calling subcommand cmd1 with flag" {
+  (
+    :test::usage cmd1 --config ./config.yml
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  snapshot stdout
+
+  (
+    :test::usage --config ./config.yml cmd1
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  snapshot stdout
+}
+
+@test "usage: calling sub subcommand with flags" {
+  (
+    :test::usage -ftest -v cmd1 -v subcmd1 -vv --flag2 juhu
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  snapshot stdout
+}
+
+@test "usage: calling cmd2" {
+  (
+    :test::usage cmd2 -vvv --config wrong.yml
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  snapshot stdout
+}
+
+@test "usage: calling hidden cmd3" {
+  (
+    :test::usage cmd3 -vvv --config wrong.yml
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  snapshot stdout
+}
+
+# -----------------------------------------------------------------------------
+# Now test format stuff
+source "${PATH_FIXTURES}/fmt.sh"
+
+@test "fmt: usage: top level group" {
+  (
+    :test::fmt1 --help
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  snapshot stdout
+}
+
+@test "fmt: args: top level group" {
+  (
+    :test::fmt1 cmd1 --help
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  snapshot stdout
+}
+
+@test "fmt: usage: group" {
+  (
+    :test::fmt2 --help
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  snapshot stdout
+}
+
+@test "fmt: args: group" {
+  (
+    :test::fmt2 cmd1 --help
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  snapshot stdout
 }

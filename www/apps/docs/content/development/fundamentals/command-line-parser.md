@@ -13,14 +13,14 @@ The implementation of the command line parser in argsh is inspired by the [cobra
 - [x] Easy subcommand-based CLIs: app server, app fetch, etc.
 - [x] Fully POSIX-compliant flags (including short & long versions)
 - [x] Nested subcommands
-- [ ] Global, local and cascading flags
+- [x] Global, local and cascading flags
 - [ ] Intelligent suggestions (app srver... did you mean app server?)
 - [x] Automatic help generation for commands and flags
 - [x] Grouping help for subcommands
 - [x] Automatic help flag recognition of -h, --help, etc.
 - [ ] Automatically generated shell autocomplete for your application (bash, zsh, fish, powershell)
 - [ ] Automatically generated man pages for your application
-- [ ] Command aliases so you can change things without breaking them
+- [x] Command aliases so you can change things without breaking them
 - [ ] The flexibility to define your own help, usage, etc.
 
 ## Usage
@@ -62,6 +62,154 @@ case "${1}" in
     echo "Unknown command"
     ;;
 esac
+```
+
+As `:usage` only succeeds if a valid command is called, you can use it to define/name the command as one of your script's functions.
+
+```bash
+local -a usage=(
+  'command1' "Description of command1"
+  'command2' "Description of command2"
+)
+:usage "Brief description of your script" "${@}"
+"${1}" "${@:2}"
+```
+
+#### Aliases
+
+You can also define aliases and a default.
+
+```bash
+
+local -a usage=(
+  'command1'             "Description of command1"
+  'command2|cmd2'        "Description of command2"
+  'uhh|ahh:-command3'    "Description of command3"
+)
+:usage "Brief description of your script" "${@}"
+# Pre-run
+"${usage[@]}"
+# Post-run
+```
+
+- `command1` is called with `script command1`
+- `command2` is called with `script command2` or `script cmd2`
+- `command3` is called with `script uhh` or `script ahh`
+
+:::note
+We are using the `usage` array as a function call. `:usage` populates the `usage` array with the command name and rest of the arguments. This is why we can use the `usage` array as a function call.
+:::
+
+#### Subcommands
+
+You can define subcommands by defining another `usage` array in the subcommand function.
+
+```bash
+subcommand1() {
+  :args "Brief description of your subcommand" "${@}"
+  echo "Being here means that subcommand1 was called"
+}
+
+command1() {
+  local -a usage=(
+    'subcommand1' "Description of subcommand1"
+    'subcommand2' "Description of subcommand2"
+  )
+  :usage "Brief description of your command" "${@}"
+  "${usage[@]}"
+}
+
+main() {
+  local -a usage=(
+    'command1' "Description of command1"
+    'command2' "Description of command2"
+  )
+  :usage "Brief description of your script" "${@}"
+  "${usage[@]}"
+}
+
+[[ "${BASH_SOURCE[0]}" != "${0}" ]] || main "${@}"
+```
+
+In this example, `subcommand1` is called with `script command1 subcommand1`.
+
+#### Hidden commands
+
+You can define hidden commands by prepending `#` to the end of the command name. This means that the command is not shown in the help output.
+
+```bash
+local -a usage=(
+  'command1'  "Description of command1"
+  '#command2' "Description of hidden command2"
+)
+:usage "Brief description of your script" "${@}"
+```
+
+:::note
+Hidden commands are still available and can be called.
+:::
+
+#### Global/Cascading flags
+
+Global flags behave like [arguments](#arguments). They are defined in any of the commands and are available in all child subcommands. They are defined by the `args` array. This works as every subcommand has the scope of the parent command.
+
+```bash
+subcommand1() {
+  local -a args=(
+    'positional' "Description of positional"
+    'flag|f'     "Description of flag"
+  )
+  :args "Brief description of your subcommand" "${@}"
+  echo "verbose: ${verbose[*]}"
+  echo "subflag: ${subflag:-}"
+}
+
+command1() {
+  local subflag
+  # if you know that command1 will always be called with `args` in its scope, you can leave this out
+  declare -p args || local -a args
+  args+=(
+    'subflag|f' "Description of subflag"
+  )
+  local -a usage=(
+    'subcommand1' "Description of subcommand1"
+  )
+  :usage "Brief description of your command" "${@}"
+  "${usage[@]}"
+}
+
+main() {
+  local -a verbose args=(
+    'verbose|v' "Description of verbose"
+  )
+  local -a usage=(
+    'command1' "Description of command1"
+  )
+  :usage "Brief description of your script" "${@}"
+  "${usage[@]}"
+}
+
+[[ "${BASH_SOURCE[0]}" != "${0}" ]] || main "${@}"
+```
+
+:::note
+We overwritten the `args` array in `subcommand1`. You won't see the `verbose` flag in the help output of `subcommand1`.
+But you can still use the `verbose` flag in `subcommand1` as it is in the scope of the parent function.
+:::
+
+#### Group commands
+
+You can group commands by adding a `-` to the `usage` array. This will create a new group in the help output.
+
+```bash
+local -a usage=(
+  'command1' "Description of command1"
+  '-'        "Group 1"
+  'command2' "Description of command2"
+  'command3' "Description of command3"
+  '-'        "Group 2"
+  'command4' "Description of command4"
+)
 ```
 
 ### Arguments
@@ -194,4 +342,20 @@ to::uint() {
   
   echo "${value}"
 }
+```
+
+#### Group flags
+
+You can group flags by adding a `-` to the `args` array. This will create a new group in the help output.
+
+```bash
+local -a args=(
+  '-'     "Choose" # this will overwrite the default group name "Options:"
+  'flag1' "Description of flag1"
+  '-'     "Group 1"
+  'flag2' "Description of flag2"
+  'flag3' "Description of flag3"
+  '-'     "Group 2"
+  'flag4' "Description of flag4"
+)
 ```

@@ -44,3 +44,14 @@ is::uninitialized() {
     [[ ${!var+x} ]]
   fi
 }
+
+# @description Check if a variable is set (initialized)
+# @arg $1 string variable name
+# @exitcode 0 If the variable is set
+# @exitcode 1 If the variable is not set
+# @example
+#   local -a arr=("a" "b" "c" "d" "e")
+#   is::set arr # succeeds (returns 0)
+is::set() {
+  ! is::uninitialized "${1}"
+}

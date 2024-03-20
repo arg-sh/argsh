@@ -1,0 +1,15 @@
+Simple description of the command
+
+Usage: bats-exec-test <command> [args]
+
+Available Commands:
+  cmd1                     Description of cmd1
+
+Group
+  noop                     Description of noop
+
+Options:
+   -h, --help 
+           Show this help message
+
+Use "bats-exec-test [command] --help" for more information about a command.

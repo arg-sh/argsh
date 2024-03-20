@@ -1,0 +1,18 @@
+This is a test
+
+Usage:
+  bats-exec-test fmt <pos1>
+
+Arguments:
+   pos1 string             Positional parameter 1
+
+Group Flags 1
+   -f, --flag1 string
+           Description of flag1
+
+Group Flags 2
+   -l, --flag2 string
+           Description of flag2
+   -h, --help 
+           Show this help message
+

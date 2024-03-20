@@ -8,7 +8,37 @@ This file contains functions for working with arguments
 
 ## Index
 
+* [:usage](#usage)
 * [:args](#args)
+
+### :usage
+
+Print usage information
+
+#### Example
+
+```bash
+ local -a usage
+ usage=(
+   command "Description of command"
+   [...]
+ )
+:usage "Title" "${@}"
+```
+
+#### Arguments
+
+* **$1** (string): The title of the usage
+* **...** (array): User arguments
+
+#### Variables set
+
+* **usage** (array): Usage information for the command
+
+#### Exit codes
+
+* **0**: If user arguments are correct
+* **2**: If user arguments are incorrect
 
 ### :args
 

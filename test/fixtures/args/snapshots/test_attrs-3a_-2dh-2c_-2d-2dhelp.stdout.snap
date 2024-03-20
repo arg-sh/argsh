@@ -1,7 +1,7 @@
 This is a test
 
 Usage:
-  bats-exec-test :main <pos1> <pos2> <pos3>
+  bats-exec-test :test <pos1> <pos2> <pos3>
 
 Arguments:
    pos1 string             Positional parameter 1

@@ -16,6 +16,99 @@ import fmt
 import is
 import to
 import error
+import array
+
+# @description Print usage information
+# @arg $1 string The title of the usage
+# @arg $@ array User arguments
+# @set usage array Usage information for the command
+# @exitcode 0 If user arguments are correct
+# @exitcode 2 If user arguments are incorrect
+# @example
+#   local -a usage
+#   usage=(
+#     command "Description of command"
+#     [...]
+#   )
+#  :usage "Title" "${@}"
+:usage() {
+  local title="${1}"; shift
+  # shellcheck disable=SC2154
+  declare -p usage &>/dev/null || local -a usage=()
+  declare -p args &>/dev/null || local -a args=()
+  [[ $(( ${#usage[@]} % 2 )) -eq 0 ]] ||
+    :args::_error "usage must be an associative array"
+
+  if [[ -z ${1:-} || ${1} == "-h" || ${1} == "--help" ]]; then
+    :usage::text "${title}"
+    exit 0
+  fi
+
+  local -A match=()
+  local -a cli=("${@}")
+  local cmd field
+  
+  while (( ${#cli[@]} )); do
+    # command
+    if [[ ${cli[0]:0:1} != "-" ]]; then
+      [[ -z "${cmd:-}" ]] || break
+      cmd="${cli[0]}"
+      cli=("${cli[@]:1}")
+      continue
+    fi
+
+    :args::parse-flag || break
+    match["${field}"]=1
+  done
+  :args::check-required-flags
+
+  local func
+  for (( i=0; i < ${#usage[@]}; i+=2 )); do
+    for alias in $(echo "${usage[i]/:*}" | tr '|' "\n"); do
+      alias="${alias#\#}"
+      [[ "${cmd}" == "${alias}" ]] || continue
+
+      func="${usage[i]/*:-}"
+      func="${func#\#}"
+      [[ "${func}" == "${usage[i]}" ]] || break 2
+      
+      func="${func/|*}"
+      break 2
+    done
+  done
+
+  [[ -n "${func:-}" ]] ||
+    :args::error_usage "Invalid command: ${cmd}"
+
+  usage=("${func}" "${cli[@]}")
+}
+
+# @description Print usage information
+# @arg $1 string The title of the usage
+# @set usage array Usage information for the command
+# @internal
+:usage::text() {
+  local title="${1:-}"
+  local base="${ARGSH_SOURCE:-"${0}"}"
+  base="${base##*/}"
+  echo "${title}"
+  echo
+  echo "Usage: ${base} <command> [args]"
+  [[ ${usage[0]:-} == '-' ]] ||
+    echo -e "\nAvailable Commands:"
+  for (( i=0; i < ${#usage[@]}; i+=2 )); do
+    [[ "${usage[i]:0:1}" != "#" ]] || continue
+    [[ "${usage[i]}" != "-" ]] || {
+      echo
+      echo "${usage[i+1]}"
+      continue
+    }
+    printf "  %-${ARGSH_FIELD_WIDTH}s %s\n" "${usage[i]/[:|]*}" "${usage[i+1]}"
+  done
+  :args::text_flags
+  echo
+  echo "Use \"${base} [command] --help\" for more information about a command."
+}
 
 # @brief
 #   Parse command line arguments.
@@ -51,59 +144,49 @@ import error
   [[ $(( ${#args[@]} % 2 )) -eq 0 ]] ||
     :args::_error "args must be an associative array"
 
-  args+=('help|h:+' "Show this help message")
   if [[ ${1:-} == "-h" || ${1:-} == "--help" ]]; then
     :args::text
     exit 0
   fi
 
-  local field flag
-  local positional_index=0
+  local field i positional_index=1
   local -A match=()
   local -a cli=("${@}")
   
   while (( ${#cli[@]} )); do
     # positional
     if [[ ${cli[0]:0:1} != "-" ]]; then
-      field="${args[${positional_index}]}"
-      [[ ${field} != *"|" ]] ||
-        :args::error_usage "too many arguments: ${cli[0]}"
+      # if title is - then we are not parsing positional arguments
+      [[ "${title}" != "-" ]] || {
+        [[ -n "${usage_command:-}" ]] ||
+          usage_command="${cli[0]}"
+        cli=("${cli[@]:1}")
+        continue
+      }
 
+      i="$(:args::field-positional "${positional_index}")" ||
+        :args::error_usage "too many arguments: ${cli[0]}"
+      
+      field="${args[i]}"
       local -n ref="${field/:*}"
       ref="$(:args::field-value "${cli[0]}")" || exit "${?}"
-      unset 'cli[0]'; cli=("${cli[@]}")
-      (( positional_index += 2 ))
+      cli=("${cli[@]:1}")
+      (( ++positional_index ))
       continue
     fi
 
-    flag="${cli[0]/=*}"
-    # -- long flag
-    if [[ ${flag:0:2} == "--" ]]; then
-      field="$(:args::field-lookup "${flag:2}" "${positional_index}")"
-    # - short flag
-    elif [[ ${flag:0:1} == "-" ]]; then
-      flag="${flag:0:2}"
-      field="$(:args::field-lookup "${flag:1}" "${positional_index}")"
-    fi
-
-    :args::field-set-flag "${field}"
+    :args::parse-flag || 
+      :args::error_usage "unknown flag: ${cli[0]}"
     match["${field}"]=1
   done
   
-  field="${args[${positional_index}]:-}"
-  if [[ -n "${field}" && "${field}" != *"|"* ]]; then
+  if i="$(:args::field-positional "${positional_index}")"; then
+    field="${args[i]}"
     is::uninitialized "${field/:*}" ||
-      :args::error_usage "missing required argument: ${args[${positional_index}]/:*}"
+      :args::error_usage "missing required argument: ${field/:*}"
   fi
 
-  for (( i=0; i < ${#args[@]}; i+=2 )); do
-    [[ ${args[i]: -1} == "!" ]] || continue
-
-    if [[ -z ${match[${args[i]}]:-} ]]; then
-      :args::error_usage "missing required flag: ${args[i]/|*}"
-    fi
-  done
-
+  :args::check-required-flags
   [[ ${#cli[@]} -eq 0 ]] || 
     :args::error_usage "too many arguments: ${cli[*]}"
 }
@@ -115,9 +198,9 @@ import error
 # @set flags array The flags
 # @internal
 :args::text() {
-  local -a flags=() positional=() params=()
+  declare -p args &>/dev/null || return 0
+  local -a positional=() params=()
   :args::positional
-  :args::flags
 
   local base="${0##*/}"
   echo "${title}"
@@ -129,6 +212,7 @@ import error
     echo
     echo "Arguments:"
     for i in "${positional[@]}"; do
+      [[ ${args[i]} != "-" ]] || continue
       desc="$(
         printf "   %-${ARGSH_FIELD_WIDTH}s%s" " " "${args[i+1]}" | fmt::tty
       )"
@@ -137,18 +221,34 @@ import error
         "$(string::trim-left "${desc}")"
     done
   }
+  :args::text_flags
   echo
-  echo "Options:"
-  (( ${#flags[@]} == 0 )) || {
-    for i in "${flags[@]}"; do
-      :args::fieldf "${args[i]}"
-      {
-        echo -n "           "
-        echo -e "${args[i+1]}\n"
-      } | fmt::tty
-    done
-  }
-  echo
+}
+
+:args::text_flags() {
+  # we make a copy here as we add --help to the flags
+  local -a args=("${args[@]}")
+  local -a flags=()
+  array::contains 'help|h:+' "${args[@]}" || args+=('help|h:+' "Show this help message")
+  :args::flags
+  (( ${#flags[@]} )) || return 0
+
+  [[ "${args[${flags[0]}]}" == "-" ]] ||
+    echo -e "\nOptions:"
+  for i in "${flags[@]}"; do
+    [[ "${args[i]:0:1}" != "#" ]] || continue
+    [[ "${args[i]}" != "-" ]] || {
+      echo
+      echo "${args[i+1]}"
+      continue
+    }
+
+    :args::fieldf "${args[i]}"
+    {
+      echo -n "           "
+      echo -e "${args[i+1]}\n"
+    } | fmt::tty
+  done
 }
 
 # @description
@@ -161,7 +261,7 @@ import error
   declare -p flags &>/dev/null || local -a flags
 
   for (( i=0; i < "${#args[@]}"; i+=2 )); do
-    if [[ ${args[i]} == *"|"* ]]; then
+    if [[ ${args[i]} == *"|"* || ${args[i]} == '-' ]]; then
       flags+=("${i}")
     fi
   done
@@ -179,7 +279,7 @@ import error
   declare -p params &>/dev/null || local -a params
 
   for (( i=0; i < "${#args[@]}"; i+=2 )); do
-    [[ ${args[i]} != *"|"* ]] || continue
+    [[ ${args[i]} != *"|"* && ${args[i]} != '-' ]] || continue
 
     positional+=("${i}")
     if is::uninitialized "${args[i]/:*}"; then
@@ -187,6 +287,33 @@ import error
       continue
     fi
     params+=("<${args[i]/:*}>")
+  done
+}
+
+:args::parse-flag() {
+  declare -p cli field &>/dev/null || return 1
+  local flag="${cli[0]/=*}"
+  # -- long flag
+  if [[ ${flag:0:2} == "--" ]]; then
+    field="$(:args::field-lookup "${flag:2}")" || return "${?}"
+  # - short flag
+  elif [[ ${flag:0:1} == "-" ]]; then
+    flag="${flag:0:2}"
+    field="$(:args::field-lookup "${flag:1}")" || return "${?}"
+  fi
+
+  :args::field-set-flag "${field}"
+}
+
+:args::check-required-flags() {
+  declare -p match args &>/dev/null || return 1
+
+  for (( i=0; i < ${#args[@]}; i+=2 )); do
+    [[ ${args[i]: -1} == "!" ]] || continue
+
+    if [[ -z ${match[${args[i]}]:-} ]]; then
+      :args::error_usage "missing required flag: ${args[i]/|*}"
+    fi
   done
 }
 
@@ -212,10 +339,10 @@ import error
     set_value=1
 
     if [[ ${flag:0:2} == "--" ]]; then
-      unset 'cli[0]'; cli=("${cli[@]}")
+      cli=("${cli[@]:1}")
     else
       cli[0]="-${cli[0]:2}"
-      [[ ${cli[0]} != "-" ]] || { unset 'cli[0]'; cli=("${cli[@]}"); }
+      [[ ${cli[0]} != "-" ]] || cli=("${cli[@]:1}")
     fi
   fi
 
@@ -227,14 +354,14 @@ import error
         :args::error "missing value for flag: ${attrs[0]}"
       
       set_value="${cli[1]}"
-      unset 'cli[1]'; cli=("${cli[@]}")
+      cli=("${cli[@]:1}")
     else
       [[ "${cli_value:0:1}" != "=" ]] ||
         cli_value="${cli_value:1}"
       set_value="${cli_value}"
     fi
     set_value="$(:args::field-value "${set_value}")" || exit "${?}"
-    unset 'cli[0]'; cli=("${cli[@]}")
+    cli=("${cli[@]:1}")
   }
 
   if (( attrs[5] )); then
@@ -279,16 +406,37 @@ import error
 # @internal
 :args::field-lookup() {
   local field="${1}"
-  local start="${2:-0}"
   declare -p args &>/dev/null || return 1
 
-  for (( i=start; i < ${#args[@]}; i+=2 )); do
+  for (( i=0; i < ${#args[@]}; i+=2 )); do
     if [[ ${args[i]} =~ (^${field}\||\|${field}:|\|${field}$) ]]; then
       echo "${args[i]}"
       return 0
     fi
   done
-  :args::error_usage "unknown flag"
+  return 1
+}
+
+# @description
+#   Lookup nth positional field
+# @arg $1 int The position
+# @set args array [get] The arguments to parse
+# @stdout The field position
+# @exitcode 0 If the field is found
+# @exitcode 1 If the field is not found
+# @internal
+:args::field-positional() {
+  local position="${1:-1}"
+  declare -p args &>/dev/null || return 1
+
+  for (( i=0; i < ${#args[@]}; i+=2 )); do
+    if [[ ${args[i]} != *"|"* && ${args[i]} != '-' ]]; then
+      (( --position == 0 )) || continue
+      echo "${i}"
+      return 0
+    fi
+  done 
+  return 1
 }
 
 # @description
@@ -307,6 +455,7 @@ import error
     0   # 4 has default
     0   # 5 multiple
     0   # 6 required
+    0   # 7 hidden
   )
 
   local seps="+~!"
@@ -314,6 +463,11 @@ import error
   [ "${mods}" != "${field}" ] || mods=""
   # set name
   attrs[0]="${field/[|:]*}"
+  # hidden
+  [[ ${attrs[0]:0:1} != "#" ]] || {
+    attrs[7]=1
+    attrs[0]="${attrs[0]:1}"
+  }
   # shellcheck disable=SC2178
   local -n ref="${attrs[0]}"
   local -a flags
@@ -389,7 +543,7 @@ import error
   }
 
   [[ ${field} == *"|"* ]] || {
-    echo "${field/:*} ${attrs[3]}"
+    echo "${attrs[0]} ${attrs[3]}"
     return 0
   }
 

@@ -3,6 +3,18 @@
 : "${BATS_LOAD:=""}"
 : "${PATH_FIXTURES:=""}"
 
+declare stdout stderr status
+setup() {
+  # shellcheck disable=SC2317
+  :validate() { :; }
+  status=0
+  stdout="$(mktemp)"
+  stderr="$(mktemp)"
+}
+teardown() {
+  rm -f "${stdout}" "${stderr}"
+}
+
 load_source() {
   local file
   if [[ -n "${BATS_LOAD}" ]]; then
@@ -13,6 +25,14 @@ load_source() {
   PATH_FIXTURES="$(
     realpath "$(dirname "${BATS_TEST_FILENAME}")/../test/fixtures/$(basename "${BATS_TEST_FILENAME%.*}")"
   )"
+  PATH_SNAPSHOTS="${PATH_FIXTURES}/snapshots"
+  mkdir -p "${PATH_SNAPSHOTS}"
+
+  [[ -f "${file}" ]] || {
+    echo "■■ Source file ${file} not found"
+    return 1
+  }
+
   # shellcheck disable=SC1090
   source "${file}"
 }
@@ -21,7 +41,7 @@ snapshot() {
   local file name snap
   for file in "${@}"; do
     name="${BATS_TEST_NAME}"
-    snap="${PATH_FIXTURES}/${name}.${file}.snap"
+    snap="${PATH_SNAPSHOTS}/${name}.${file}.snap"
     [[ -f "${snap}" ]] || {
       cat "${!file}" >"${snap}"
     }
