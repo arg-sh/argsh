@@ -39,9 +39,9 @@ To use the command line parser, you need to include the `argsh` library in your 
 If you are using argsh in the shebang line, your script will be executed within a function scope. So wouldn't need to implement a `main` function and can use `local` variables directly.
 :::
 
-### Root command
+## Commands
 
-The root command is defined by the [:usage](../../libraries/args.mdx#:usage) function. It takes a array defining available commands and flags.
+A command is defined by the [:usage](../../libraries/args.mdx#:usage) function. It takes a array defining available commands and flags.
 
 ```bash
 local -a usage=(
@@ -50,6 +50,8 @@ local -a usage=(
 )
 :usage "Brief description of your script" "${@}"
 
+# Parsing it by yourself is not recommended
+# See Aliases for a better way
 echo "Being here means that command1 or command2 was called"
 case "${1}" in
   command1)
@@ -75,7 +77,7 @@ local -a usage=(
 "${1}" "${@:2}"
 ```
 
-#### Aliases
+### Aliases
 
 You can also define aliases and a default.
 
@@ -100,7 +102,7 @@ local -a usage=(
 We are using the `usage` array as a function call. `:usage` populates the `usage` array with the command name and rest of the arguments. This is why we can use the `usage` array as a function call.
 :::
 
-#### Subcommands
+### Subcommands
 
 You can define subcommands by defining another `usage` array in the subcommand function.
 
@@ -133,7 +135,7 @@ main() {
 
 In this example, `subcommand1` is called with `script command1 subcommand1`.
 
-#### Hidden commands
+### Hidden commands
 
 You can define hidden commands by prepending `#` to the end of the command name. This means that the command is not shown in the help output.
 
@@ -149,7 +151,7 @@ local -a usage=(
 Hidden commands are still available and can be called.
 :::
 
-#### Global/Cascading flags
+### Global/Cascading flags
 
 Global flags behave like [arguments](#arguments). They are defined in any of the commands and are available in all child subcommands. They are defined by the `args` array. This works as every subcommand has the scope of the parent command.
 
@@ -180,7 +182,7 @@ command1() {
 
 main() {
   local -a verbose args=(
-    'verbose|v' "Description of verbose"
+    'verbose|v:+' "Description of verbose"
   )
   local -a usage=(
     'command1' "Description of command1"
@@ -197,7 +199,7 @@ We overwritten the `args` array in `subcommand1`. You won't see the `verbose` fl
 But you can still use the `verbose` flag in `subcommand1` as it is in the scope of the parent function.
 :::
 
-#### Group commands
+### Group commands
 
 You can group commands by adding a `-` to the `usage` array. This will create a new group in the help output.
 
@@ -212,7 +214,7 @@ local -a usage=(
 )
 ```
 
-### Arguments
+## Arguments
 
 The [:args](../../libraries/args) function is used to define the arguments and flags for a command. It takes a array defining available arguments and flags.
 
@@ -233,7 +235,7 @@ echo "flag: ${flag:-}"
 
 Note that arguments are positional and flags are not. Flags can be called with a short or long version. Positional arguments are required and flags are optional (if not otherwise defined).
 
-#### Positional arguments
+### Positional arguments
 
 Positional arguments are defined by their name and a description. They are required and positional (as their name suggests). You can define as many positional arguments as you like. You can also define their type (string, number, boolean, ...) and default value.
 
@@ -246,7 +248,7 @@ local -a args=(
 :args "Brief description of your command" "${@}"
 ```
 
-#### Flags
+## Flags
 
 Flags are defined by their name and a description. They are optional and can be called with a short or long version. You can define as many flags as you like. You can also define their type (string, number, boolean, ...) and default value. Additionally, you can define a flag as a boolean flag, meaning that it doesn't take a value and is either true `1` or false `0`.
 
@@ -263,7 +265,7 @@ local -a args=(
 Short flags are defined with a single character and long flags are always in front of the short flag. The long flag has to correspond to a variable with the same name.
 :::
 
-##### long flags
+### long flags
 
 Defined by appending a `|` to the flag name.
 
@@ -274,7 +276,7 @@ local -a args=(
 )
 ```
 
-##### types
+### types
 
 Defined by appending a `:~<type>` to the flag name. The following types are available:
 
@@ -284,7 +286,7 @@ Defined by appending a `:~<type>` to the flag name. The following types are avai
 - `boolean`
 - `stdin` (reads from stdin if `-` is passed)
 
-##### boolean flags
+### boolean flags
 
 Boolean flags are defined by appending `:+` to the flag name. This means that the flag doesn't take a value and is either true `1` or false `0`.
 
@@ -298,7 +300,7 @@ local -a args=(
 (( flag1 )) || echo "flag1 was not set"
 ```
 
-##### required flags
+### required flags
 
 Flags are optional by default. You can define a flag as required by appending `!` to the end of the flag name.
 
@@ -309,7 +311,7 @@ local -a args=(
 )
 ```
 
-##### multiple flags
+### multiple flags
 
 You can define a flag as a multiple flag just by defining the reference variable as array. This means that the flag can be called multiple times.
 
@@ -327,24 +329,11 @@ You can also define a flag as a multiple flag with a 'no value' by appending `:+
 # can be called like `script -vvv`
 local -a verbose
 local -a args=(
-  'verbose|v' "Description of flag1"
+  'verbose|v:+' "Description of flag1"
 )
 ```
 
-#### Custom types
-
-You can define custom types for your arguments. This is useful if you want to validate the input or transform it. You can define a custom type by defining a function with the name of the type and the signature `to::<type> <value> <field>`. The function should return the transformed value or raise an error (return non zero) if the value is invalid.
-
-```bash 
-to::uint() {
-  local value="${1}"
-  [[ "${value}" =~ ^[0-9]+$ ]] || return 1
-  
-  echo "${value}"
-}
-```
-
-#### Group flags
+### Group flags
 
 You can group flags by adding a `-` to the `args` array. This will create a new group in the help output.
 
@@ -358,4 +347,17 @@ local -a args=(
   '-'     "Group 2"
   'flag4' "Description of flag4"
 )
+```
+
+## Custom types
+
+You can define custom types for your arguments. This is useful if you want to validate the input or transform it. You can define a custom type by defining a function with the name of the type and the signature `to::<type> <value> <field>`. The function should return the transformed value or raise an error (return non zero) if the value is invalid.
+
+```bash 
+to::uint() {
+  local value="${1}"
+  [[ "${value}" =~ ^[0-9]+$ ]] || return 1
+  
+  echo "${value}"
+}
 ```
