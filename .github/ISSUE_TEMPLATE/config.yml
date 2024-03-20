@@ -3,6 +3,9 @@ contact_links:
   - name: Feature Request
     url: https://github.com/arg-sh/argsh/discussions/categories/feature-requests
     about: Use GitHub Discussions to open a feature request.
+  - name: All things Styleguide
+    url: https://github.com/arg-sh/argsh/discussions/categories/styleguide
+    about: Use GitHub Discussions to ask questions or discuss the styleguide.
   - name: Ask a question
     url: https://discord.gg/VsQpUQX3Zr
     about: Join our community to ask questions and participate in discussions
