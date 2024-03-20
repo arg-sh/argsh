@@ -259,15 +259,6 @@ module.exports = {
       items: [
         {
           type: "doc",
-          id: "libraries/args.usage",
-          label: ":usage",
-          customProps: {
-            sidebar_icon: "command-line-solid",
-          },
-          className: "homepage-sidebar-item",
-        },
-        {
-          type: "doc",
           id: "libraries/args",
           label: ":args",
           customProps: {

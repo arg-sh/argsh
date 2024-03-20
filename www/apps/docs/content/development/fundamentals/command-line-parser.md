@@ -41,7 +41,7 @@ If you are using argsh in the shebang line, your script will be executed within 
 
 ### Root command
 
-The root command is defined by the [:usage](../../libraries/args.usage.mdx) function. It takes a array defining available commands and flags.
+The root command is defined by the [:usage](../../libraries/args.mdx#:usage) function. It takes a array defining available commands and flags.
 
 ```bash
 local -a usage=(
