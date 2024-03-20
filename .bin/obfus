@@ -66,7 +66,18 @@ sub parse_vars_from_file {
 	my $file_name=shift;
 	open(my $file_handle, "<", $file_name) || die "Couldn't open '".$file_name."' for reading because: ".$!;
 	my %vars=();
+	my $skip_next_line=0;
 	while(my $lines=<$file_handle>) {
+		# Check if next line should be ignored
+		if ($lines =~ m/^[ \t]*# obfus ignore variable/) {
+			$skip_next_line++;
+			next;
+		}
+		if ($skip_next_line) {
+			$skip_next_line--;
+			next;
+		}
+		# Skip comments and empty lines
     if ($lines =~ m/^[ \t]*#/ || $lines =~ m/^[ \t]*$/) {
       next;
     }

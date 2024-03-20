@@ -4,8 +4,12 @@ set -euo pipefail
 
 : "${PATH_BASE:="$(git rev-parse --show-toplevel)"}"
 : "${MIN_COVERAGE:="70"}"
+:
 
-source "${PATH_BASE}/argsh.min.sh"
+source "${PATH_BASE}/libraries/args.sh"
+source "${PATH_BASE}/libraries/args.utils.sh"
+source "${PATH_BASE}/libraries/binary.sh"
+source "${PATH_BASE}/libraries/docker.sh"
 # trap error::stacktrace EXIT
 
 generate::docs() {
@@ -50,6 +54,9 @@ minify::argsh() {
     echo -n '; [[ "${BASH_SOURCE[0]}" != "${0}" ]] || argsh::shebang "${@}"'
   } >"${file}"
   chmod +x "${file}"
+
+  # Run tests against the minified file
+  test::argsh "$(basename "${file}")"
 }
 
 coverage::argsh() {
@@ -73,8 +80,10 @@ coverage::argsh() {
 }
 
 test::argsh() {
+  local bats_load="${1:-}"
   binary::exists docker || exit 1
   docker run --rm -it $(docker::user) \
+    -e BATS_LOAD="${bats_load}" \
     bats/bats:latest /workspace/libraries/
 }
 
@@ -145,13 +154,14 @@ test::main() {
 main() {
   local -a usage
   usage=(
-    coverage::argsh "Generate coverage report for argsh"
-    test::main "Run tests"
-    lint::main "Run linters"
-    generate::docs "Generate documentation"
-    minify::argsh "Minify argsh libraries"
+    'coverage:-coverage::argsh' "Generate coverage report for argsh"
+    'test:-test::main'          "Run tests"
+    'lint:-lint::main'          "Run linters"
+    'docs:-generate::docs'      "Generate documentation"
+    'minify:-minify::argsh'     "Minify argsh libraries"
   )
   :usage "Helper to manage this project" "${@}"
+  "${usage[@]}"
 }
 
 [[ "${BASH_SOURCE[0]}" != "${0}" ]] || main "${@}"

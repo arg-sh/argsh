@@ -80,6 +80,7 @@ import array
   [[ -n "${func:-}" ]] ||
     :args::error_usage "Invalid command: ${cmd}"
 
+  # obfus ignore variable
   usage=("${func}" "${cli[@]}")
 }
 
@@ -156,14 +157,6 @@ import array
   while (( ${#cli[@]} )); do
     # positional
     if [[ ${cli[0]:0:1} != "-" ]]; then
-      # if title is - then we are not parsing positional arguments
-      [[ "${title}" != "-" ]] || {
-        [[ -n "${usage_command:-}" ]] ||
-          usage_command="${cli[0]}"
-        cli=("${cli[@]:1}")
-        continue
-      }
-
       i="$(:args::field-positional "${positional_index}")" ||
         :args::error_usage "too many arguments: ${cli[0]}"
       
@@ -227,6 +220,7 @@ import array
 
 :args::text_flags() {
   # we make a copy here as we add --help to the flags
+  # obfus ignore variable
   local -a args=("${args[@]}")
   local -a flags=()
   array::contains 'help|h:+' "${args[@]}" || args+=('help|h:+' "Show this help message")
