@@ -2,10 +2,6 @@
 
 # coverage
 FROM kcov/kcov
-LABEL org.opencontainers.image.licenses MIT
-LABEL org.opencontainers.image.source https://github.com/arg-sh/argsh
-LABEL org.opencontainers.image.description \
-  "argsh aims to enhance Bash scripting by promoting structure and maintainability, making it easier to write, understand, and maintain even complex scripts."
 
 # test
 RUN set -eux \
