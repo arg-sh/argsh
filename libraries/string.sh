@@ -37,6 +37,23 @@ string::random() {
   echo "${str}"
 }
 
+# @description Left trim all lines in a string
+# @arg $1 string The string to trim
+# @arg $2 string [ \n\t] The characters to trim
+# @stdout The trimmed string
+# @example
+#   string::trim-left-lines "  hello\n  world" # "hello\nworld"
+string::trim-left-lines() {
+  local string="${1:-'-'}"
+  local chars="${2:-" "$'\n'$'\t'}"
+  local line lines
+  [[ ${string} != '-' ]] || string="$(cat)"
+  mapfile -t lines < <(echo "${string}")
+  for line in "${lines[@]}"; do
+    string::trim-left "${line}" "${chars}"
+  done
+}
+
 # @description Left trim a string
 # @arg $1 string The string to trim
 # @arg $2 string [ \n\t] The characters to trim

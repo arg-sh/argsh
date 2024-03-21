@@ -1,7 +1,7 @@
 This is a test
 
 Usage:
-  bats-exec-test fmt <pos1>
+  argsh cmd1 <pos1>
 
 Arguments:
    pos1 string             Positional parameter 1

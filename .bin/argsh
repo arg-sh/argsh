@@ -84,6 +84,7 @@ test::argsh() {
   binary::exists docker || exit 1
   docker run --rm -it $(docker::user) \
     -e BATS_LOAD="${bats_load}" \
+    -e ARGSH_SOURCE="argsh" \
     bats/bats:latest /workspace/libraries/
 }
 

@@ -1,7 +1,7 @@
 This is a test
 
 Usage:
-  bats-exec-test :test <pos1> <pos2> <pos3>
+  argsh <pos1> <pos2> <pos3>
 
 Arguments:
    pos1 string             Positional parameter 1

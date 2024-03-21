@@ -10,6 +10,7 @@ This file contains functions for manipulating strings
 
 * [string::drop-index](#stringdrop-index)
 * [string::random](#stringrandom)
+* [string::trim-left-lines](#stringtrim-left-lines)
 * [string::trim-left](#stringtrim-left)
 * [string::trim-right](#stringtrim-right)
 * [string::trim](#stringtrim)
@@ -53,6 +54,25 @@ string::random    # t4UsOP3z5Rd8sW6nX2t1C7z9L0s3R4d8cAH32ns2Ds
 #### Output on stdout
 
 * The random string
+
+### string::trim-left-lines
+
+Left trim all lines in a string
+
+#### Example
+
+```bash
+string::trim-left-lines "  hello\n  world" # "hello\nworld"
+```
+
+#### Arguments
+
+* **$1** (string): The string to trim
+* **$2** (string): [ \n\t] The characters to trim
+
+#### Output on stdout
+
+* The trimmed string
 
 ### string::trim-left
 

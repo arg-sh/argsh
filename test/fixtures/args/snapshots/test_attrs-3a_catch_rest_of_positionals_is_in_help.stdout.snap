@@ -1,7 +1,7 @@
 Description of cmd4
 
 Usage:
-  bats-exec-test :test <pos1> ...rest
+  argsh <pos1> ...rest
 
 Arguments:
    pos1 string             Positional parameter 1
