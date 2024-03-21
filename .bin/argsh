@@ -12,84 +12,11 @@ source "${PATH_BASE}/libraries/binary.sh"
 source "${PATH_BASE}/libraries/docker.sh"
 # trap error::stacktrace EXIT
 
-generate::docs() {
-  :args "Generate library documentation for docs" "${@}"
-
-  local file name out line write=0
-  local -a lines
-  for file in "${PATH_BASE}"/libraries/*.sh; do
-    name="${file##*/}"
-    name="${name%.sh}"
-    out="${PATH_BASE}/www/apps/docs/content/libraries/${name}.mdx"
-    echo "Generating ${out}"
-    {
-      echo 'import Link from "@docusaurus/Link";'
-      echo 'import ExternalLink from "@site/src/theme/Icon/Twitter";'
-      echo
-      echo '<Link to="https://github.com/arg-sh/argsh/blob/main/libraries/'"${name}"'.sh" alt="source code">'
-      echo 'Source code'
-      echo '</Link>'
-    } >"${out}"
-    shdoc <"${file}" >>"${out}"
-  done
-}
-
-minify::argsh() {
-  :args "Minify argsh libraries" "${@}"
-
-  local -r file="${PATH_BASE}/argsh.min.sh" #"$(mktemp)"
-  for f in "${PATH_BASE}"/libraries/*.sh; do
-    cat "${f}"
-    echo
-  done >"${file}.tmp"
-  obfus -i "${file}.tmp" -o "${file}" -A
-  rm "${file}.tmp"
-
-  local -r content="$(cat "${file}")"
-  {
-    echo '#!/usr/bin/env bash'
-    echo '# shellcheck disable=SC2178 disable=SC2120 disable=SC1090'
-    echo -n "${content}"
-    # shellcheck disable=SC2016
-    echo -n '; [[ "${BASH_SOURCE[0]}" != "${0}" ]] || argsh::shebang "${@}"'
-  } >"${file}"
-  chmod +x "${file}"
-
-  # Run tests against the minified file
-  test::argsh "$(basename "${file}")"
-}
-
-coverage::argsh() {
-  :args "Generate coverage report for argsh" "${@}"
-  binary::exists docker || exit 1
-  binary::jq
-  docker run --rm -it $(docker::user) kleisterio/coverage:latest bash -c "
-    kcov \
-      --clean \
-      --bash-dont-parse-binary-dir \
-      --include-pattern=.sh \
-      --exclude-pattern=tests \
-      --include-path=. ./coverage/ bats ./libraries/
-  " 1>/dev/null
-  local coverage json="${PATH_BASE}/coverage/argsh.json"
-  cp "${PATH_BASE}"/coverage/bats.*/coverage.json "${json}"
-  coverage="$(jq -r '.percent_covered | tonumber | floor' "${json}")"
-  echo "Coverage is ${coverage}% of required ${MIN_COVERAGE}%"
-  (( coverage > MIN_COVERAGE ))
-    exit 1
-}
-
-test::argsh() {
-  local bats_load="${1:-}"
-  binary::exists docker || exit 1
-  docker run --rm -it $(docker::user) \
-    -e BATS_LOAD="${bats_load}" \
-    -e ARGSH_SOURCE="argsh" \
-    bats/bats:latest /workspace/libraries/
-}
-
+###
+### docs
+###
 test::docs() {
-  binary::exists docker || exit 1
+  :args "Run tests for the documentation" "${@}"
   docker run --rm -it $(docker::user) node:21-alpine sh -c "
     cd /workspace/www
     [ -d node_modules ] || yarn --silent --frozen-lockfile
@@ -97,14 +24,8 @@ test::docs() {
   "
 }
 
-lint::argsh() {
-  binary::exists docker || exit 1
-  docker run --rm -it $(docker::user) \
-    koalaman/shellcheck:stable '/workspace/libraries/arg.sh'
-}
-
 lint::docs() {
-  binary::exists docker || exit 1
+  :args "Run linters for the documentation" "${@}"
   docker run --rm -it $(docker::user) node:21-alpine sh -c "
     cd /workspace/www
     [ -d node_modules ] || yarn --silent --frozen-lockfile
@@ -114,6 +35,7 @@ lint::docs() {
 }
 
 lint::vale() {
+  :args "Run vale for the documentation" "${@}"
   local alert_level="${vale?"need to specify alert level"}"
   binary::exists docker || exit 1
   docker run --rm -it $(docker::user) jdkato/vale:latest sh -c "
@@ -122,44 +44,87 @@ lint::vale() {
   "
 }
 
-lint::main() {
-  local -a usage
-  local docs argsh vale="suggestion"
-  args=(
-    'docs|d:+' "Only run linters for the documentation"
-    'argsh|a:+' "Only run linters for the arg.sh library"
-    'vale|v' "Only run vale for the documentation"
-  )
-  :args "Run linters for different parts of the project" "${@}"
-  set -x
-  args::run "${*}" \
-    "${argsh:-0}" lint::argsh \
-    "${docs:-0}" lint::docs \
-    "${vale:-0}" lint::vale
+###
+### argsh
+###
+generate::docs() {
+  :args "Generate library documentation for docs" "${@}"
+  argsh::main docs libraries www/apps/docs/content/libraries
 }
 
+minify::argsh() {
+  :args "Minify argsh libraries" "${@}"
+  argsh::main minify libraries -t argsh.min.tmpl
+}
 
-test::main() {
-  local -a usage
-  local docs argsh
-  args=(
-    'docs|:+' "Only run tests for the documentation"
-    'argsh|:+' "Only run tests for the arg.sh library"
+coverage::argsh() {
+  :args "Generate coverage report for argsh" "${@}"
+  argsh::main coverage libraries coverage --min "${MIN_COVERAGE}"
+}
+
+test::argsh() {
+  local test_minify
+  local -a args=(
+    'test-minify|m:+' "Run tests for argsh.min.sh"
   )
-  :args "Run tests for different parts of the project" "${@}"
-  args::run "${*}" \
-    "${argsh:-0}" test::argsh \
-    "${docs:-0}" test::docs
+  :args "Run tests for the arg.sh library" "${@}"
+  ! (( test_minify )) || {
+    BATS_LOAD="argsh.min.sh"
+    export BATS_LOAD
+  }
+  argsh::main test libraries
+}
+
+lint::argsh() {
+  local test_minify
+  local -a args=(
+    'test-minify|m:+' "Run tests for argsh.min.sh"
+  )
+  :args "Run linters for the arg.sh library" "${@}"
+  if (( test_minify )); then
+    argsh::main lint argsh.min.sh
+  else
+    argsh::main lint libraries
+  fi
+}
+
+argsh::docker() {
+  local tag="${1:-latest}"
+  local -a args=(
+    'tag|t' "Docker image tag"
+  )
+  :args "Build docker image for argsh" "${@}"
+  docker build -t "kleisterio/argsh:${tag}" -f "${PATH_BASE}/Dockerfile" "${PATH_BASE}"
+}
+
+###
+### main
+###
+argsh::main() {
+  # shellcheck disable=SC2046
+  docker run --rm -it $(docker::user) -e "BATS_LOAD" -e "ARGSH_SOURCE" kleisterio/argsh "${@}" 
 }
 
 main() {
+  binary::exists docker || {
+    echo "This script requires Docker to be installed"
+    return 1
+  } >&2
+
   local -a usage
   usage=(
-    'coverage:-coverage::argsh' "Generate coverage report for argsh"
-    'test:-test::main'          "Run tests"
-    'lint:-lint::main'          "Run linters"
-    'docs:-generate::docs'      "Generate documentation"
+    -                           "Commands argsh"
+    'coverage:-coverage::argsh' "Generate coverage"
+    'lint:-lint::argsh'         "Run linters"
+    'test:-test::argsh'         "Run tests"
     'minify:-minify::argsh'     "Minify argsh libraries"
+    -                           "Commands documentation"
+    'generate:-generate::docs'  "Generate argsh library documentation"
+    'docs-lint:-lint::docs'     "Run linters"
+    'docs-test:-test::docs'     "Run tests"
+    'vale:-lint::vale'          "Run vale tests"
+    -                           "Additional commands"
+    'docker:-argsh::docker'     "Build docker image"
   )
   :usage "Helper to manage this project" "${@}"
   "${usage[@]}"

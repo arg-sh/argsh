@@ -18,7 +18,9 @@ import docker
 # @exitcode 1 If the file is the same as the current file
 argsh::shebang() {
   local -r file="${1}"
-  [[ -e "${file}" && "${BASH_SOURCE[-1]}" != "${file}" ]] || {
+  : "${ARGSH_SOURCE="${file}"}"
+  export ARGSH_SOURCE
+  [[ "${BASH_SOURCE[-1]}" != "${file}" && -f "${file}" ]] || {
     # echo "This is intended to be used in a shebang"
     # echo "#!/usr/bin/env argsh"
     binary::exists docker || {
@@ -26,15 +28,13 @@ argsh::shebang() {
       return 1
     } >&2
     # shellcheck disable=SC2046
-    docker run --rm -it $(docker::user) kleisterio/argsh "${@}" 
+    docker run --rm -it $(docker::user) -e "BATS_LOAD" -e "ARGSH_SOURCE" kleisterio/argsh "${@}" 
     return 0
   } >&2
   bash::version 4 3 0 || {
     echo "This script requires bash 4.3.0 or later"
     return 1
   } >&2
-  ARGSH_SOURCE="${file}"
-  export ARGSH_SOURCE
 
   shift
   # shellcheck source=/dev/null

@@ -1,0 +1,47 @@
+name: Argsh tests
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+
+defaults:
+  run:
+    shell: bash -euo pipefail {0}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v4
+      - name: Direnv
+        uses: HatsuneMiku3939/direnv-action@v1
+      - name: Lint
+        run: |
+          argsh lint libraries
+      - name: Test
+        run: |
+          argsh test libraries
+
+  minify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v4
+      - name: Direnv
+        uses: HatsuneMiku3939/direnv-action@v1
+      - name: Build
+        run: |
+          argsh minify libraries -t argsh.min.tmpl
+      - name: Insync
+        run: |
+          git diff --exit-code
+      - name: Lint
+        run: |
+          argsh lint argsh.min.sh
+      - name: Test
+        run: |
+          argsh test libraries
+        env:
+          BATS_LOAD: argsh.min.sh

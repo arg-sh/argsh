@@ -164,7 +164,8 @@ import array
         :args::error_usage "too many arguments: ${cli[0]}"
       
       field="${args[i]}"
-      local -n ref="${field/:*}"
+      # shellcheck disable=SC2155
+      local -n ref="$(args::field_name "${field}")"
       ref="$(:args::field_value "${cli[0]}")" || exit "${?}"
       cli=("${cli[@]:1}")
       (( ++positional_index ))
@@ -178,8 +179,9 @@ import array
   
   if i="$(:args::field_positional "${positional_index}")"; then
     field="$(args::field_name "${args[i]}")"
-    is::uninitialized "${field}" || is::array "${field}" ||
+    if is::uninitialized "${field}" && ! is::array "${field}"; then
       :args::error_usage "missing required argument: ${field}"
+    fi
   fi
 
   :args::check_required_flags
@@ -284,7 +286,7 @@ import array
       params+=("...${ref}")
       continue
     fi
-    if is::uninitialized "${ref}"; then
+    if ! is::uninitialized "${ref}"; then
       params+=("[${ref}]")
       continue
     fi
@@ -307,13 +309,29 @@ import array
   :args::field_set_flag "${field}"
 }
 
+# @description
+#   Check for required flags
+#   Set boolean flags to false if not set
+# @set match array [get] The matched flags
+# @set args array [get] The arguments to parse
+# @internal
 :args::check_required_flags() {
   declare -p match args &>/dev/null || return 1
+  local field
+  local -a attrs
 
   for (( i=0; i < ${#args[@]}; i+=2 )); do
-    [[ ${args[i]: -1} == "!" ]] || continue
+    field="${args[i]}"
+    :args::field_attrs "${field}"
 
-    if [[ -z ${match[${args[i]}]:-} ]]; then
+    # set boolean to false if not set
+    if (( attrs[2] )) && ! (( attrs[4] )); then
+      local -n ref="${attrs[0]}"
+      ref=0
+    fi
+
+    # is it required? was it matched?
+    if (( attrs[6] )) && [[ -z ${match[${args[i]}]:-} ]]; then
       :args::error_usage "missing required flag: ${args[i]/|*}"
     fi
   done
@@ -450,8 +468,12 @@ import array
 # @internal
 args::field_name() {
   local field="${1}"
+  local asref="${2:-1}"
   field="${field/[|:]*}"
   field="${field#\#}"
+  if (( asref )); then
+    field="${field//-/_}"
+  fi
   echo "${field}"
 }
 
@@ -468,10 +490,11 @@ args::field_name() {
     ""  # 1 short
     0   # 2 boolean
     ""  # 3 type
-    0   # 4 has default
+    0   # 4 has value
     0   # 5 multiple
     0   # 6 required
     0   # 7 hidden
+    ""  # 8 display name
   )
 
   local seps="+~!"
@@ -479,6 +502,8 @@ args::field_name() {
   [ "${mods}" != "${field}" ] || mods=""
   # set name
   attrs[0]="$(args::field_name "${field}")"
+  # display name
+  attrs[8]="$(args::field_name "${field}" 0)"
   # hidden
   [[ ${attrs[0]:0:1} != "#" ]] || {
     attrs[7]=1
@@ -488,7 +513,6 @@ args::field_name() {
   local -a flags
   mapfile -t flags < <(echo "${field/[:]*}" | tr '|' '\n')
   [[ ${#flags[@]} -eq 1 ]] || {
-    attrs[0]="${flags[0]}"
     attrs[1]="${flags[1]}"
   }
   # multiple
@@ -500,7 +524,7 @@ args::field_name() {
     # default
     ! (( ${#ref[@]} )) || 
       attrs[4]=1
-  elif is::uninitialized "${attrs[0]}"; then
+  elif ! is::uninitialized "${attrs[0]}"; then
       attrs[4]=1
   fi
   
@@ -527,8 +551,6 @@ args::field_name() {
     fi
     # required
     if [[ ${mods:0:1} == "!" ]]; then
-      ! (( attrs[4] )) ||
-        :args::_error "cannot be required with default value"
       ! (( attrs[6] )) ||
         :args::_error "field already flagged as required"
 
@@ -558,7 +580,7 @@ args::field_name() {
   }
 
   [[ ${field} == *"|"* ]] || {
-    echo "${attrs[0]} ${attrs[3]}"
+    echo "${attrs[8]} ${attrs[3]}"
     return 0
   }
 
@@ -571,9 +593,9 @@ args::field_name() {
     format=" ! "
 
   if [[ -n ${attrs[1]} ]]; then
-    format+="-${attrs[1]}, --${attrs[0]}"
+    format+="-${attrs[1]}, --${attrs[8]}"
   else
-    format+="    --${attrs[0]}"
+    format+="    --${attrs[8]}"
   fi
   
   format+=" "
@@ -583,8 +605,9 @@ args::field_name() {
   # type
   format+="${attrs[3]}"
   # default value
-  ! (( attrs[4] )) ||
+  if (( attrs[4] )) && ! (( attrs[2] )); then
     format+=" (default: ${ref[*]})"
+  fi
   
   echo "${format}"
 }

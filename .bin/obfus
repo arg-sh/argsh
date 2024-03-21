@@ -272,6 +272,7 @@ sub obfuscate {
       s/\\n\\([.]\\|read\\|exec\\|return\\|echo\\|done\\|until\\|local\\|exit\\|if\\|fi\\|elif\\|else\\|[(!}[):]\\|mapfile\\|continue\\|declare\\|for\\|printf\\|[^);]+(;|\\n)\\)/;\\1/g
       s/\\([(]\\)\\n/\\1/g
       s/\\(continue\\|break\\|[")]\\|=1\\)\\n/\\1;/g
+			# /^[^(]+[)]/! { s/\\n/;/g }
 			b loop                                              	# repeat from loop label down
 		}
 EOS

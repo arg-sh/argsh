@@ -7,9 +7,11 @@ set -euo pipefail
 export ARGSH_SOURCE
 
 argsh::minify() {
+  local template
   # shellcheck disable=SC2034
   local -a files args=(
-    'files' "Files to minify, can be a glob pattern"
+    'files'            "Files to minify, can be a glob pattern"
+    'template|t:~file' "Path to a template file to use for the minified file"
   )
   :args "Minify Bash files" "${@}"
   ! is::uninitialized files || {
@@ -41,7 +43,15 @@ argsh::minify() {
   done
   
   obfus -i "${content}" -o "${out}" -A
-  cat "${out}"
+  local -r data="$(cat "${out}")"
+  if [[ -z "${template}" ]]; then
+    echo -n "${data}"
+    return 0
+  fi
+
+  export data
+    # shellcheck disable=SC2016 disable=SC2094
+  envsubst '$data' <"${template}" >"${template%.*}.sh"
 }
 
 argsh::lint() {
@@ -79,6 +89,9 @@ argsh::test() {
     'tests'    "Path to the bats test files"
   )
   :args "Run tests" "${@}"
+  [[ -z "${BATS_LOAD:-}" ]] || {
+    echo "Running tests for ${BATS_LOAD}" >&2
+  }
   bats "${tests}"
 }
 
@@ -86,9 +99,9 @@ argsh::coverage() {
   local out tests="." min=75
   # shellcheck disable=SC2034
   local -a args=(
-    'out'      "Path to the output directory"
-    'tests'    "Path to the bats test files"
-    'min:~int' "Minimum coverage required"
+    'out'       "Path to the output directory"
+    'tests'     "Path to the bats test files"
+    'min|:~int' "Minimum coverage required"
   )
   :args "Generate coverage report for your Bash scripts" "${@}"
 

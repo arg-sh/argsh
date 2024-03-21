@@ -41,7 +41,7 @@ is::uninitialized() {
   if is::array "${var}"; then
     [[ $(declare -p "${var}") == "declare -a ${var}" ]]
   else
-    [[ ${!var+x} ]]
+    [[ ! ${!var+x} ]]
   fi
 }
 

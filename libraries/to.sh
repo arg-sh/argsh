@@ -71,3 +71,16 @@ to::stdin() {
     value="$(cat)"
   echo "${value}"
 }
+
+# @description Check if a value is a file
+# @arg $1 any value
+# @exitcode 1 If the value is not a file
+# @example
+#   to::file "a" # error
+#   to::file "file.txt" # file.txt
+to::file() {
+  local value="${1}"
+  [[ -f "${value}" ]] || 
+    return 1
+  echo "${value}"
+}

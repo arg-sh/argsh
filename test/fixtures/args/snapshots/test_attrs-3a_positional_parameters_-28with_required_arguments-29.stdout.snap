@@ -1,7 +1,7 @@
 ■■ positional parameters
 pos1 pos2 3
 ■■ arguments
-def     string  string 1
+def    0 string  string 1
 
-
+0
 a b
