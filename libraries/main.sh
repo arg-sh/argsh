@@ -28,7 +28,7 @@ argsh::shebang() {
       return 1
     } >&2
     # shellcheck disable=SC2046
-    docker run --rm -it $(docker::user) -e "BATS_LOAD" -e "ARGSH_SOURCE" kleisterio/argsh "${@}" 
+    docker run --rm -it $(docker::user) -e "BATS_LOAD" -e "ARGSH_SOURCE" ghcr.io/arg-sh/argsh:latest "${@}" 
     return 0
   } >&2
   bash::version 4 3 0 || {

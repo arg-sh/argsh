@@ -94,7 +94,7 @@ argsh::docker() {
     'tag|t' "Docker image tag"
   )
   :args "Build docker image for argsh" "${@}"
-  docker build -t "kleisterio/argsh:${tag}" -f "${PATH_BASE}/Dockerfile" "${PATH_BASE}"
+  docker build -t "ghcr.io/arg-sh/argsh:${tag}" -f "${PATH_BASE}/Dockerfile" "${PATH_BASE}"
 }
 
 ###
@@ -102,7 +102,7 @@ argsh::docker() {
 ###
 argsh::main() {
   # shellcheck disable=SC2046
-  docker run --rm -it $(docker::user) -e "BATS_LOAD" -e "ARGSH_SOURCE" kleisterio/argsh "${@}" 
+  docker run --rm -it $(docker::user) -e "BATS_LOAD" -e "ARGSH_SOURCE" ghcr.io/arg-sh/argsh:latest "${@}" 
 }
 
 main() {
