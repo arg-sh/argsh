@@ -53,6 +53,7 @@ main() {
   prepare
   download
 
+  direnv allow .
   "${PATH_BASE}/scripts/main.sh" "${@}"
 }
 
