@@ -33,7 +33,7 @@ prerequisites() {
 prepare() {
   mkdir -p \
     "${PATH_BASE}/.github/workflows" \
-    "${PATH_BASE}.bin" \
+    "${PATH_BASE}/.bin" \
     "${PATH_BASE}/scripts" \
     "${PATH_BASE}/test/fixtures"
 }
