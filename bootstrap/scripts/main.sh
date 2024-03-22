@@ -159,4 +159,4 @@ main() {
 }
 
 # Only run the main function if this script is executed not sourced
-[[ "${BASH_SOURCE[0]}" != "${0}" ]] || main "${@}"
+[[ "${BASH_SOURCE[0]}" != "${0}" && -z "${ARGSH_SOURCE}" ]] || main "${@}"
