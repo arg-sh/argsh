@@ -1,0 +1,64 @@
+name: Argsh tests
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'scripts/**'
+      - 'test/**'
+  pull_request:
+
+defaults:
+  run:
+    shell: bash -euo pipefail {0}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v4
+      - name: Direnv
+        uses: HatsuneMiku3939/direnv-action@v1
+      - name: Lint
+        run: |
+          argsh lint scripts
+      - name: Test
+        run: |
+          argsh test scripts
+  
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v4
+      - name: Direnv
+        uses: HatsuneMiku3939/direnv-action@v1
+      - name: Coverage
+        run: |
+          argsh coverage scripts coverage
+      - name: Is insync
+        run: |
+          git diff --exit-code
+
+  # minify:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Clone repository
+  #       uses: actions/checkout@v4
+  #     - name: Direnv
+  #       uses: HatsuneMiku3939/direnv-action@v1
+  #     - name: Build
+  #       run: |
+  #         argsh minify scripts > min.sh
+  #     - name: Insync
+  #       run: |
+  #         git diff --exit-code
+  #     - name: Lint
+  #       run: |
+  #         argsh lint min.sh
+  #     - name: Test
+  #       run: |
+  #         argsh test scripts
+  #       env:
+  #         BATS_LOAD: min.sh

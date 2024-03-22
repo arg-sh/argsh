@@ -1,11 +1,11 @@
-name: Argsh tests
+name: argsh tests
 on:
   push:
     branches:
       - master
     paths:
       - 'libraries/**'
-      - 'bin/**'
+      - '.bin/**'
       - 'test/**'
   pull_request:
 

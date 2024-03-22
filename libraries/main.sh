@@ -28,7 +28,12 @@ argsh::shebang() {
       return 1
     } >&2
     # shellcheck disable=SC2046
-    docker run --rm -it $(docker::user) -e "BATS_LOAD" -e "ARGSH_SOURCE" ghcr.io/arg-sh/argsh:latest "${@}" 
+    docker run --rm -it $(docker::user) \
+      -e "BATS_LOAD" \
+      -e "ARGSH_SOURCE" \
+      -e "GIT_COMMIT_SHA=$(git rev-parse HEAD || :)" \
+      -e "GIT_VERSION=$(git describe --tags --dirty || :)" \
+      ghcr.io/arg-sh/argsh:latest "${@}" 
     return 0
   } >&2
   bash::version 4 3 0 || {

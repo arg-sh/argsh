@@ -11,36 +11,57 @@ There are three ways to setup argsh:
 
 ## Install argsh (globally)
 
+This method allows you to load argsh easaly via a shebang in your script.
+
+```bash
+#!/usr/bin/env argsh
+# shellcheck shell=bash
+# vim: filetype=bash
+```
+
+Also the `argsh` script is a wrapper around the `argsh` docker image. 
+This gives you the ability to use the following options to help you to write nice scripts:
+
+- [test](./development/fundamentals/test) - Run the tests for your script
+- [lint](./development/fundamentals/lint) - Lint your script
+- [docs](./development/fundamentals/docs) - Generate documentation for your script
+- [coverage](./development/fundamentals/coverage) - Generate a coverage report
+- [minify](./development/fundamentals/minify) - Minify your script (experimental)
+
+### Globally
+
 You can install argsh globally by running the following command:
 
 ```bash
-curl -sL https://get.arg.sh | sudo tee /usr/local/bin/argsh > /dev/null
+curl -sL https://min.arg.sh | sudo tee /usr/local/bin/argsh > /dev/null
 sudo chmod +x /usr/local/bin/argsh
 ```
+
+### Project based
+
 You can also install argsh project based using [direnv](https://direnv.net/).
 The recommended pattern is to have a directory `.bin` in your project root and add it to your `PATH` using direnv.
 
 ```bash
-curl -sL https://get.arg.sh > .bin/argsh
+curl -sL https://min.arg.sh > .bin/argsh
 chmod +x .bin/argsh
 ```
 
-Check out [this .envrc file](https://github.com/arg-sh/argsh/blob/main/.envrc) for an example/template.
+### Bootstrap a new project
 
-::: tip
-If you want to quickly bootstrap a new project with argsh
-
-```bash
-bash -c "$(curl -sL https://all.arg.sh)"
-```
-:::
-
-Within your Bash script, you can use argsh then like this:
+If you want to quickly bootstrap a new project with argsh just do this
 
 ```bash
-#!/usr/bin/env argsh
-# vim: filetype=bash
+bash -c "$(curl -sL https://get.arg.sh)"
 ```
+
+This will setup
+
+- a `.bin` directory in your project root with argsh
+- a `test` to help you get started with testing
+- a `scripts` directory with an example script and test
+- a `.github/workflows` directory with a GitHub Actions workflow
+- a `.envrc` to initialize your environment
 
 ## Source argsh in your shell
 

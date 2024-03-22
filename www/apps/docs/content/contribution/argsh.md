@@ -45,6 +45,8 @@ If you make changes to the libraries, you need to generate a minified version of
 
 ```bash
 argsh minify
+argsh lint -m
+argsh test -m
 ```
 
 ## Testing
@@ -54,7 +56,7 @@ All libraries should have tests. Create a new test file (`*.bats`) alongside the
 You can run the tests by running the following command:
 
 ```bash
-argsh test --argsh
+argsh test
 ```
 
 ### Coverage
@@ -86,5 +88,16 @@ Use our [style guide](https://arg.sh/styleguide) to make sure your code is consi
 To lint the code, run the following command:
 
 ```bash
-argsh lint --argsh
+argsh lint
+```
+
+## Docker Image
+
+The argsh docker image itself is called from `scripts/main.sh`. If you make changes to the libraries, you need to minify the libraries and update the docker image.
+This is also true if you modified the entrypoint `.docker/docker-entrypoint.sh` or the Dockerfile.
+
+You can build the docker image by running the following command:
+
+```bash
+argsh docker
 ```

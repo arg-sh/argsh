@@ -49,9 +49,12 @@ argsh::minify() {
     return 0
   fi
 
-  export data
+  local commit_sha="${GIT_COMMIT_SHA:-}"
+  local version="${GIT_VERSION:-}"
+  export data commit_sha version
     # shellcheck disable=SC2016 disable=SC2094
-  envsubst '$data' <"${template}" >"${template%.*}.sh"
+  envsubst '$data,$commit_sha,$version' \
+    <"${template}" >"${template%.*}.sh"
 }
 
 argsh::lint() {
@@ -72,7 +75,7 @@ argsh::lint() {
       glob=("${f}"/*.{sh,bash,bats})
     else
       # shellcheck disable=SC2206 disable=SC2128
-      glob=(${glob})
+      glob=(${f})
     fi
     for file in "${glob[@]}"; do
       [[ -e "${file}" ]] || continue
@@ -99,8 +102,8 @@ argsh::coverage() {
   local out tests="." min=75
   # shellcheck disable=SC2034
   local -a args=(
-    'out'       "Path to the output directory"
     'tests'     "Path to the bats test files"
+    'out'       "Path to the output directory"
     'min|:~int' "Minimum coverage required"
   )
   :args "Generate coverage report for your Bash scripts" "${@}"

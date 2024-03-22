@@ -160,19 +160,46 @@ module.exports = {
     },
     {
       type: "doc",
-      id: "development/fundamentals/testing",
-      label: "Testing",
+      id: "development/fundamentals/lint",
+      label: "Lint",
       customProps: {
-        sidebar_icon: "check-circle-solid",
+        sidebar_icon: "magnifying-glass",
       },
       className: "homepage-sidebar-item",
     },
     {
       type: "doc",
-      id: "development/fundamentals/documentation",
-      label: "Documentation",
+      id: "development/fundamentals/test",
+      label: "Test",
+      customProps: {
+        sidebar_icon: "beaker",
+      },
+      className: "homepage-sidebar-item",
+    },
+    {
+      type: "doc",
+      id: "development/fundamentals/coverage",
+      label: "Coverage",
+      customProps: {
+        sidebar_icon: "receipt-percent",
+      },
+      className: "homepage-sidebar-item",
+    },
+    {
+      type: "doc",
+      id: "development/fundamentals/docs",
+      label: "Docs generation",
       customProps: {
         sidebar_icon: "academic-cap-solid",
+      },
+      className: "homepage-sidebar-item",
+    },
+    {
+      type: "doc",
+      id: "development/fundamentals/minify",
+      label: "Minify",
+      customProps: {
+        sidebar_icon: "circle-dotted-line",
       },
       className: "homepage-sidebar-item",
     },
@@ -361,15 +388,6 @@ module.exports = {
       items: [
         {
           type: "doc",
-          id: "libraries/log",
-          label: "log",
-          customProps: {
-            sidebar_icon: "chat-bubble-left-right-solid",
-          },
-          className: "homepage-sidebar-item",
-        },
-        {
-          type: "doc",
           id: "libraries/error",
           label: "error",
           customProps: {
@@ -420,7 +438,7 @@ module.exports = {
     },
     {
       type: "category",
-      label: "Architectural Concepts",
+      label: "Core Concepts",
       collapsible: false,
       customProps: {
         sidebar_is_group_headline: true,
@@ -433,13 +451,28 @@ module.exports = {
         },
         {
           type: "doc",
-          id: "development/fundamentals/testing",
-          label: "Testing",
+          id: "development/fundamentals/lint",
+          label: "Lint",
         },
         {
           type: "doc",
-          id: "development/fundamentals/documentation",
-          label: "Documentation",
+          id: "development/fundamentals/test",
+          label: "Test",
+        },
+        {
+          type: "doc",
+          id: "development/fundamentals/coverage",
+          label: "Coverage",
+        },
+        {
+          type: "doc",
+          id: "development/fundamentals/docs",
+          label: "Docs generation",
+        },
+        {
+          type: "doc",
+          id: "development/fundamentals/minify",
+          label: "Minify",
         },
       ],
     },

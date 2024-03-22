@@ -10,7 +10,7 @@ This file contains functions for manipulating strings
 
 * [string::drop-index](#stringdrop-index)
 * [string::random](#stringrandom)
-* [string::trim-left-lines](#stringtrim-left-lines)
+* [string::indent](#stringindent)
 * [string::trim-left](#stringtrim-left)
 * [string::trim-right](#stringtrim-right)
 * [string::trim](#stringtrim)
@@ -55,20 +55,21 @@ string::random    # t4UsOP3z5Rd8sW6nX2t1C7z9L0s3R4d8cAH32ns2Ds
 
 * The random string
 
-### string::trim-left-lines
+### string::indent
 
 Left trim all lines in a string
 
 #### Example
 
 ```bash
-string::trim-left-lines "  hello\n  world" # "hello\nworld"
+string::indent "  hello\n  world" # "hello\nworld"
 ```
 
 #### Arguments
 
 * **$1** (string): The string to trim
-* **$2** (string): [ \n\t] The characters to trim
+* **$2** (int): [0] Indent the string by this amount:w
+* **$3** (string): [ \n\t] The characters to trim
 
 #### Output on stdout
 

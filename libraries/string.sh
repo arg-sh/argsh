@@ -39,17 +39,20 @@ string::random() {
 
 # @description Left trim all lines in a string
 # @arg $1 string The string to trim
-# @arg $2 string [ \n\t] The characters to trim
+# @arg $2 int [0] Indent the string by this amount:w
+# @arg $3 string [ \n\t] The characters to trim
 # @stdout The trimmed string
 # @example
-#   string::trim-left-lines "  hello\n  world" # "hello\nworld"
-string::trim-left-lines() {
+#   string::indent "  hello\n  world" # "hello\nworld"
+string::indent() {
   local string="${1:-'-'}"
+  local indent="${2:-0}"
   local chars="${2:-" "$'\n'$'\t'}"
   local line lines
   [[ ${string} != '-' ]] || string="$(cat)"
   mapfile -t lines < <(echo "${string}")
   for line in "${lines[@]}"; do
+    printf "%${indent}s"
     string::trim-left "${line}" "${chars}"
   done
 }

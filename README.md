@@ -19,7 +19,7 @@
 	<a href="https://github.com/arg-sh/argsh/releases/latest">
 		<img alt="Releases" src="https://img.shields.io/github/release/arg-sh/argsh.svg?style=for-the-badge&logo=github&color=F2CDCD&logoColor=D9E0EE&labelColor=302D41"/></a>
 	<a href="https://github.com/arg-sh/argsh/blob/main/CONTRIBUTING.md">
-		<img alt="Releases" src="https://img.shields.io/badge/dynamic/json?style=for-the-badge&logo=gnubash&color=F2CDCD&logoColor=D9E0EE&labelColor=302D41&url=https%3A%2F%2Fraw.githubusercontent.com%2Farg-sh%2Fargsh%2Fmain%2Fcoverage%2Fcoverage.json&query=%24.percent_covered&label=Coverage&suffix=%25"/></a>
+		<img alt="Coverage" src="https://img.shields.io/badge/dynamic/json?style=for-the-badge&logo=gnubash&color=F2CDCD&logoColor=D9E0EE&labelColor=302D41&url=https%3A%2F%2Fraw.githubusercontent.com%2Farg-sh%2Fargsh%2Fmain%2Fcoverage%2Fcoverage.json&query=%24.percent_covered&label=Coverage&suffix=%25"/></a>
 	<a href="https://github.com/arg-sh/argsh/issues">
 		<img alt="Issues" src="https://img.shields.io/github/issues/arg-sh/argsh?style=for-the-badge&logo=gitbook&color=B5E8E0&logoColor=D9E0EE&labelColor=302D41"></a>
 	<a href="https://discord.gg/VsQpUQX3Zr">

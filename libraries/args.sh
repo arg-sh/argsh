@@ -5,9 +5,11 @@
 #   This file contains functions for working with arguments
 set -euo pipefail
 
+: "${ARGSH_VERSION:=unknown}"
+: "${ARGSH_COMMIT_SHA:=unknown}"
 : "${ARGSH_FIELD_WIDTH:=24}"
 # obfus ignore variable
-COMMANDNAMES=("$(s="${ARGSH_SOURCE:-"${0}"}"; echo "${s##*/}")")
+COMMANDNAME=("$(s="${ARGSH_SOURCE:-"${0}"}"; echo "${s##*/}")")
 
 # @internal
 # shellcheck disable=SC1090
@@ -43,6 +45,10 @@ import array
 
   if [[ -z ${1:-} || ${1} == "-h" || ${1} == "--help" ]]; then
     :usage::text "${title}"
+    exit 0
+  fi
+  if ! (( ${#COMMANDNAME[@]} )) && [[ ${1:-} == "--argsh" ]]; then
+    echo "https://arg.sh ${ARGSH_COMMIT_SHA:-} ${ARGSH_VERSION:-}"
     exit 0
   fi
 
@@ -84,7 +90,7 @@ import array
     :args::error_usage "Invalid command: ${cmd}"
 
   # obfus ignore variable
-  COMMANDNAMES+=("${field/[|:]*}")
+  COMMANDNAME+=("${field/[|:]*}")
   # obfus ignore variable
   usage=("${func}" "${cli[@]}")
 }
@@ -95,9 +101,9 @@ import array
 # @internal
 :usage::text() {
   local title="${1:-}"
-  string::trim-left-lines "${title}"
+  string::indent "${title}"
   echo
-  echo "Usage: ${COMMANDNAMES[*]} <command> [args]"
+  echo "Usage: ${COMMANDNAME[*]} <command> [args]"
   [[ ${usage[0]:-} == '-' ]] ||
     echo -e "\nAvailable Commands:"
   for (( i=0; i < ${#usage[@]}; i+=2 )); do
@@ -111,7 +117,7 @@ import array
   done
   :args::text_flags
   echo
-  echo "Use \"${COMMANDNAMES[*]} <command> --help\" for more information about a command."
+  echo "Use \"${COMMANDNAME[*]} <command> --help\" for more information about a command."
 }
 
 # @brief
@@ -200,10 +206,10 @@ import array
   local -a positional=() params=()
   :args::positional
 
-  string::trim-left-lines "${title}"
+  string::indent "${title}"
   echo
   echo "Usage:"
-  echo "  ${COMMANDNAMES[*]} ${params[*]}"
+  echo "  ${COMMANDNAME[*]} ${params[*]}"
 
   (( ${#positional[@]} == 0 )) || {
     echo

@@ -13,6 +13,7 @@ This file contains functions for converting a value to a specific type
 * [to::int](#toint)
 * [to::float](#tofloat)
 * [to::stdin](#tostdin)
+* [to::file](#tofile)
 
 ### to::string
 
@@ -116,4 +117,23 @@ to::stdin "-" # (stdin)
 #### Output on stdout
 
 * The value or stdin
+
+### to::file
+
+Check if a value is a file
+
+#### Example
+
+```bash
+to::file "a" # error
+to::file "file.txt" # file.txt
+```
+
+#### Arguments
+
+* **$1** (any): value
+
+#### Exit codes
+
+* **1**: If the value is not a file
 
