@@ -54,6 +54,7 @@ main() {
   download
 
   direnv allow .
+  export PATH="${PATH_BASE}/.bin:${PATH}"
   "${PATH_BASE}/scripts/main.sh" "${@}"
 }
 
