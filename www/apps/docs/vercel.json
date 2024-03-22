@@ -8,6 +8,11 @@
     },
     {
       "source": "/",
+      "has": [ { "type": "host", "value": "test.arg.sh" } ],
+      "destination": "https://raw.githubusercontent.com/arg-sh/argsh/main/test/helper.bash"
+    },
+    {
+      "source": "/",
       "has": [ { "type": "host", "value": "get.arg.sh" } ],
       "destination": "https://raw.githubusercontent.com/arg-sh/argsh/main/bootstrap/install.sh"
     },
@@ -20,11 +25,6 @@
       "source": "/",
       "has": [ { "type": "host", "value": "github.arg.sh" } ],
       "destination": "https://raw.githubusercontent.com/arg-sh/argsh/main/bootstrap/.github/workflows/argsh.yaml"
-    },
-    {
-      "source": "/",
-      "has": [ { "type": "host", "value": "test.arg.sh" } ],
-      "destination": "https://raw.githubusercontent.com/arg-sh/argsh/main/bootstrap/test/helpers.bash"
     },
     {
       "source": "/",
