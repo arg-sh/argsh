@@ -3,6 +3,10 @@ on:
   push:
     branches:
       - master
+    paths:
+      - 'libraries/**'
+      - 'bin/**'
+      - 'test/**'
   pull_request:
 
 defaults:
@@ -19,10 +23,10 @@ jobs:
         uses: HatsuneMiku3939/direnv-action@v1
       - name: Lint
         run: |
-          argsh lint libraries
+          argsh lint
       - name: Test
         run: |
-          argsh test libraries
+          argsh test
 
   minify:
     runs-on: ubuntu-latest
@@ -33,15 +37,24 @@ jobs:
         uses: HatsuneMiku3939/direnv-action@v1
       - name: Build
         run: |
-          argsh minify libraries -t argsh.min.tmpl
+          argsh minify
       - name: Insync
         run: |
           git diff --exit-code
       - name: Lint
         run: |
-          argsh lint argsh.min.sh
+          argsh lint -m
       - name: Test
         run: |
-          argsh test libraries
-        env:
-          BATS_LOAD: argsh.min.sh
+          argsh test -m
+  
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v4
+      - name: Direnv
+        uses: HatsuneMiku3939/direnv-action@v1
+      - name: Coverage
+        run: |
+          argsh coverage
