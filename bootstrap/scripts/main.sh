@@ -10,18 +10,18 @@ set -euo pipefail
 hello::github() {
   :args "Get started with argsh on GitHub" "${@}"
 
-  echo "
+  string::indent "
     If you explore your .github/workflows directory, you will find a argsh.yaml file.
     This file contains a GitHub Actions workflow that runs argsh on your project.
 
     You can customize this file to fit your needs.
-  " | string::indent - | fmt::tty
+  " 2
 }
 
 hello::lint() {
   :args "Lint your Bash scripts" "${@}"
 
-  echo "
+  string::indent "
     To lint your Bash scripts, you can use ShellCheck.
     ShellCheck is a static analysis tool that gives you warnings and suggestions for bash/sh shell scripts.
     Learn more at https://www.shellcheck.net/
@@ -29,13 +29,13 @@ hello::lint() {
     Check if we have any issues in the main script:
 
     argsh lint scripts
-  " | string::indent - | fmt::tty
+  " 2
 }
 
 hello::test() {
   :args "How to get started with testing" "${@}"
 
-  echo "
+  string::indent "
     To get started with testing, you can use Bats.
     Bats is a TAP-compliant testing framework for Bash.
     Learn more at https://bats-core.readthedocs.io/en/stable/
@@ -46,13 +46,13 @@ hello::test() {
     To run the tests, execute the following command:
 
     argsh test scripts
-  " | string::indent - | fmt::tty
+  " 2
 }
 
 hello::coverage() {
   :args "Generate a coverage report" "${@}"
 
-  echo "
+  string::indent "
     To generate a coverage report, we use a combination of kcov and Bats.
     kcov is a code coverage tool for compiled programs, Python, and Bash.
     Learn more at https://simonkagstrom.github.io/kcov/
@@ -62,13 +62,13 @@ hello::coverage() {
     argsh coverage scripts coverage --min 100
 
     Tip: Show your coverage in the README.md file. It's free.
-  " | string::indent - | fmt::tty
+  " 2
 }
 
 hello::docs() {
   :args "Want to document your Bash scripts?" "${@}"
 
-  echo "
+  string::indent "
     To generate markdown documentation for your Bash scripts, you can use shdoc.
     Learn more at https://github.com/reconquest/shdoc
 
@@ -76,24 +76,24 @@ hello::docs() {
 
     mkdir -p docs/scripts
     argsh docs scripts docs/scripts
-  " | string::indent - | fmt::tty
+  " 2
 }
 
 hello::styleguide() {
   :args "Need a style guide for your Bash scripts?" "${@}"
 
-  echo "
+  string::indent "
     To maintain a consistent style in your Bash scripts, use our style guide.
     Learn more at https://arg.sh/styleguide
 
     This style guide is based on Google's Shell Style Guide but it is hardned.
-  " | string::indent - | fmt::tty
+  " 2
 }
 
 hello::minify() {
   :args "Feeling experimental? Try minifying your Bash scripts" "${@}"
 
-  echo "
+  string::indent "
     This is quite experimental.
     But we use it for our own scripts.
     We encourage you to to have a good test coverage before you minify your scripts.
@@ -107,15 +107,17 @@ hello::minify() {
 
     Note: BATS_LOAD is an environment variable that tells Bats to load a specific file
     instead of the default test file.
-  " | string::indent - | fmt::tty
+  " 2
 }
 
 version() {
   local short
   # shellcheck disable=SC2034
   local -a args=(
-    'short|s' "Print the short version"
+    'short|s:+' "Print the short version"
   )
+  :args "Print the version of argsh" "${@}"
+
   if (( short )); then
     echo "${ARGSH_VERSION:-unknown}"
   else

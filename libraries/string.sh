@@ -40,20 +40,20 @@ string::random() {
 # @description Left trim all lines in a string
 # @arg $1 string The string to trim
 # @arg $2 int [0] Indent the string by this amount:w
-# @arg $3 string [ \n\t] The characters to trim
 # @stdout The trimmed string
 # @example
 #   string::indent "  hello\n  world" # "hello\nworld"
 string::indent() {
   local string="${1:-'-'}"
   local indent="${2:-0}"
-  local chars="${2:-" "$'\n'$'\t'}"
   local line lines
   [[ ${string} != '-' ]] || string="$(cat)"
+
   mapfile -t lines < <(echo "${string}")
   for line in "${lines[@]}"; do
-    printf "%${indent}s"
-    string::trim-left "${line}" "${chars}"
+    line="$(string::trim-left "${line}")"
+    (( indent == 0 )) || printf "%${indent}s" " " 
+    echo "${line}"
   done
 }
 
@@ -64,8 +64,9 @@ string::indent() {
 # @example
 #   string::trim-left "  hello  " # "hello  "
 string::trim-left() {
-  local string="${1:-'-'}"
+  local string="${1}"
   local chars="${2:-" "$'\n'$'\t'}"
+  [[ -n ${string:-} ]] || return 0
   [[ ${string} != '-' ]] || string="$(cat)" 
 
   while [[ -n "${string}" ]]; do
@@ -101,7 +102,7 @@ string::trim-right() {
 #   string::trim "  hello  " # "hello"
 string::trim() {
   local string="${1:-'-'}"
-  local chars="${2:-" \n\t"}"
+  local chars="${2:-" "$'\n'$'\t'}"
   [[ ${string} != '-' ]] || string="$(cat)" 
 
   echo "${string}" |

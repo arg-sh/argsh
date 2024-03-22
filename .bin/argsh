@@ -102,10 +102,22 @@ argsh::docker() {
 ###
 argsh::main() {
   # shellcheck disable=SC2046
-  docker run --rm -it $(docker::user) -e "BATS_LOAD" -e "ARGSH_SOURCE" ghcr.io/arg-sh/argsh:latest "${@}" 
+  docker run --rm -it $(docker::user) \
+    -e "BATS_LOAD" \
+    -e "ARGSH_SOURCE" \
+    -e "GIT_COMMIT_SHA=$(git rev-parse HEAD || :)" \
+    -e "GIT_VERSION=$(git describe --tags --dirty || :)" \
+    ghcr.io/arg-sh/argsh:latest "${@}" 
 }
 
-main() {
+_main() {
+  if [[ "${BASH_SOURCE[-1]}" != "${1:-}" && -f "${1:-}" ]]; then
+    ARGSH_SOURCE="${1}"; shift
+    # shellcheck source=/dev/null
+    . "${ARGSH_SOURCE}"
+    exit 0
+  fi
+
   binary::exists docker || {
     echo "This script requires Docker to be installed"
     return 1
@@ -130,4 +142,4 @@ main() {
   "${usage[@]}"
 }
 
-[[ "${BASH_SOURCE[0]}" != "${0}" ]] || main "${@}"
+[[ "${BASH_SOURCE[0]}" != "${0}" ]] || _main "${@}"
