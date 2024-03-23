@@ -28,9 +28,9 @@ docker::user() {
 
   echo "${user}:x:${uid}:${gid}::${home}:${shell}" > /tmp/docker_passwd
   echo "${user}:x:${gid}:" > /tmp/docker_group
-  
-  echo -v "${PATH_BASE:-.}:${home}"
-  echo -v /tmp/docker_passwd:/etc/passwd -v /tmp/docker_group:/etc/group
-  echo -u "${uid}:${gid}"
-  echo -w "${home}"
+  echo "-v /tmp/docker_passwd:/etc/passwd -v /tmp/docker_group:/etc/group"
+  echo "-u ${uid}:${gid}"
+
+  echo "-v ${PATH_BASE:-.}:${home}"
+  echo "-w ${home}"
 }

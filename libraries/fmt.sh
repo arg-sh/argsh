@@ -14,10 +14,10 @@ set -euo pipefail
 #   cat file.txt | fmt::tty
 fmt::tty() {
   local str="${1:-"$(cat)"}"
-  command -v fmt &>/dev/null || {
+  if ! command -v fmt &>/dev/null || [[ ! -t 1 ]]; then
     echo "${str}"
     return 0
-  }
+  fi
 
   local cols
   cols="$(tput cols)"

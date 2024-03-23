@@ -17,7 +17,7 @@ source "${PATH_BASE}/libraries/docker.sh"
 ###
 test::docs() {
   :args "Run tests for the documentation" "${@}"
-  docker run --rm -it $(docker::user) node:21-alpine sh -c "
+  docker run --rm $(docker::user) node:21-alpine sh -c "
     cd /workspace/www
     [ -d node_modules ] || yarn --silent --frozen-lockfile
     yarn build
@@ -26,7 +26,7 @@ test::docs() {
 
 lint::docs() {
   :args "Run linters for the documentation" "${@}"
-  docker run --rm -it $(docker::user) node:21-alpine sh -c "
+  docker run --rm $(docker::user) node:21-alpine sh -c "
     cd /workspace/www
     [ -d node_modules ] || yarn --silent --frozen-lockfile
     yarn lint:content
@@ -38,7 +38,7 @@ lint::vale() {
   :args "Run vale for the documentation" "${@}"
   local alert_level="${vale?"need to specify alert level"}"
   binary::exists docker || exit 1
-  docker run --rm -it $(docker::user) jdkato/vale:latest sh -c "
+  docker run --rm $(docker::user) jdkato/vale:latest sh -c "
     cd /workspace/www/vale
     ./run-vale.sh docs content \"${alert_level}\"
   "
@@ -101,8 +101,10 @@ argsh::docker() {
 ### main
 ###
 argsh::main() {
+  local tty=""
+  [[ -t 1 ]] && tty="-it"
   # shellcheck disable=SC2046
-  docker run --rm -it $(docker::user) \
+  docker run --rm ${tty} $(docker::user) \
     -e "BATS_LOAD" \
     -e "ARGSH_SOURCE" \
     -e "GIT_COMMIT_SHA=$(git rev-parse HEAD || :)" \

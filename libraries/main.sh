@@ -27,8 +27,10 @@ argsh::shebang() {
       echo "This script requires Docker to be installed"
       return 1
     } >&2
+    local tty=""
+    [[ -t 1 ]] && tty="-it"
     # shellcheck disable=SC2046
-    docker run --rm -it $(docker::user) \
+    docker run --rm ${tty} $(docker::user) \
       -e "BATS_LOAD" \
       -e "ARGSH_SOURCE" \
       -e "GIT_COMMIT_SHA=$(git rev-parse HEAD || :)" \
