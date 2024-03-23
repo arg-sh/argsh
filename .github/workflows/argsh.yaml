@@ -1,0 +1,153 @@
+name: Release
+on:
+  push:
+    branches:
+      - master
+    tags:
+      - "v*"
+  pull_request:
+    paths:
+      - '.bin/**'
+      - '.docker/**'
+      - 'libraries/**'
+      - 'test/**'
+      - '.envrc'
+
+defaults:
+  run:
+    shell: bash -euo pipefail {0}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v4
+      - name: Direnv
+        uses: HatsuneMiku3939/direnv-action@v1
+      - name: Lint
+        run: |
+          argsh lint
+      - name: Test
+        run: |
+          argsh test
+
+  coverage:
+    runs-on: ubuntu-latest
+    needs: [test]
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v4
+      - name: Direnv
+        uses: HatsuneMiku3939/direnv-action@v1
+      - name: Coverage
+        run: |
+          argsh coverage
+
+  minify:
+    runs-on: ubuntu-latest
+    needs: [coverage]
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v4
+      - name: Direnv
+        uses: HatsuneMiku3939/direnv-action@v1
+      - name: Build
+        run: |
+          argsh minify
+      - name: Lint
+        run: |
+          argsh lint -m
+      - name: Test
+        run: |
+          argsh test -m
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: argsh
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            argsh.min.sh
+
+  docker:
+    runs-on: ubuntu-latest
+    needs: [minify]
+    permissions:
+      packages: write
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v4
+      - name: Download executables
+        uses: actions/download-artifact@v4
+        with:
+          pattern: argsh
+          merge-multiple: true
+          path: artifacts
+      - name: Move executables
+        run: |
+          mv -f artifacts/argsh argsh.min.sh
+          chmod +x argsh.min.sh
+      - name: Docker metadata
+        uses: docker/metadata-action@v5
+        id: metadata
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: ${{ startsWith(github.ref, 'refs/tags/v')
+            && format('type=match,pattern=v(.*),group=1,value={0}', github.ref_name)
+            || 'type=sha,format=long' }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and release Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: ${{ startsWith(github.ref, 'refs/tags/v') }}
+          provenance: false
+          platforms: linux/amd64
+          tags: ${{ steps.metadata.outputs.tags }}
+          labels: ${{ steps.metadata.outputs.labels }}
+
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    environment: release
+    needs: [minify, docker]
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v4
+      - name: Download executables
+        uses: actions/download-artifact@v4
+        with:
+          pattern: argsh
+          merge-multiple: true
+          path: .
+      - name: Move executables
+        run: |
+          mv -f artifacts/argsh argsh.min.sh
+          chmod +x argsh.min.sh
+      - name: Upload release
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git add argsh.min.sh
+          cp argsh.min.sh argsh
+          sha256sum argsh > sha256sum.txt
+          gh release create "${TAG_NAME}" --draft --title "argsh ${TAG_NAME}" --generate-notes
+          gh release upload "${TAG_NAME}" --clobber argsh sha256sum.txt
+
+          title="Release ${TAG_NAME}"
+          git commit -m "${title}"
+          branch="release-${TAG_NAME}"
+          git push origin "HEAD:refs/heads/${branch}"
+          gh pr create --title "${title}" --body "" --head "${branch}"
