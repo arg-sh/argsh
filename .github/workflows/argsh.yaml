@@ -144,6 +144,8 @@ jobs:
           gh release create "${TAG_NAME}" --draft --title "argsh ${TAG_NAME}" --generate-notes
           gh release upload "${TAG_NAME}" --clobber argsh sha256sum.txt
 
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
           title="Release ${TAG_NAME}"
           git commit -m "${title}"
           branch="release-${TAG_NAME}"
