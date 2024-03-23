@@ -28,7 +28,7 @@ argsh::shebang() {
       return 1
     } >&2
     local tty=""
-    [[ -t 1 ]] && tty="-it"
+    [[ ! -t 1 ]] || tty="-it"
     # shellcheck disable=SC2046
     docker run --rm ${tty} $(docker::user) \
       -e "BATS_LOAD" \

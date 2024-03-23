@@ -6,16 +6,16 @@
     {"file": "/workspace/test/fixtures/args/fmt.sh", "percent_covered": "33.33", "covered_lines": "13", "total_lines": "39"},
     {"file": "/workspace/libraries/to.sh", "percent_covered": "41.67", "covered_lines": "10", "total_lines": "24"},
     {"file": "/workspace/libraries/is.sh", "percent_covered": "75.00", "covered_lines": "6", "total_lines": "8"},
-    {"file": "/workspace/libraries/fmt.sh", "percent_covered": "75.00", "covered_lines": "6", "total_lines": "8"},
-    {"file": "/workspace/libraries/string.sh", "percent_covered": "42.50", "covered_lines": "17", "total_lines": "40"},
+    {"file": "/workspace/libraries/fmt.sh", "percent_covered": "62.50", "covered_lines": "5", "total_lines": "8"},
+    {"file": "/workspace/libraries/string.sh", "percent_covered": "43.90", "covered_lines": "18", "total_lines": "41"},
     {"file": "/workspace/test/fixtures/args/usage.sh", "percent_covered": "67.57", "covered_lines": "25", "total_lines": "37"},
     {"file": "/workspace/libraries/args.sh", "percent_covered": "89.80", "covered_lines": "273", "total_lines": "304"}
   ],
-  "percent_covered": "71.62",
+  "percent_covered": "71.48",
   "covered_lines": 381,
-  "total_lines": 532,
+  "total_lines": 533,
   "percent_low": 25,
   "percent_high": 75,
   "command": "bats",
-  "date": "2024-03-22 12:21:46"
+  "date": "2024-03-23 12:57:16"
 }
