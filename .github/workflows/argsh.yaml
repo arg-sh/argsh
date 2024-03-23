@@ -83,10 +83,9 @@ jobs:
         with:
           pattern: argsh
           merge-multiple: true
-          path: artifacts
-      - name: Move executables
+          path: .
+      - name: Executable
         run: |
-          mv -f artifacts/argsh argsh.min.sh
           chmod +x argsh.min.sh
       - name: Docker metadata
         uses: docker/metadata-action@v5
@@ -131,9 +130,8 @@ jobs:
           pattern: argsh
           merge-multiple: true
           path: .
-      - name: Move executables
+      - name: Executable
         run: |
-          mv -f artifacts/argsh argsh.min.sh
           chmod +x argsh.min.sh
       - name: Upload release
         env:
