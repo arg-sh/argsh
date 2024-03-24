@@ -148,8 +148,6 @@ jobs:
           title="Release ${TAG_NAME}"
           branch="release-${TAG_NAME}"
 
-          git pull
-          git add argsh.min.sh
           git commit -m "${title}"
           git push origin "HEAD:refs/heads/${branch}"
           gh pr create --title "${title}" --body "" --head "${branch}"
