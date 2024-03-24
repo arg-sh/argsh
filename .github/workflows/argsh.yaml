@@ -138,7 +138,6 @@ jobs:
           TAG_NAME: ${{ github.ref_name }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git add argsh.min.sh
           cp argsh.min.sh argsh
           sha256sum argsh > sha256sum.txt
           gh release create "${TAG_NAME}" --draft --title "argsh ${TAG_NAME}" --generate-notes
@@ -147,8 +146,10 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
           title="Release ${TAG_NAME}"
-          git commit -m "${title}"
           branch="release-${TAG_NAME}"
-          git fetch
+
+          git pull
+          git add argsh.min.sh
+          git commit -m "${title}"
           git push origin "HEAD:refs/heads/${branch}"
           gh pr create --title "${title}" --body "" --head "${branch}"
