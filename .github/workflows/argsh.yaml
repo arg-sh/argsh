@@ -149,5 +149,6 @@ jobs:
           title="Release ${TAG_NAME}"
           git commit -m "${title}"
           branch="release-${TAG_NAME}"
+          git fetch
           git push origin "HEAD:refs/heads/${branch}"
           gh pr create --title "${title}" --body "" --head "${branch}"
