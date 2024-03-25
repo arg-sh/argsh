@@ -14,7 +14,7 @@ declare -gA import_cache=()
 # @arg $1 string Library name
 # @example
 #   import fmt
-import() { 
+ import() { 
   local src="${1}"
   (( ${import_cache["${src}"]:-} )) || { 
     import_cache["${src}"]=1
@@ -22,12 +22,12 @@ import() {
     if [[ ${src:0:1} == "@" ]]; then
       src="${PATH_BASE:?"PATH_BASE missing"}/${src:1}";
     elif [[ ${src:0:1} == "~" ]]; then
-      local s="${ARGSH_SOURCE:-${BASH_SOURCE[-1]}}"
-      src="${s%/*}/${src:1}";
+      local _s="${ARGSH_SOURCE:-${BASH_SOURCE[-1]}}"
+      src="${_s%/*}/${src:1}"
     else
-      src="${BASH_SOURCE[0]%/*}/${src}"; 
+      src="${BASH_SOURCE[0]%/*}/${src}"
     fi
-    import::source "${src}"
+    import::source "${src}" || exit 1
   }
 }
 

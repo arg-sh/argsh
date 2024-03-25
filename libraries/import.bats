@@ -12,9 +12,15 @@ load_source
     string::random
   ) >"${stdout}" 2>"${stderr}" || status="${?}"
 
-  assert "${status}" -eq 0
-  is_empty stderr   
-  not_empty stdout
+  if [[ "${BATS_LOAD}" == "argsh.min.sh" ]]; then
+    assert "${status}" -eq 1
+    is_empty stdout
+    contains "^Library not found argsh.min.sh/string" stderr
+  else
+    assert "${status}" -eq 0
+    is_empty stderr   
+    not_empty stdout
+  fi
 }
 
 @test "can import from @" {
