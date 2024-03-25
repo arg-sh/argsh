@@ -1,4 +1,4 @@
-name: Argsh Tests
+name: argsh
 on:
   push:
     branches:
