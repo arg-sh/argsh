@@ -43,6 +43,9 @@ jobs:
       - name: Coverage
         run: |
           argsh coverage
+      - name: Is insync
+        run: |
+          git diff --exit-code
 
   minify:
     runs-on: ubuntu-latest
