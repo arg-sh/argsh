@@ -17,22 +17,20 @@ bash::version() {
   local major="${1:-4}"
   local minor="${2:-3}"
   local patch="${3:-0}"
-  local -a version
-  read -ra version <<< "$(echo "${BASH_VERSION}" | tr '.' ' ')"
 
-  if [[ "${version[0]}" -lt "${major}" ]]; then
+  if [[ "${BASH_VERSINFO[0]}" -lt "${major}" ]]; then
     return 1
-  elif [[ "${version[0]}" -gt "${major}" ]]; then
+  elif [[ "${BASH_VERSINFO[0]}" -gt "${major}" ]]; then
     return 0
   fi
 
-  if [[ "${version[1]}" -lt "${minor}" ]]; then
+  if [[ "${BASH_VERSINFO[1]}" -lt "${minor}" ]]; then
     return 1
-  elif [[ "${version[1]}" -gt "${minor}" ]]; then
+  elif [[ "${BASH_VERSINFO[1]}" -gt "${minor}" ]]; then
     return 0
   fi
 
-  if [[ "${version[2]}" -lt "${patch}" ]]; then
+  if [[ "${BASH_VERSINFO[2]}" -lt "${patch}" ]]; then
     return 1
   fi
 
