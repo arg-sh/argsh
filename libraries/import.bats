@@ -14,7 +14,7 @@ load_source
 
   assert "${status}" -eq 0
   is_empty stderr   
-  ! is_empty stdout
+  not_empty stdout
 }
 
 @test "can import from @" {
