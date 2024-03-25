@@ -53,11 +53,7 @@ If you’re adding a new page or contributing to the codebase, you need to fork 
 
 When you make an edit to an existing documentation page or fork the repository to make changes to the documentation, you have to create a new branch.
 
-Documentation contributions always use `develop` as the base branch. Make sure to also open your PR against the `develop` branch.
-
-### Branch Name
-
-Make sure that the branch name starts with `docs/`. For example, `docs/fix-services`. Vercel deployed previews are only triggered for branches starting with `docs/`.
+Documentation contributions always use `main` as the base branch. Make sure to also open your PR against the `main` branch.
 
 ### Pull Request Conventions
 

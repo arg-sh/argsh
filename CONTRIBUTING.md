@@ -19,19 +19,11 @@ If you, as a community contributor, wish to work on more extensive features, ple
 
 1. Before you start working on a change please make sure that there is an issue for what you will be working on. You can either find and [existing issue](https://github.com/arg-sh/argsh/issues) or [open a new issue](https://github.com/arg-sh/argsh/issues/new) if none exists. Doing this makes sure that others can contribute with thoughts or suggest alternatives, ultimately making sure that we only add changes that make
 
-2. When you are ready to start working on a change you should first [fork the argsh repo](https://help.github.com/en/github/getting-started-with-github/fork-a-repo) and [branch out](https://help.github.com/en/github/collaborating-with-issues-and-pull-requests/creating-and-deleting-branches-within-your-repository) from the `develop` branch.
+2. When you are ready to start working on a change you should first [fork the argsh repo](https://help.github.com/en/github/getting-started-with-github/fork-a-repo) and [branch out](https://help.github.com/en/github/collaborating-with-issues-and-pull-requests/creating-and-deleting-branches-within-your-repository) from the `main` branch.
 3. Make your changes.
 4. [Open a pull request towards the develop branch in the argsh repo](https://help.github.com/en/github/collaborating-with-issues-and-pull-requests/creating-a-pull-request-from-a-fork). Within a couple of days a argsh team member will review, comment and eventually approve your PR.
 
 ## Workflow
-
-### Branches
-
-All changes should be part of a branch and submitted as a pull request - your branches should be prefixed with one of:
-
-- `fix/` for bug fixes
-- `feat/` for features
-- `docs/` for documentation changes
 
 ### Commits
 
@@ -41,7 +33,7 @@ Strive towards keeping your commits small and isolated - this helps the reviewer
 
 If your changes should result in a new version of argsh, you will need to generate a **changelog**. Follow [this guide](https://github.com/changesets/changesets/blob/main/docs/adding-a-changeset.md) on how to generate a changeset.
 
-Finally, submit your branch as a pull request. Your pull request should be opened against the `develop` branch in the main argsh repo.
+Finally, submit your branch as a pull request. Your pull request should be opened against the `main` branch in the main argsh repo.
 
 In your PR's description you should follow the structure:
 
