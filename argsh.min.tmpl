@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2178 disable=SC2120 disable=SC1090 disable=SC2046 disable=SC2155
-ARGSH_COMMIT_SHA="${commit_sha}"; ARGSH_VERSION="${version}"
+set -euo pipefail; ARGSH_COMMIT_SHA="${commit_sha}"; ARGSH_VERSION="${version}"
 ${data};[[ "${BASH_SOURCE[0]}" != "${0}" ]] || argsh::shebang "${@}"

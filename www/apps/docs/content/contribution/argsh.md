@@ -23,7 +23,7 @@ If you’re adding a new library or contributing to the codebase, you need to fo
 
 When you make an edit to an existing documentation page or fork the repository to make changes to the documentation, you have to create a new branch.
 
-Documentation contributions always use `develop` as the base branch. Make sure to also open your PR against the `develop` branch.
+Documentation contributions always use `main` as the base branch. Make sure to also open your PR against the `main` branch.
 
 ### Branch Name
 

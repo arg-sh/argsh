@@ -1,4 +1,4 @@
-name: Release
+name: argsh
 on:
   push:
     branches:
@@ -43,6 +43,10 @@ jobs:
       - name: Coverage
         run: |
           argsh coverage
+      - name: Is insync
+        run: |
+          git diff --exit-code \
+            --ignore-matching-lines '^  "date":'
 
   minify:
     runs-on: ubuntu-latest
