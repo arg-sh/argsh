@@ -62,6 +62,7 @@ assert() {
     return 1
   }
 }
+
 is_empty() {
   local check="${1}"
   [[ -n "${!check}" ]] || return 0
@@ -70,6 +71,24 @@ is_empty() {
   echo "■■ ${check} is not empty"
   [[ ! -f "${!check}" ]] || echo -e "■■ >>>\n$(cat "${!check}")\n<<<"
   return 1
+}
+
+not_empty() {
+  local check="${1}"
+  [[ -n "${!check}" ]] || return 1
+  [[ -s "${!check}" ]] || return 1
+
+  return 0
+}
+
+contains() {
+  local check="${1}"
+  local -n file="${2}"
+  grep -qzP "${check}" "${file}" || {
+    echo "■■ ${file} does not contain ${check}"
+    cat "${file}"
+    return 1
+  }
 }
 
 is::uninitialized() {

@@ -1,4 +1,4 @@
-name: Documentation Tests
+name: docs
 on: 
   pull_request:
     paths:
@@ -14,7 +14,6 @@ concurrency:
 
 jobs:
   docs-test:
-    if: ${{ startsWith(github.head_ref, 'docs/') }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -39,7 +38,6 @@ jobs:
         run: yarn build:docs
         
   vale-docs:
-    if: ${{ startsWith(github.head_ref, 'docs/') }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -65,7 +63,6 @@ jobs:
           REVIEWDOG_GITHUB_API_TOKEN: ${{ github.token }}
         
   content-eslint:
-    if: ${{ startsWith(github.head_ref, 'docs/') }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -82,7 +79,6 @@ jobs:
         run: yarn lint:content
   
   code-docs-eslint:
-    if: ${{ startsWith(github.head_ref, 'docs/') }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
