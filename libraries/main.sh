@@ -28,7 +28,7 @@ argsh::shebang() {
       return 1
     } >&2
     local tty=""
-    [[ ! -t 1 ]] || tty="-it"
+    ! tty -s || tty="-it"
     # shellcheck disable=SC2046
     docker run --rm ${tty} $(docker::user) \
       -e "BATS_LOAD" \
@@ -37,7 +37,7 @@ argsh::shebang() {
       -e "GIT_VERSION=$(git describe --tags --dirty || :)" \
       ghcr.io/arg-sh/argsh:latest "${@}" 
     return 0
-  } >&2
+  }
   bash::version 4 3 0 || {
     echo "This script requires bash 4.3.0 or later"
     return 1

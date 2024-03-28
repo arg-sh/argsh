@@ -25,12 +25,20 @@ docker::user() {
   local user="${3:-"$(whoami)"}"
   local home="${4:-"/workspace"}"
   local shell="${5:-"/bin/sh"}"
+  local curr
+  curr="$(pwd)"
+  curr="${curr#"${PATH_BASE:-}"}"
+  if [[ "${curr}" == "$(pwd)" ]]; then
+    curr="${home}"
+  else  
+    curr="${home}${curr}"
+  fi
 
   echo "${user}:x:${uid}:${gid}::${home}:${shell}" > /tmp/docker_passwd
   echo "${user}:x:${gid}:" > /tmp/docker_group
   echo "-v /tmp/docker_passwd:/etc/passwd -v /tmp/docker_group:/etc/group"
   echo "-u ${uid}:${gid}"
 
-  echo "-v ${PATH_BASE:-.}:${home}"
-  echo "-w ${home}"
+  echo "-v ${PATH_BASE:-"$(pwd)"}:${home}"
+  echo "-w ${curr}"
 }
