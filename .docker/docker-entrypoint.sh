@@ -31,7 +31,7 @@ argsh::minify() {
       glob=("${f}"/*.{sh,bash})
     else
       # shellcheck disable=SC2206 disable=SC2128
-      glob=(${glob})
+      glob=(${f})
     fi
     for file in "${glob[@]}"; do
       [[ -e "${file}" ]] || continue
