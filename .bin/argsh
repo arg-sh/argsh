@@ -104,7 +104,7 @@ argsh::main() {
   local tty=""
   [[ ! -t 1 ]] || tty="-it"
   # shellcheck disable=SC2046
-  docker run --rm ${tty} $(docker::user) \
+  docker run --rm ${tty} $(docker::user) -w /workspace \
     -e "BATS_LOAD" \
     -e "ARGSH_SOURCE" \
     -e "GIT_COMMIT_SHA=$(git rev-parse HEAD || :)" \
