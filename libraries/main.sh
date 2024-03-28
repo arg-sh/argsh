@@ -33,8 +33,8 @@ argsh::shebang() {
     docker run --rm ${tty} $(docker::user) \
       -e "BATS_LOAD" \
       -e "ARGSH_SOURCE" \
-      -e "GIT_COMMIT_SHA=$(git rev-parse HEAD || :)" \
-      -e "GIT_VERSION=$(git describe --tags --dirty || :)" \
+      -e "GIT_COMMIT_SHA=$(git rev-parse HEAD 2>/dev/null || :)" \
+      -e "GIT_VERSION=$(git describe --tags --dirty 2>/dev/null || :)" \
       ghcr.io/arg-sh/argsh:latest "${@}" 
     return 0
   }

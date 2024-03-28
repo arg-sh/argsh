@@ -7,22 +7,23 @@ set -euo pipefail
 export ARGSH_SOURCE
 
 argsh::minify() {
-  local template
+  local template out="/dev/stdout"
   # shellcheck disable=SC2034
   local -a files args=(
     'files'            "Files to minify, can be a glob pattern"
     'template|t:~file' "Path to a template file to use for the minified file"
+    'out|o'             "Path to the output file"
   )
   :args "Minify Bash files" "${@}"
   ! is::uninitialized files || {
     args::error_usage "No files to minify"
     return 1
   }
-  local content out
+  local content tout
   content="$(mktemp)"
-  out="$(mktemp)"
+  tout="$(mktemp)"
   # shellcheck disable=SC2064
-  trap "rm -f ${content} ${out}" EXIT
+  trap "rm -f ${content} ${tout}" EXIT
 
   local f file
   local -a glob
@@ -42,10 +43,10 @@ argsh::minify() {
     done
   done
   
-  obfus -i "${content}" -o "${out}" -A
-  local -r data="$(cat "${out}")"
-  if [[ -z "${template}" ]]; then
-    echo -n "${data}"
+  obfus -i "${content}" -o "${tout}" -A
+  local -r data="$(cat "${tout}")"
+  if [[ -z "${template:-}" ]]; then
+    echo -n "${data}" >"${out}"
     return 0
   fi
 
@@ -54,7 +55,7 @@ argsh::minify() {
   export data commit_sha version
     # shellcheck disable=SC2016 disable=SC2094
   envsubst '$data,$commit_sha,$version' \
-    <"${template}" >"${template%.*}.sh"
+    <"${template}" >"${out}" #>"${template%.*}.sh"
 }
 
 argsh::lint() {
