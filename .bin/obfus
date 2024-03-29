@@ -161,7 +161,7 @@ sub obfuscate {
 		# - open quotes (single or double)
 		# - here documents
 		if ($flatten) {
-			if ($line =~ m/<<\s*['"]?(\w+)['"]?\s*$/) {
+			if ($line =~ m/<<\s*['"]?(\w+)['"]?\s*/) {
 				my $end = $1;
 				print $ofh $line;
 				while(my $line=<$ifh>) {
@@ -308,10 +308,10 @@ sub newline_process {
 	open $handle, '<', \$data;
 	while(my $line=<$handle>) {
 		# is this a here document?
-		if ($line =~ m/<<\s*['"]?(\w+)['"]?\s*$/) {
+		if ($line =~ m/<<\s*['"]?(\w+)['"]?\s*/) {
 			my $end = $1;
 			print $ofh $line;
-			while(my $line=<$handle>) {
+			while($line=<$handle>) {
 				print $ofh $line;
 				last if $line =~ m/$end/;
 			}
