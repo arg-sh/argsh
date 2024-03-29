@@ -146,7 +146,7 @@ sub obfuscate {
 		$var_index++;
 	}
 	my %vars=();
-	while(my $line=<$ifh>) {
+	START: while(my $line=<$ifh>) {
 		if ($delete_blanks && (
       $line =~ m/^[ \t]*#.*/ || # [^!] 
       $line =~ m/^[ \t]*$/ ||
@@ -156,7 +156,32 @@ sub obfuscate {
 			next;
 		}
 
+		# Flatten out the code
+		# ignore
+		# - open quotes (single or double)
+		# - here documents
 		if ($flatten) {
+			if ($line =~ m/<<\s*['"]?(\w+)['"]?\s*$/) {
+				my $end = $1;
+				print $ofh $line;
+				while(my $line=<$ifh>) {
+					print $ofh $line;
+					last if $line =~ m/$end/;
+				}
+				next;
+			}
+			# todo better handling of quotes
+			# for my $q ("'", '"') {
+			# 	my ($n) = scalar( @{[ $line=~/(?:(?:\\$q)|($q))/gi ]} );
+			# 	if ($n % 2 == 1) {
+			# 		do {
+			# 			$line =~ s/\n/$q\$'\\n'$q/;
+			# 			print $ofh $line;
+			# 			$line = <$ifh>;
+			# 		} while ($line !~ m/[^\\]$q(\s|\t)*(\n|;)/);
+			# 		next START;
+			# 	}
+			# }
 			$line =~ s/^[ \t]*//;
 		}
 		# clear ;-ending lines . This avoid bugs on aggressive mode
@@ -249,44 +274,125 @@ sub obfuscate {
 	}
 	close $ifh;
 	close $ofh;
+}
+sub newlines {
+	my $file=shift;
 
-	# aggressive 
-	if ($aggressive) {
-		# say "Aggressive mode";
-		my $var = <<EOS;
-		1,\${                                                   	# from second line to the end
-			:loop                                               	# label for loop behavior
-			N                                                   	# join next line with current, separating by \\n
-      s/[\\]\\n//g
-			s/\\(}\\|))\\|esac\\|done\\|fi\\)\\s*\\n/\\1;/g              	# line break to ';' on lines ending with '}', '))', 'esac','done' or 'fi'
-			s/\\(do\\|{\\||\\|then\\|else\\)\\s*\\n/\\1 /g               	# line break to ' ' on lines ending with 'do', '{', '|', 'then' or 'else'
-			s/\\n\\(function\\|while\\)/;\\1/g                       	# line break to ';' on lines starting with 'function' or 'while'
-			s/;;;/\\n;;/g                                        	# fix ;;; bug
-			s/\\(\\([^);]\\);\\?\\n\\(if\\|else\\|done\\|\\[\\)\\)/\\2;\\3/g  	# lines beginning by if, else, done or [ preceded by line break from lines not ending with ^,;,], should change \\n into ; 
-			s/\\("[^"]\\+"\\)\\n/\\1;/g                              	# lines ending with open and closed ", change \\n into ;
-			s/\\n\\([a-z][a-z0-9]*=.*\\)\\n/;\\1;/g                  	# var definition lines alone e.g. \\nvar=value\\n, change to ;var=value;
-			s/expect { /expect {\\n/g
-      s/\\(return[ ;0-9]*\\)\\n/\\1;/g                       # return with or without value and ending with ; or not
-      s/\\(local [a-z0-9]+\\|>&[0-9]\\)\\n/\\1;/g                       # return with or without value and ending with ; or not
-      s/\\([(]\\);/\\1/g
-      s/\\n\\([.]\\|read\\|exec\\|return\\|echo\\|done\\|until\\|local\\|exit\\|if\\|fi\\|elif\\|else\\|[(!}[):]\\|mapfile\\|continue\\|declare\\|for\\|printf\\|[^);]+(;|\\n)\\)/;\\1/g
-      s/\\([(]\\)\\n/\\1/g
-      s/\\(continue\\|break\\|[")]\\|=1\\)\\n/\\1;/g
-			# /^[^(]+[)]/! { s/\\n/;/g }
-			b loop                                              	# repeat from loop label down
+	my $data = do { 
+		open my $fh, '<', $file or die "error opening $file: $!";
+		local $/; <$fh> 
+	};
+	open(my $ofh, ">", $file) or die "Couldn't open '".$file."' for writing because: ".$!;
+
+	# go through the file and remove all possible newlines
+	# do not remove
+	# - newlines in case statements
+	# - new lines in here documents
+	# replace
+	# - new lines in quotes (single or double) with $'\n'
+	# remove
+	# - \ with newline at the end of the line
+	# replace newlines with ; unless
+	# - in array declaration
+	# - || or && or | or { or ( at the end of the line
+	# 'then' or 'do' or 'else' at the end of the line
+	newline_process($data,$ofh);
+	close $ofh;
+}
+
+sub newline_process {
+	my $data=shift;
+	my $ofh=shift;
+
+	my $handle;
+	open $handle, '<', \$data;
+	while(my $line=<$handle>) {
+		# is this a here document?
+		if ($line =~ m/<<\s*['"]?(\w+)['"]?\s*$/) {
+			my $end = $1;
+			print $ofh $line;
+			while(my $line=<$handle>) {
+				print $ofh $line;
+				last if $line =~ m/$end/;
+			}
+			next;
 		}
-EOS
+		# is this a case statement?
+		if ($line =~ m/^\s*case/) {
+			print $ofh $line;
+			while(my $line=<$handle>) {
+				if ($line =~ m/esac(\s|\t|;)/) {
+					$line =~ s/(\s|\t)*\n/;/;
+					print $ofh $line;	
+					last;
+				}
+				# collect line between ) and ;; and then process it
+				if ($line =~ m/^([^()]+\))(?:\s|\t)*(.*)/) {
+					print $ofh $1;
+					my $block = $2;
+					my $i = 0;
+					while ($line !~ m/^(.*);;/) {
+						$line = <$handle>;
+						$line =~ s/(\s|\t)*//;
+						$line =~ s/(\s|\t)*\n/\n/;
+						$block .= $line;
+						$i++;
+						last if $i > 10;
+					}
+					$block =~ s/(?:\s|\t)*;;(\s|\t|\n)*$//;
+					newline_process($block,$ofh);
+					print $ofh ";;\n";
+				}
+			}
+			next;
+		}
 
-		open(my $ofh, ">", 'sed_aggressive.txt');
-		print $ofh $var;
-		close $ofh;
+		# replace newlines with ; unless in array declaration
+		if ($line =~ m/=\([^)]*\n/) {
+			while ($line !~ m/\)(?:\s|\t)*(\n|;)/) {
+				$line =~ s/\n/ /;
+				print $ofh $line;
+				$line = <$handle>;
+			}
+			goto PRINT;
+		}
 
-		# apply 'aggressive' sed filters to output file
-		system("sed -i -f sed_aggressive.txt $output_file; rm sed_aggressive.txt");
+		# skip newlines
+		goto PRINT if $line =~ m/^(?:\s|\t)*\n/;
+
+		# remove \ at the end of the line
+		goto PRINT if $line =~ s/\\\n//;
+
+		# remove newlines for || , && , | , { , ( , ; at the end of the line
+		goto PRINT if $line =~ s/([|&{(]{1,2}|;)(?:\s|\t)*\n/$1 /;
+		goto PRINT if $line =~ m/^(?:\s|\t)*[)]/;
+
+		# remove newlines for then and do
+		goto PRINT if $line =~ s/(?:\s|\t)*(then|do|else)(?:\s|\t)*\n/$1 /;
+
+		# is this a quote? (single or double) replace newlines with $'\n'
+		for my $q ("'", '"') {
+			my ($n) = scalar( @{[ $line=~/(?:(?:\\$q)|($q))/gi ]} );
+			if ($n % 2 == 1) {
+				do {
+					$line =~ s/\n/$q\$'\\n'$q/;
+					print $ofh $line;
+					$line = <$handle>;
+				} while ($line !~ m/[^\\]$q(\s|\t)*(\n|;)/);
+				goto PRINT;
+			}
+		}
+
+		PRINT:
+		# replace the rest of the newlines with ;
+		$line =~ s/(\s|\t)*\n/;/;
+		print $ofh $line;
 	}
+	close $handle;
 }
 
 my ($input_file,$output_file,$new_variable_prefix,$delete_blanks,$flatten,$aggressive)=&parse_cmd_args();
 my @parsed_vars=&parse_vars_from_file($input_file);
 my @sorted_vars = sort { length($b) <=> length($a) } @parsed_vars;
 &obfuscate($input_file,$output_file,$new_variable_prefix,$delete_blanks,$flatten,$aggressive,@sorted_vars);
+&newlines($output_file);

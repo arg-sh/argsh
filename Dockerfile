@@ -21,14 +21,12 @@ RUN set -eux \
   && apt update \
   && apt install -y perl \
   && rm -rf /var/lib/apt/lists/*
-COPY .bin/obfus /usr/local/bin/obfus
 
 # docs
 RUN set -eux \
   && apt update \
   && apt install -y gawk \
   && rm -rf /var/lib/apt/lists/*
-COPY .bin/shdoc /usr/local/bin/shdoc
 
 # lint
 COPY --from=koalaman/shellcheck:stable /bin/shellcheck /usr/local/bin/shellcheck
@@ -41,6 +39,8 @@ RUN set -eux \
   && rm -rf /var/lib/apt/lists/*
 
 # argsh itself
+COPY .bin/obfus /usr/local/bin/obfus
+COPY .bin/shdoc /usr/local/bin/shdoc
 COPY ./argsh.min.sh /usr/local/bin/argsh
 
 # docker
