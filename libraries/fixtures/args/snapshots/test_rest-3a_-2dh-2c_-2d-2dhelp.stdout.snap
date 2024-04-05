@@ -1,0 +1,12 @@
+Test rest parameters
+
+Usage:
+  argsh ...all
+
+Arguments:
+   all string              All arguments
+
+Options:
+   -h, --help 
+           Show this help message
+

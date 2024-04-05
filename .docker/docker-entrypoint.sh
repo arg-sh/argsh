@@ -43,12 +43,13 @@ argsh::minify() {
       } >>"${content}"
     done
   done
-  iVars=""
+  local -a iVars=()
   if (( ${#ignore_variable[@]} )); then
-    iVars="-I $(array::join "," "${ignore_variable[@]}")"
+    # shellcheck disable=
+    iVars=(-I "$(array::join "," "${ignore_variable[@]}")")
   fi
   # shellcheck disable=SC2086
-  obfus -i "${content}" -o "${tout}" -A ${iVars}
+  obfus -i "${content}" -o "${tout}" -A "${iVars[@]}"
   local -r data="$(cat "${tout}")"
   if [[ -z "${template:-}" ]]; then
     echo -n "${data}" >"${out}"
