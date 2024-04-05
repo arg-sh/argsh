@@ -8,6 +8,7 @@ load_source
 
 @test "can import library" {
   (
+    unset ARGSH_SOURCE
     import "string"
     string::random
   ) >"${stdout}" 2>"${stderr}" || status="${?}"

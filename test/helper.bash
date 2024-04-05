@@ -22,16 +22,14 @@ load_source() {
   else
     file="${BATS_TEST_FILENAME/%.bats/.sh}"
   fi
-  PATH_FIXTURES="$(
-    realpath "$(dirname "${BATS_TEST_FILENAME}")/../test/fixtures/$(basename "${BATS_TEST_FILENAME%.*}")"
-  )"
-  PATH_SNAPSHOTS="${PATH_FIXTURES}/snapshots"
+  : "${PATH_FIXTURES:="$(
+    realpath "$(dirname "${BATS_TEST_FILENAME}")/fixtures/$(basename "${BATS_TEST_FILENAME%.*}")"
+  )"}"
+  : "${PATH_SNAPSHOTS="${PATH_FIXTURES}/snapshots"}"
   mkdir -p "${PATH_SNAPSHOTS}"
 
-  [[ -f "${file}" ]] || {
-    echo "■■ Source file ${file} not found"
-    return 1
-  }
+  [[ -f "${file}" ]] ||
+    return 0
 
   # shellcheck disable=SC1090
   source "${file}"

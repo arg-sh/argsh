@@ -44,3 +44,21 @@ The template file should contain the parts that you want to add back. You can us
 COMMIT_SHA="${commit_sha}"; VERSION="${version}"
 ${data}
 ```
+
+### Ignore line
+
+If you need a variable or line unchanged you can write a comment above it.
+
+```bash
+# obfus ignore variable
+```
+
+### Ignore variables globally
+
+You can ignore specific variable names for obfuscation.
+
+```bash
+argsh minify --ignore-variable var_name
+# or short
+argsh minify -i var_name -i foo -i bar
+```

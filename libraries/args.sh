@@ -159,20 +159,33 @@ import array
     exit 0
   fi
 
-  local field="" i positional_index=1
+  local first=0 field="" i positional_index=1
   local -A match=()
   local -a cli=("${@}")
   
   while (( ${#cli[@]} )); do
     # positional
     if [[ ${cli[0]:0:1} != "-" ]]; then
+      local name value
       i="$(:args::field_positional "${positional_index}")" ||
         :args::error_usage "too many arguments: ${cli[0]}"
       
       field="${args[i]}"
+      name="$(args::field_name "${field}")"
+      value="$(:args::field_value "${cli[0]}")" || exit "${?}"
+    
       # shellcheck disable=SC2155
-      local -n ref="$(args::field_name "${field}")"
-      ref="$(:args::field_value "${cli[0]}")" || exit "${?}"
+      local -n ref="${name}"
+      if is::array "${name}"; then
+        (( first )) || {
+          ref=()
+          first=1
+        }
+        ref+=("${value}")
+      else
+        # shellcheck disable=SC2178
+        ref="${value}"
+      fi
       cli=("${cli[@]:1}")
       (( ++positional_index ))
       continue

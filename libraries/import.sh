@@ -25,7 +25,8 @@ declare -gA import_cache=()
       local _s="${ARGSH_SOURCE:-${BASH_SOURCE[-1]}}"
       src="${_s%/*}/${src:1}"
     else
-      src="${BASH_SOURCE[0]%/*}/${src}"
+      local _s="${ARGSH_SOURCE:-${BASH_SOURCE[0]}}"
+      src="${_s%/*}/${src}"
     fi
     import::source "${src}" || exit 1
   }

@@ -9,10 +9,11 @@ export ARGSH_SOURCE
 argsh::minify() {
   local template out="/dev/stdout"
   # shellcheck disable=SC2034
-  local -a files args=(
-    'files'            "Files to minify, can be a glob pattern"
-    'template|t:~file' "Path to a template file to use for the minified file"
+  local -a files ignore_variable args=(
+    'files'             "Files to minify, can be a glob pattern"
+    'template|t:~file'  "Path to a template file to use for the minified file"
     'out|o'             "Path to the output file"
+    'ignore-variable|i' "Ignores specific variable names from obfuscation"
   )
   :args "Minify Bash files" "${@}"
   ! is::uninitialized files || {
@@ -42,8 +43,12 @@ argsh::minify() {
       } >>"${content}"
     done
   done
-  
-  obfus -i "${content}" -o "${tout}" -A
+  iVars=""
+  if (( ${#ignore_variable[@]} )); then
+    iVars="-I $(array::join "," "${ignore_variable[@]}")"
+  fi
+  # shellcheck disable=SC2086
+  obfus -i "${content}" -o "${tout}" -A ${iVars}
   local -r data="$(cat "${tout}")"
   if [[ -z "${template:-}" ]]; then
     echo -n "${data}" >"${out}"
@@ -87,36 +92,35 @@ argsh::lint() {
 }
 
 argsh::test() {
-  local tests="."
   # shellcheck disable=SC2034
-  local -a args=(
+  local -a tests=(".") args=(
     'tests'    "Path to the bats test files"
   )
   :args "Run tests" "${@}"
   [[ -z "${BATS_LOAD:-}" ]] || {
     echo "Running tests for ${BATS_LOAD}" >&2
   }
-  bats "${tests}"
+  bats "${tests[@]}"
 }
 
 argsh::coverage() {
-  local out tests="." min=75
+  local out="./coverage" min=75
   # shellcheck disable=SC2034
-  local -a args=(
+  local -a tests=(".") args=(
     'tests'     "Path to the bats test files"
-    'out'       "Path to the output directory"
+    'out|o'     "Path to the output directory"
     'min|:~int' "Minimum coverage required"
   )
   :args "Generate coverage report for your Bash scripts" "${@}"
 
-  echo "Generating coverage report" >&2
+  echo "Generating coverage report for: ${tests[*]}" >&2
   kcov \
     --clean \
     --bash-dont-parse-binary-dir \
     --include-pattern=.sh \
     --exclude-pattern=tests \
     --include-path=. \
-    "${out}" bats "${tests}" >/dev/null 2>&1 || {
+    "${out}" bats "${tests[@]}" >/dev/null 2>&1 || {
       echo "Failed to generate coverage report"
       echo "Run tests with 'argsh test' to see what went wrong"
       exit 1
