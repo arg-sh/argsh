@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC1091 disable=SC2034 disable=SC2046
+# shellcheck disable=SC1091 disable=SC2034 disable=SC2046 disable=SC2120
 set -euo pipefail
 
 : "${PATH_BASE:="$(git rev-parse --show-toplevel)"}"
@@ -59,7 +59,7 @@ minify::argsh() {
 
 coverage::argsh() {
   :args "Generate coverage report for argsh" "${@}"
-  argsh::main coverage libraries coverage --min "${MIN_COVERAGE}"
+  argsh::main coverage libraries -o coverage --min "${MIN_COVERAGE}"
 }
 
 test::argsh() {
@@ -72,7 +72,7 @@ test::argsh() {
     BATS_LOAD="argsh.min.sh"
     export BATS_LOAD
   }
-  argsh::main test libraries
+  argsh::main test libraries .docker/test
 }
 
 lint::argsh() {
@@ -89,7 +89,7 @@ lint::argsh() {
 }
 
 argsh::docker() {
-  local tag="${1:-latest}"
+  local tag="latest"
   local -a args=(
     'tag|t' "Docker image tag"
   )
@@ -102,6 +102,8 @@ argsh::docker() {
 ###
 argsh::main() {
   local tty=""
+  argsh::docker &>/dev/null
+
   [[ ! -t 1 ]] || tty="-it"
   # shellcheck disable=SC2046
   docker run --rm ${tty} $(docker::user) -w /workspace \

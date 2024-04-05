@@ -28,6 +28,13 @@ This gives you the ability to use the following options to help you to write nic
 - [coverage](./development/fundamentals/coverage) - Generate a coverage report
 - [minify](./development/fundamentals/minify) - Minify your script (experimental)
 
+:::note
+If you use `argsh` as executer (shebang) you have to include `${ARGSH_SOURCE}` in the call check.
+```bash
+[[ "${0}" != "${BASH_SOURCE[0]}" && -z "${ARGSH_SOURCE}" ]] || main "${@}"
+```
+:::
+
 ### Globally
 
 You can install argsh globally by running the following command:

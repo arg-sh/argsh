@@ -23,6 +23,7 @@ sub print_usage() {
 	say "\t\t-C\tis an option to clean out full line comments and blank lines.";
 	say "\t\t-F\tis an option to flatten out the code (remove indentations)";
 	say "\t\t-A\tis an option to aggressive obfuscation (implies using -F and -C)(tries to put more content on same line when possible)";
+	say "\t\t-I\tis an option to ignore specific variables in the obfuscation process, separated by commas (default: usage,args)";
 	exit 0;
 }
 
@@ -33,6 +34,7 @@ sub parse_cmd_args {
 	my $flatten="";
 	my $new_variable_prefix="a";
 	my $aggressive="";
+	my $ignore_vars="usage,args";
 	for my $argnum (0 .. $#ARGV) {
 		if ($ARGV[$argnum] eq "-i") {
 			$input_file=$ARGV[$argnum+1];
@@ -53,17 +55,21 @@ sub parse_cmd_args {
 			$aggressive=1;
 			$flatten=1;
 			$delete_blanks=1;
+		} elsif ($ARGV[$argnum] eq "-I") {
+			$ignore_vars=$ARGV[$argnum+1];
+			$argnum++;
 		}
 	}
 	if ($input_file eq "" || $output_file eq "") {
 		say "Input or output file not specified!!";
 		&print_usage();
 	}
-	return ($input_file,$output_file,$new_variable_prefix,$delete_blanks,$flatten,$aggressive);
+	return ($input_file,$output_file,$new_variable_prefix,$delete_blanks,$flatten,$aggressive,$ignore_vars);
 }
 
 sub parse_vars_from_file {
 	my $file_name=shift;
+	my $ignore_vars=shift;
 	open(my $file_handle, "<", $file_name) || die "Couldn't open '".$file_name."' for reading because: ".$!;
 	my %vars=();
 	my $skip_next_line=0;
@@ -124,6 +130,12 @@ sub parse_vars_from_file {
       }
     }
 	}
+
+	# go through $ignore_vars split by ,
+	for my $name (split /,/, $ignore_vars) {
+		delete $vars{$name};
+	}
+
 	close $file_handle;
 	return keys %vars;
 }
@@ -391,8 +403,20 @@ sub newline_process {
 	close $handle;
 }
 
-my ($input_file,$output_file,$new_variable_prefix,$delete_blanks,$flatten,$aggressive)=&parse_cmd_args();
-my @parsed_vars=&parse_vars_from_file($input_file);
+my (
+	$input_file,
+	$output_file,
+	$new_variable_prefix,
+	$delete_blanks,
+	$flatten,
+	$aggressive,
+	$ignore_vars
+) = &parse_cmd_args();
+
+my @parsed_vars = &parse_vars_from_file($input_file, $ignore_vars);
 my @sorted_vars = sort { length($b) <=> length($a) } @parsed_vars;
-&obfuscate($input_file,$output_file,$new_variable_prefix,$delete_blanks,$flatten,$aggressive,@sorted_vars);
-&newlines($output_file);
+
+&obfuscate($input_file, $output_file, $new_variable_prefix, $delete_blanks, $flatten, $aggressive, @sorted_vars);
+if ($aggressive) {
+	&newlines($output_file);
+}
