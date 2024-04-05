@@ -22,7 +22,8 @@ sub print_usage() {
 	say "\t\t\tThe default is 'a', which means all variables will be changed to a0,a1,a2,a3,...";
 	say "\t\t-C\tis an option to clean out full line comments and blank lines.";
 	say "\t\t-F\tis an option to flatten out the code (remove indentations)";
-	say "\t\t-A\tis an option to aggressive obfuscation (implies using -F and -C)(tries to put more content on same line when possible)";
+	say "\t\t-A\tis an option to aggressive obfuscation, one line (implies using -F and -C)";
+	say "\t\t-N\tis an option to not obfuscate variable names";
 	say "\t\t-I\tis an option to ignore specific variables in the obfuscation process, separated by commas (default: usage,args)";
 	exit 0;
 }
@@ -64,12 +65,17 @@ sub parse_cmd_args {
 		say "Input or output file not specified!!";
 		&print_usage();
 	}
-	return ($input_file,$output_file,$new_variable_prefix,$delete_blanks,$flatten,$aggressive,$ignore_vars);
+	return ($input_file, $output_file, $new_variable_prefix, $delete_blanks, $flatten, $aggressive, $ignore_vars);
 }
 
 sub parse_vars_from_file {
 	my $file_name=shift;
 	my $ignore_vars=shift;
+
+	if ($ignore_vars eq "*") {
+		return ();
+	}
+
 	open(my $file_handle, "<", $file_name) || die "Couldn't open '".$file_name."' for reading because: ".$!;
 	my %vars=();
 	my $skip_next_line=0;
@@ -132,8 +138,12 @@ sub parse_vars_from_file {
 	}
 
 	# go through $ignore_vars split by ,
-	for my $name (split /,/, $ignore_vars) {
-		delete $vars{$name};
+	for my $re (split /,/, $ignore_vars) {
+		for my $var (keys %vars) {
+			if ($var =~ m/$re/) {
+				delete $vars{$var};
+			}
+		}
 	}
 
 	close $file_handle;

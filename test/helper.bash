@@ -110,3 +110,20 @@ log_on_failure() {
   echo Failed with status "${status}" and output:
   echo "${output}"
 }
+
+declare -p grep 2>/dev/null || {
+  grep="$(command -v grep)"
+  readonly grep
+}
+grep() {
+  $grep "${@}" || {
+    local status="${?}"
+    echo "■■ grep failed with status ${status}"
+    if [[ -f "${*: -1}" ]]; then
+      echo "■■ >>>"
+      cat "${*: -1}"
+      echo "<<<"
+    fi
+    return "${status}"
+  }
+}

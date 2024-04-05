@@ -249,6 +249,36 @@ source "${PATH_FIXTURES}/usage.sh"
 }
 
 # -----------------------------------------------------------------------------
+# Now test rest of positional arguments
+source "${PATH_FIXTURES}/rest.sh"
+
+@test "rest: -h, --help" {
+  for arg in -h --help; do
+    (
+      :test::rest "${arg}"
+    ) >"${stdout}" 2>"${stderr}" || status=$?
+
+    assert "${status}" -eq 0
+    is_empty stderr
+    snapshot stdout
+  done
+}
+
+@test "rest: positional parameters" {
+  :validate() {
+    assert "${#all[@]}" -eq 5
+    assert "${all[*]}" = "pos1 pos2 pos3 pos4 pos5"
+  }
+  (
+    :test::rest "pos1" "pos2" "pos3" "pos4" "pos5"
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  snapshot stdout
+}
+
+# -----------------------------------------------------------------------------
 # Now test format stuff
 source "${PATH_FIXTURES}/fmt.sh"
 
