@@ -11,11 +11,21 @@ set -euo pipefail
 # obfus ignore variable
 COMMANDNAME=("$(s="${ARGSH_SOURCE:-"${0}"}"; echo "${s##*/}")")
 
+# Global import cache
+declare -gA ARGSH__IMPORTED=()
+
 # @internal
 # shellcheck disable=SC1090
-import() { declare -A _i; (( ${_i[${1}]:-} )) || { _i[${1}]=1; . "${BASH_SOURCE[0]%/*}/${1}.sh"; } }
+import() {
+  local lib="${1}"
+  local dir="${BASH_SOURCE[0]%/*}"
+  [[ ${ARGSH__IMPORTED[$lib]:-} ]] || {
+    ARGSH__IMPORTED[$lib]=1
+    . "${dir}/${lib}.sh"
+  }
+}
 import string
-import fmt
+# defer fmt import into help printing functions
 import is
 import to
 import error
@@ -36,8 +46,8 @@ import array
 #  :usage "Title" "${@}"
 :usage() {
   local title="${1}"; shift
-  declare -p usage &>/dev/null || local -a usage=()
-  declare -p args &>/dev/null || local -a args=()
+  [[ -v usage ]] || local -a usage=()
+  [[ -v args ]] || local -a args=()
   [[ $(( ${#usage[@]} % 2 )) -eq 0 ]] ||
     :args::_error "usage must be an associative array"
   [[ $(( ${#usage[@]} % 2 )) -eq 0 ]] ||
@@ -72,7 +82,10 @@ import array
 
   local func
   for (( i=0; i < ${#usage[@]}; i+=2 )); do
-    for alias in $(echo "${usage[i]/:*}" | tr '|' "\n"); do
+    # split aliases without external processes
+    local -a _aliases
+    IFS='|' read -r -a _aliases <<< "${usage[i]/:*}"
+    for alias in "${_aliases[@]}"; do
       alias="${alias#\#}"
       [[ "${cmd}" == "${alias}" ]] || continue
       field="${usage[i]#\#}"
@@ -150,7 +163,7 @@ import array
 #  echo "flags: ${flag} ${flag1} ${flag2} ${flag3} ${flag4} ${flag5} ${flag6}"
 :args() {
   local title="${1}"; shift
-  declare -p args &>/dev/null || local -a args=()
+  [[ -v args ]] || local -a args=()
   [[ $(( ${#args[@]} % 2 )) -eq 0 ]] ||
     :args::_error "args must be an associative array"
 
@@ -215,7 +228,8 @@ import array
 # @set flags array The flags
 # @internal
 :args::text() {
-  declare -p args &>/dev/null || return 0
+  [[ -v args ]] || return 0
+  import fmt
   local -a positional=() params=()
   :args::positional
 
@@ -242,6 +256,7 @@ import array
 }
 
 :args::text_flags() {
+  import fmt
   # we make a copy here as we add --help to the flags
   # obfus ignore variable
   local -a args=("${args[@]}")
@@ -274,8 +289,8 @@ import array
 # @set flags array The flags
 # @internal
 :args::flags() {
-  declare -p args &>/dev/null || local -a args
-  declare -p flags &>/dev/null || local -a flags
+  [[ -v args ]] || local -a args
+  [[ -v flags ]] || local -a flags
 
   for (( i=0; i < "${#args[@]}"; i+=2 )); do
     if [[ ${args[i]} == *"|"* || ${args[i]} == '-' ]]; then
@@ -291,9 +306,9 @@ import array
 # @set params array The parameters
 # @internal
 :args::positional() {
-  declare -p args &>/dev/null || local -a args
-  declare -p positional &>/dev/null || local -a positional
-  declare -p params &>/dev/null || local -a params
+  [[ -v args ]] || local -a args
+  [[ -v positional ]] || local -a positional
+  [[ -v params ]] || local -a params
   local ref
 
   for (( i=0; i < "${#args[@]}"; i+=2 )); do
@@ -314,7 +329,7 @@ import array
 }
 
 :args::parse_flag() {
-  declare -p cli field &>/dev/null || return 1
+  [[ -v cli && -v field ]] || return 1
   local flag="${cli[0]/=*}"
   # -- long flag
   if [[ ${flag:0:2} == "--" ]]; then
@@ -335,7 +350,7 @@ import array
 # @set args array [get] The arguments to parse
 # @internal
 :args::check_required_flags() {
-  declare -p match args &>/dev/null || return 1
+  [[ -v match && -v args ]] || return 1
   local field
   local -a attrs
 
@@ -365,7 +380,7 @@ import array
 # shellcheck disable=SC2034
 :args::field_set_flag() {
   local field="${1}"
-  declare -p cli flag &>/dev/null || return 1
+  [[ -v cli && -v flag ]] || return 1
 
   local -a attrs
   :args::field_attrs "${field}"
@@ -422,7 +437,7 @@ import array
 # @internal
 :args::field_value() {
   local value="${1}"
-  declare -p field &>/dev/null || return 1
+  [[ -v field ]] || return 1
   declare -p attrs &>/dev/null || {
     local -a attrs
     :args::field_attrs "${field}"
@@ -445,7 +460,7 @@ import array
 # @internal
 :args::field_lookup() {
   local field="${1}"
-  declare -p args &>/dev/null || return 1
+  [[ -v args ]] || return 1
 
   for (( i=0; i < ${#args[@]}; i+=2 )); do
     if [[ ${args[i]} =~ (^${field}\||\|${field}:|\|${field}$) ]]; then
@@ -467,7 +482,7 @@ import array
 # @internal
 :args::field_positional() {
   local position="${1:-1}"
-  declare -p args &>/dev/null || return 1
+  [[ -v args ]] || return 1
 
   for (( i=0; i < ${#args[@]}; i+=2 )); do
     if [[ ${args[i]} != *"|"* && ${args[i]} != '-' ]]; then
@@ -530,7 +545,8 @@ args::field_name() {
   # shellcheck disable=SC2178
   local -n ref="${attrs[0]}"
   local -a flags
-  mapfile -t flags < <(echo "${field/[:]*}" | tr '|' '\n')
+  # split flags without external processes
+  IFS='|' read -r -a flags <<< "${field%%:*}"
   [[ ${#flags[@]} -eq 1 ]] || {
     attrs[1]="${flags[1]}"
   }
