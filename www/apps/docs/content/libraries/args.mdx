@@ -13,17 +13,31 @@ This file contains functions for working with arguments
 
 ### :usage
 
-Print usage information
+Print usage information and dispatch to subcommands.
+
+Commands are defined as pairs in the `usage` array:
+- `'name|alias'` — auto-resolved via namespace fallback
+- `'name|alias:-func::name'` — explicit function mapping
+
+**Namespace resolution** (when no `:-` mapping is given):
+1. `<caller>::<cmd>` — caller is the function that invoked `:usage`
+2. `argsh::<cmd>` — framework namespace
+3. `<cmd>` — bare function name
+
+If none match, an error is raised. When an explicit `:-` mapping is given, the function must exist exactly.
 
 #### Example
 
 ```bash
- local -a usage
- usage=(
-   command "Description of command"
-   [...]
- )
-:usage "Title" "${@}"
+main() {
+  local -a usage=(
+    'up|u'              "Start cluster"     # resolves to main::up
+    'down:-other::down' "Stop cluster"      # resolves to other::down
+  )
+  :usage "Title" "${@}"
+  "${usage[@]}"
+}
+main::up() { echo "up"; }
 ```
 
 #### Arguments

@@ -249,6 +249,49 @@ source "${PATH_FIXTURES}/usage.sh"
 }
 
 # -----------------------------------------------------------------------------
+# Prefix resolution tests
+
+@test "prefix: caller::func is preferred over bare func" {
+  (
+    :test::prefix start
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  snapshot stdout
+}
+
+@test "prefix: caller::func resolved for stop" {
+  (
+    :test::prefix stop
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  snapshot stdout
+}
+
+@test "prefix: nested caller resolution" {
+  (
+    :test::nested sub action
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  snapshot stdout
+}
+
+@test "prefix: help still works" {
+  (
+    :test::prefix --help
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  snapshot stdout
+}
+
+# -----------------------------------------------------------------------------
 # Now test rest of positional arguments
 source "${PATH_FIXTURES}/rest.sh"
 

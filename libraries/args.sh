@@ -21,19 +21,35 @@ import to
 import error
 import array
 
-# @description Print usage information
+# @description Print usage information and dispatch to subcommands.
+#
+# Commands are defined as pairs in the `usage` array:
+#   'name|alias'             -> auto-resolved via namespace fallback
+#   'name|alias:-func::name' -> explicit function mapping
+#
+# Namespace resolution (when no ":-" mapping is given):
+#   1) <caller>::<cmd>  -- caller is the function that invoked :usage
+#   2) argsh::<cmd>     -- framework namespace
+#   3) <cmd>            -- bare function name
+#   If none match, an error is raised.
+#
+# When an explicit ":-" mapping is given, the function must exist exactly.
+#
 # @arg $1 string The title of the usage
 # @arg $@ array User arguments
 # @set usage array Usage information for the command
 # @exitcode 0 If user arguments are correct
 # @exitcode 2 If user arguments are incorrect
 # @example
-#   local -a usage
-#   usage=(
-#     command "Description of command"
-#     [...]
-#   )
-#  :usage "Title" "${@}"
+#   main() {
+#     local -a usage=(
+#       'up|u'              "Start cluster"     # resolves to main::up
+#       'down:-other::down' "Stop cluster"      # resolves to other::down
+#     )
+#     :usage "Title" "${@}"
+#     "${usage[@]}"
+#   }
+#   main::up() { echo "up"; }
 :usage() {
   local title="${1}"; shift
   declare -p usage &>/dev/null || local -a usage=()
@@ -88,6 +104,32 @@ import array
 
   [[ -n "${func:-}" ]] ||
     :args::error_usage "Invalid command: ${cmd}"
+
+  # Enforce function-only execution and apply namespace fallbacks.
+  # When an explicit mapping is given via ":-", func is already fully qualified.
+  # Otherwise (no ":-"), resolution order:
+  # 1) <caller>::${func} where <caller> is the function that invoked :usage
+  # 2) argsh::${func}
+  # 3) ${func} as bare function name
+  # else -> error
+  local explicit=0
+  [[ "${field}" != *":-"* ]] || explicit=1
+
+  if (( explicit )); then
+    declare -F -- "${func}" >/dev/null 2>&1 ||
+      :args::error_usage "Invalid command: ${cmd}"
+  else
+    local caller="${FUNCNAME[1]:-}"
+    if [[ -n "${caller}" ]] && declare -F -- "${caller}::${func}" >/dev/null 2>&1; then
+      func="${caller}::${func}"
+    elif declare -F -- "argsh::${func}" >/dev/null 2>&1; then
+      func="argsh::${func}"
+    elif declare -F -- "${func}" >/dev/null 2>&1; then
+      :
+    else
+      :args::error_usage "Invalid command: ${cmd}"
+    fi
+  fi
 
   # obfus ignore variable
   COMMANDNAME+=("${field/[|:]*}")
