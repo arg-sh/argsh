@@ -1,0 +1,13 @@
+Prefix test
+
+Usage: argsh <command> [args]
+
+Available Commands:
+  start                    Start something
+  stop                     Stop something
+
+Options:
+   -h, --help 
+           Show this help message
+
+Use "argsh <command> --help" for more information about a command.
