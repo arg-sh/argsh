@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# shellcheck disable=SC1091 disable=SC2154 disable=SC2317
+# shellcheck disable=SC1091 disable=SC2154 disable=SC2317 disable=SC2329
 # shellcheck shell=bats
 
 load ../test/helper
@@ -241,6 +241,49 @@ source "${PATH_FIXTURES}/usage.sh"
 @test "usage: calling hidden cmd3" {
   (
     :test::usage cmd3 -vvv --config wrong.yml
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  snapshot stdout
+}
+
+# -----------------------------------------------------------------------------
+# Prefix resolution tests
+
+@test "prefix: caller::func is preferred over bare func" {
+  (
+    :test::prefix start
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  snapshot stdout
+}
+
+@test "prefix: caller::func resolved for stop" {
+  (
+    :test::prefix stop
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  snapshot stdout
+}
+
+@test "prefix: nested caller resolution" {
+  (
+    :test::nested sub action
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  snapshot stdout
+}
+
+@test "prefix: help still works" {
+  (
+    :test::prefix --help
   ) >"${stdout}" 2>"${stderr}" || status=$?
 
   assert "${status}" -eq 0
