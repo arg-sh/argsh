@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# shellcheck disable=SC1091 disable=SC2154 disable=SC2317
+# shellcheck disable=SC1091 disable=SC2154 disable=SC2317 disable=SC2329
 # shellcheck shell=bats
 
 load ../test/helper
