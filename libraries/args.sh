@@ -14,12 +14,48 @@ COMMANDNAME=("$(s="${ARGSH_SOURCE:-"${0}"}"; echo "${s##*/}")")
 # @internal
 # shellcheck disable=SC1090
 import() { declare -A _i; (( ${_i[${1}]:-} )) || { _i[${1}]=1; . "${BASH_SOURCE[0]%/*}/${1}.sh"; } }
+
+# ── Try loading native builtins (.so) for 100-1000x performance ────
+# Falls back to pure bash if unavailable.
+# shellcheck disable=SC2120
+__argsh_try_builtin() {
+  local so
+  # Check ARGSH_BUILTIN_PATH first, then relative to this file
+  for so in \
+    "${ARGSH_BUILTIN_PATH:-}" \
+    "${BASH_SOURCE[0]%/*}/../builtin/target/release/libargsh_builtin.so" \
+    "${BASH_LOADABLES_PATH:+${BASH_LOADABLES_PATH}/libargsh_builtin.so}" \
+  ; do
+    [[ -n "${so}" && -f "${so}" ]] || continue
+    # shellcheck disable=SC2229
+    enable -f "${so}" :usage :args \
+      is::array is::uninitialized is::set is::tty \
+      args::field_name to::int to::float to::boolean to::file to::string \
+      2>/dev/null || continue
+    return 0
+  done
+  return 1
+}
+# obfus ignore variable
+declare -i ARGSH_BUILTIN=0
+if __argsh_try_builtin; then
+  ARGSH_BUILTIN=1
+fi
+unset -f __argsh_try_builtin
+
+# Import remaining libraries needed regardless of builtin mode
 import string
 import fmt
-import is
-import to
+if ! (( ARGSH_BUILTIN )); then
+  import is
+  import to
+fi
 import error
 import array
+
+# When native builtins are loaded, all functions below are provided by the .so
+# shellcheck disable=SC2317
+(( ARGSH_BUILTIN )) && return 0
 
 # @description Print usage information and dispatch to subcommands.
 #
