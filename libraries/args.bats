@@ -693,6 +693,36 @@ source "${PATH_FIXTURES}/fmt.sh"
   is_empty stdout
 }
 
+@test "usage: long boolean flag --verbose" {
+  (
+    :test::usage --verbose cmd2
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  snapshot stdout
+}
+
+@test "usage: long flag with equals syntax" {
+  (
+    :test::usage --config=custom.yml cmd2
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  snapshot stdout
+}
+
+@test "usage: short flag with separate value" {
+  (
+    :test::usage -f separate.yml cmd2
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  snapshot stdout
+}
+
 @test "attrs: short flag with inline value" {
   :validate() {
     assert "${pos1}" = "p1"
