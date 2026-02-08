@@ -3,22 +3,22 @@
     {"file": "/workspace/libraries/fixtures/import/print_out.sh", "percent_covered": "100.00", "covered_lines": "2", "total_lines": "2"},
     {"file": "/workspace/libraries/fixtures/args/rest.sh", "percent_covered": "83.33", "covered_lines": "5", "total_lines": "6"},
     {"file": "/workspace/libraries/fixtures/args/usage.sh", "percent_covered": "72.00", "covered_lines": "36", "total_lines": "50"},
-    {"file": "/workspace/libraries/fixtures/args/attrs.sh", "percent_covered": "52.63", "covered_lines": "20", "total_lines": "38"},
+    {"file": "/workspace/libraries/fixtures/args/attrs.sh", "percent_covered": "60.38", "covered_lines": "32", "total_lines": "53"},
     {"file": "/workspace/libraries/array.sh", "percent_covered": "35.71", "covered_lines": "5", "total_lines": "14"},
     {"file": "/workspace/libraries/error.sh", "percent_covered": "27.78", "covered_lines": "5", "total_lines": "18"},
-    {"file": "/workspace/libraries/to.sh", "percent_covered": "41.67", "covered_lines": "10", "total_lines": "24"},
-    {"file": "/workspace/libraries/is.sh", "percent_covered": "75.00", "covered_lines": "6", "total_lines": "8"},
+    {"file": "/workspace/libraries/to.sh", "percent_covered": "83.33", "covered_lines": "20", "total_lines": "24"},
+    {"file": "/workspace/libraries/is.sh", "percent_covered": "100.00", "covered_lines": "8", "total_lines": "8"},
     {"file": "/workspace/libraries/fmt.sh", "percent_covered": "62.50", "covered_lines": "5", "total_lines": "8"},
     {"file": "/workspace/libraries/import.sh", "percent_covered": "100.00", "covered_lines": "20", "total_lines": "20"},
     {"file": "/workspace/libraries/string.sh", "percent_covered": "100.00", "covered_lines": "41", "total_lines": "41"},
     {"file": "/workspace/libraries/fixtures/args/fmt.sh", "percent_covered": "37.14", "covered_lines": "13", "total_lines": "35"},
-    {"file": "/workspace/libraries/args.sh", "percent_covered": "88.15", "covered_lines": "305", "total_lines": "346"}
+    {"file": "/workspace/libraries/args.sh", "percent_covered": "88.79", "covered_lines": "309", "total_lines": "348"}
   ],
-  "percent_covered": "77.54",
-  "covered_lines": 473,
-  "total_lines": 610,
+  "percent_covered": "79.90",
+  "covered_lines": 501,
+  "total_lines": 627,
   "percent_low": 25,
   "percent_high": 75,
   "command": "bats",
-  "date": "2026-02-08 10:25:49"
+  "date": "2026-02-08 14:27:18"
 }

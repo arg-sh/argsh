@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# shellcheck disable=SC1091 disable=SC2154 disable=SC2317 disable=SC2329
+# shellcheck disable=SC1091 disable=SC2154 disable=SC2317 disable=SC2329 disable=SC2034
 # shellcheck shell=bats
 #
 # Shared tests for both pure-bash and native builtin implementations.
@@ -15,7 +15,7 @@ if [[ "${ARGSH_BUILTIN_TEST:-}" == "1" ]]; then
   enable -f "${BATS_TEST_DIRNAME}/../builtin/target/release/libargsh.so" \
     :usage :args is::array is::uninitialized is::set is::tty \
     args::field_name to::int to::float to::boolean to::file to::string \
-    import import::clear
+    import import::clear 2>/dev/null
   unset -f :usage :args \
     is::array is::uninitialized is::set is::tty \
     to::int to::float to::boolean to::file to::string \

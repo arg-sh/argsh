@@ -216,6 +216,12 @@ pub fn import_main(args: &[String]) -> i32 {
     0
 }
 
+/// Get ARGSH_SOURCE only if it's a real path (contains '/').
+/// Bare names like "argsh" are used as identifiers, not file paths.
+fn get_argsh_source_path() -> Option<String> {
+    shell::get_scalar("ARGSH_SOURCE").filter(|s| s.contains('/'))
+}
+
 /// Resolve module path following import.sh semantics.
 /// Prefixes: @ → PATH_BASE, ~ → ARGSH_SOURCE/BASH_SOURCE[-1], plain → ARGSH_SOURCE/BASH_SOURCE[0]
 /// Extension fallback: "", ".sh", ".bash"
@@ -224,11 +230,11 @@ fn resolve_module_path(module: &str) -> Option<String> {
         let path_base = shell::get_scalar("PATH_BASE")?;
         format!("{}/{}", path_base, rest)
     } else if let Some(rest) = module.strip_prefix('~') {
-        let src = shell::get_scalar("ARGSH_SOURCE")
+        let src = get_argsh_source_path()
             .or_else(shell::get_bash_source_last)?;
         format!("{}/{}", path_dirname(&src), rest)
     } else {
-        let src = shell::get_scalar("ARGSH_SOURCE")
+        let src = get_argsh_source_path()
             .or_else(shell::get_bash_source_first)?;
         format!("{}/{}", path_dirname(&src), module)
     };

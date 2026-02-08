@@ -126,7 +126,7 @@ test::builtin() {
   _require_rust
   cargo build --release \
     --manifest-path "${PATH_BASE}/builtin/Cargo.toml"
-  cp "${PATH_BASE}/builtin/target/release/libargsh.so" "${PATH_BIN}/argsh.so"
+  rm -f "${PATH_BIN}/argsh.so" && cp "${PATH_BASE}/builtin/target/release/libargsh.so" "${PATH_BIN}/argsh.so"
   binary::exists bats || {
     echo "bats required. Install: https://github.com/bats-core/bats-core"
     return 1
@@ -165,7 +165,7 @@ coverage::builtin() {
     cargo build --release \
       --manifest-path "${PATH_BASE}/builtin/Cargo.toml"
 
-  cp "${so_path}" "${PATH_BIN}/argsh.so"
+  rm -f "${PATH_BIN}/argsh.so" && cp "${so_path}" "${PATH_BIN}/argsh.so"
   rm -rf "${cov_dir}"
   mkdir -p "${cov_dir}"
 
@@ -249,7 +249,7 @@ coverage::builtin() {
   echo "Rebuilding without instrumentation..."
   cargo build --release \
     --manifest-path "${PATH_BASE}/builtin/Cargo.toml"
-  cp "${so_path}" "${PATH_BIN}/argsh.so"
+  rm -f "${PATH_BIN}/argsh.so" && cp "${so_path}" "${PATH_BIN}/argsh.so"
 }
 
 ###

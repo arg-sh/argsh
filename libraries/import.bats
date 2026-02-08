@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# shellcheck shell=bash disable=SC2154
+# shellcheck shell=bash disable=SC2154 disable=SC2034 disable=SC2030 disable=SC2031
 # vim: filetype=bash
 # NOTE: do NOT add set -euo pipefail — it breaks bats internals (BATS_TEARDOWN_STARTED unbound)
 
@@ -10,7 +10,7 @@ load_source
 if [[ "${ARGSH_BUILTIN_TEST:-}" == "1" ]]; then
   # shellcheck disable=SC2229
   enable -f "${BATS_TEST_DIRNAME}/../builtin/target/release/libargsh.so" \
-    import import::clear
+    import import::clear 2>/dev/null
   unset -f import import::source import::clear 2>/dev/null || true
 fi
 

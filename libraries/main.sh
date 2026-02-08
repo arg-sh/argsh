@@ -145,7 +145,9 @@ argsh::shebang() {
       ;;
     *)
       # Default: try silently, no failure
-      argsh::try_builtin && ARGSH_BUILTIN=1
+      argsh::try_builtin
+      # shellcheck disable=SC2034
+      ARGSH_BUILTIN=1
       ;;
   esac
 

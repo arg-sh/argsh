@@ -54,6 +54,11 @@ declare -i ARGSH_BUILTIN=0
 if __argsh_try_builtin; then
   ARGSH_BUILTIN=1
   unset -f import 2>/dev/null || true
+  # Rail guard: stale .so without import symbol → /usr/bin/import (hangs).
+  # Restore the bash function if the builtin didn't actually load.
+  # shellcheck disable=SC1090
+  [[ "$(type -t import 2>/dev/null)" == "builtin" ]] || \
+    import() { declare -A _i; (( ${_i[${1}]:-} )) || { _i[${1}]=1; . "${BASH_SOURCE[0]%/*}/${1}.sh"; } }
 fi
 unset -f __argsh_try_builtin
 
