@@ -132,7 +132,8 @@ test::builtin() {
     return 1
   } >&2
   ARGSH_BUILTIN_TEST=1 ARGSH_SOURCE=argsh \
-    bats "${PATH_BASE}/libraries/args.bats"
+    bats "${PATH_BASE}/libraries/args.bats" \
+         "${PATH_BASE}/libraries/import.bats"
 }
 
 coverage::builtin() {
@@ -171,7 +172,8 @@ coverage::builtin() {
   echo "Running tests..."
   LLVM_PROFILE_FILE="${cov_dir}/coverage-%p-%m.profraw" \
   ARGSH_BUILTIN_TEST=1 ARGSH_SOURCE=argsh \
-    bats "${PATH_BASE}/libraries/args.bats"
+    bats "${PATH_BASE}/libraries/args.bats" \
+         "${PATH_BASE}/libraries/import.bats"
 
   # Merge profile data
   "${llvm_tools}/llvm-profdata" merge -sparse \
