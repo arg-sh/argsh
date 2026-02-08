@@ -1,15 +1,18 @@
-use assert_cmd::Command;
 use predicates::prelude::*;
 use std::io::Write;
+use std::process::Command;
 use tempfile::{NamedTempFile, TempDir};
+
+fn cmd() -> assert_cmd::Command {
+    assert_cmd::Command::from(Command::new(env!("CARGO_BIN_EXE_minifier")))
+}
 
 fn minify(input: &str) -> String {
     let mut infile = NamedTempFile::new().unwrap();
     infile.write_all(input.as_bytes()).unwrap();
     let outfile = NamedTempFile::new().unwrap();
 
-    Command::cargo_bin("minifier")
-        .unwrap()
+    cmd()
         .args(["-i", infile.path().to_str().unwrap()])
         .args(["-o", outfile.path().to_str().unwrap()])
         .assert()
@@ -23,8 +26,7 @@ fn minify_obfuscated(input: &str) -> String {
     infile.write_all(input.as_bytes()).unwrap();
     let outfile = NamedTempFile::new().unwrap();
 
-    Command::cargo_bin("minifier")
-        .unwrap()
+    cmd()
         .args(["-i", infile.path().to_str().unwrap()])
         .args(["-o", outfile.path().to_str().unwrap()])
         .arg("-O")
@@ -59,8 +61,7 @@ fn cli_custom_prefix() {
     infile.write_all(b"local foo=1\necho $foo\n").unwrap();
     let outfile = NamedTempFile::new().unwrap();
 
-    Command::cargo_bin("minifier")
-        .unwrap()
+    cmd()
         .args(["-i", infile.path().to_str().unwrap()])
         .args(["-o", outfile.path().to_str().unwrap()])
         .arg("-O")
@@ -78,8 +79,7 @@ fn cli_ignore_vars() {
     infile.write_all(b"local foo=1\nlocal bar=2\necho $foo $bar\n").unwrap();
     let outfile = NamedTempFile::new().unwrap();
 
-    Command::cargo_bin("minifier")
-        .unwrap()
+    cmd()
         .args(["-i", infile.path().to_str().unwrap()])
         .args(["-o", outfile.path().to_str().unwrap()])
         .arg("-O")
@@ -94,8 +94,7 @@ fn cli_ignore_vars() {
 
 #[test]
 fn cli_missing_input() {
-    Command::cargo_bin("minifier")
-        .unwrap()
+    cmd()
         .args(["-i", "/tmp/nonexistent_minifier_test_xyz.sh"])
         .args(["-o", "/tmp/out.sh"])
         .assert()
@@ -189,8 +188,7 @@ fn cli_bundle_inlines_imports() {
     std::fs::write(&main_path, "import greet\necho main\n").unwrap();
     let outfile = NamedTempFile::new().unwrap();
 
-    Command::cargo_bin("minifier")
-        .unwrap()
+    cmd()
         .args(["-i", main_path.to_str().unwrap()])
         .args(["-o", outfile.path().to_str().unwrap()])
         .arg("-B")
@@ -214,8 +212,7 @@ fn cli_bundle_with_obfuscate() {
     std::fs::write(&main_path, "import lib\nlocal foo=1\necho $foo\n").unwrap();
     let outfile = NamedTempFile::new().unwrap();
 
-    Command::cargo_bin("minifier")
-        .unwrap()
+    cmd()
         .args(["-i", main_path.to_str().unwrap()])
         .args(["-o", outfile.path().to_str().unwrap()])
         .arg("-B")
@@ -237,8 +234,7 @@ fn cli_no_bundle_flag_leaves_imports() {
     std::fs::write(&main_path, "import lib\necho main\n").unwrap();
     let outfile = NamedTempFile::new().unwrap();
 
-    Command::cargo_bin("minifier")
-        .unwrap()
+    cmd()
         .args(["-i", main_path.to_str().unwrap()])
         .args(["-o", outfile.path().to_str().unwrap()])
         .assert()

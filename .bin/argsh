@@ -390,7 +390,7 @@ coverage::minifier() {
 ### coverage dispatcher
 ###
 _coverage() {
-  local target
+  local target="all"
   local -a args=(
     'target:all' "Coverage target (all, builtin, minifier)"
   )
