@@ -159,11 +159,6 @@ pub fn parse_field(field: &str) -> FieldDef {
         !is_uninit
     };
 
-    // Initialize empty arrays if uninitialized
-    if is_arr && is_uninit {
-        shell::write_array(&name, &[]);
-    }
-
     FieldDef {
         name,
         display_name,

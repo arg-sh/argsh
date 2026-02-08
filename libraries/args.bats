@@ -377,3 +377,204 @@ source "${PATH_FIXTURES}/fmt.sh"
   is_empty stderr
   snapshot stdout
 }
+
+# -----------------------------------------------------------------------------
+# Direct to:: converter tests
+# These exercise the standalone type converters (both bash and builtin modes).
+
+@test "to: string identity" {
+  result="$(to::string "hello world")"
+  assert "${result}" = "hello world"
+}
+
+@test "to: int valid" {
+  result="$(to::int "42")"
+  assert "${result}" = "42"
+  result="$(to::int "-99")"
+  assert "${result}" = "-99"
+  result="$(to::int "0")"
+  assert "${result}" = "0"
+}
+
+@test "to: int invalid" {
+  to::int "abc" >"${stdout}" 2>"${stderr}" || status=$?
+  assert "${status}" -eq 1
+  to::int "12.34" >"${stdout}" 2>"${stderr}" || status=$?
+  assert "${status}" -eq 1
+  to::int "" >"${stdout}" 2>"${stderr}" || status=$?
+  assert "${status}" -eq 1
+}
+
+@test "to: float valid" {
+  result="$(to::float "3.14")"
+  assert "${result}" = "3.14"
+  result="$(to::float "42")"
+  assert "${result}" = "42"
+  result="$(to::float "-1.5")"
+  assert "${result}" = "-1.5"
+  result="$(to::float "-99")"
+  assert "${result}" = "-99"
+}
+
+@test "to: float invalid" {
+  to::float "abc" >"${stdout}" 2>"${stderr}" || status=$?
+  assert "${status}" -eq 1
+  to::float "" >"${stdout}" 2>"${stderr}" || status=$?
+  assert "${status}" -eq 1
+}
+
+@test "to: boolean truthy" {
+  result="$(to::boolean "true")"
+  assert "${result}" = "1"
+  result="$(to::boolean "yes")"
+  assert "${result}" = "1"
+  result="$(to::boolean "1")"
+  assert "${result}" = "1"
+  result="$(to::boolean "anything")"
+  assert "${result}" = "1"
+}
+
+@test "to: boolean falsy" {
+  result="$(to::boolean "")"
+  assert "${result}" = "0"
+  result="$(to::boolean "false")"
+  assert "${result}" = "0"
+  result="$(to::boolean "0")"
+  assert "${result}" = "0"
+}
+
+@test "to: file valid" {
+  local tmpfile
+  tmpfile="$(mktemp)"
+  result="$(to::file "${tmpfile}")"
+  assert "${result}" = "${tmpfile}"
+  rm -f "${tmpfile}"
+}
+
+@test "to: file invalid" {
+  to::file "/nonexistent/path/file.txt" >"${stdout}" 2>"${stderr}" || status=$?
+  assert "${status}" -eq 1
+}
+
+# -----------------------------------------------------------------------------
+# Direct is:: introspection tests
+
+@test "is: array true" {
+  local -a myarr=("a" "b")
+  is::array myarr
+}
+
+@test "is: array false for scalar" {
+  local myvar="hello"
+  is::array myvar && status=0 || status=$?
+  assert "${status}" -eq 1
+}
+
+@test "is: array false for nonexistent" {
+  is::array _nonexistent_var_xyz_ && status=0 || status=$?
+  assert "${status}" -eq 1
+}
+
+@test "is: array empty array" {
+  local -a empty_arr
+  is::array empty_arr
+}
+
+@test "is: uninitialized scalar" {
+  local myvar
+  is::uninitialized myvar
+}
+
+@test "is: uninitialized false for set scalar" {
+  local myvar="hello"
+  is::uninitialized myvar && status=0 || status=$?
+  assert "${status}" -eq 1
+}
+
+@test "is: uninitialized empty array" {
+  local -a myarr
+  is::uninitialized myarr
+}
+
+@test "is: uninitialized false for populated array" {
+  local -a myarr=("x")
+  is::uninitialized myarr && status=0 || status=$?
+  assert "${status}" -eq 1
+}
+
+@test "is: set true" {
+  local myvar="hello"
+  is::set myvar
+}
+
+@test "is: set false for uninitialized" {
+  local myvar
+  is::set myvar && status=0 || status=$?
+  assert "${status}" -eq 1
+}
+
+@test "is: tty false in test" {
+  # stdout is redirected in tests, so is::tty should return 1
+  is::tty && status=0 || status=$?
+  assert "${status}" -eq 1
+}
+
+# -----------------------------------------------------------------------------
+# Additional :args edge cases
+
+@test "attrs: flag with equals syntax" {
+  :validate() {
+    assert "${pos1}" = "pos1"
+    assert "${pos2}" = "pos2"
+    assert "${pos3}" = "3"
+    assert "${arg2}" = "val1"
+    assert "${arg6}" = "req"
+    assert "${arg8}" = "str1"
+    assert "${arg9}" = "1"
+  }
+  (
+    :test::attrs "pos1" "pos2" "3" --arg2=val1 --arg6 "req" --arg8 "str1" --arg9
+  ) >"${stdout}" 2>"${stderr}" 3>&2 || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+}
+
+@test "attrs: error: missing required flag" {
+  (
+    :test::attrs "pos1" "pos2" "3" --arg6 "s"
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 2
+  is_empty stdout
+}
+
+@test "attrs: error: unknown flag" {
+  (
+    :test::attrs "pos1" "pos2" "3" --arg6 "s" --arg8 "s" --arg9 --nonexistent "x"
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 2
+  is_empty stdout
+}
+
+@test "attrs: error: too many positional arguments" {
+  (
+    :test::attrs2 "pos1" "a1" "a2" "a3" "a4" --nonexistent "x"
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 2
+  is_empty stdout
+}
+
+# -----------------------------------------------------------------------------
+# Additional :usage edge cases
+
+@test "usage: error: unknown subcommand" {
+  (
+    :test::usage nonexistent
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 2
+  is_empty stdout
+}

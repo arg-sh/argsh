@@ -16,6 +16,7 @@ pub struct ShellVar {
 }
 
 const ATT_ARRAY: c_int = 0x0000004;
+const ATT_INVISIBLE: c_int = 0x0001000;
 
 extern "C" {
     fn find_function(name: *const c_char) -> *mut c_void;
@@ -59,7 +60,12 @@ pub fn is_uninitialized(name: &str) -> bool {
             if var.is_null() {
                 return true;
             }
-            // Both arrays and scalars: value == NULL means uninitialized
+            // For arrays: `local -a arr` sets ATT_INVISIBLE (declared but not assigned).
+            // Array value is an ARRAY* pointer, not null, so we check the flag instead.
+            if ((*var).attributes & ATT_ARRAY) != 0 {
+                return ((*var).attributes & ATT_INVISIBLE) != 0 || (*var).value.is_null();
+            }
+            // Scalars: value == NULL means uninitialized
             (*var).value.is_null()
         }
     } else {
