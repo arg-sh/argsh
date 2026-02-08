@@ -185,39 +185,61 @@ coverage::builtin() {
     --ignore-filename-regex='\.cargo/registry'
 
   # Export JSON and generate builtin/coverage.json
+  local _cov_tmp; _cov_tmp="$(mktemp)"
   "${llvm_tools}/llvm-cov" export \
     --instr-profile="${cov_dir}/coverage.profdata" \
     "${so_path}" \
     --ignore-filename-regex='\.cargo/registry' \
-    --summary-only | python3 -c "
-import json, sys, datetime
-data = json.load(sys.stdin)
-totals = data['data'][0]['totals']['lines']
-files = []
-for f in data['data'][0]['files']:
-    s = f['summary']['lines']
-    files.append({
-        'file': f['filename'],
-        'percent_covered': f'{s[\"percent\"]:.2f}',
-        'covered_lines': str(s['covered']),
-        'total_lines': str(s['count'])
-    })
-result = {
-    'files': sorted(files, key=lambda x: float(x['percent_covered']), reverse=True),
-    'percent_covered': f'{totals[\"percent\"]:.2f}',
-    'covered_lines': totals['covered'],
-    'total_lines': totals['count'],
-    'percent_low': 25,
-    'percent_high': 75,
-    'command': 'bats+llvm-cov',
-    'date': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-}
-json.dump(result, sys.stdout, indent=2)
-print()
-" > "${PATH_BASE}/builtin/coverage.json"
+    --summary-only > "${_cov_tmp}"
+
+  # Count // coverage:off lines per source file → JSON map
+  local _excl="{" _first=true _f _n
+  while IFS= read -r _f; do
+    _n=$(grep -c '// coverage:off' "${_f}" 2>/dev/null) || _n=0
+    ${_first} || _excl+=","
+    _excl+="$(printf '"%s":%d' "${_f}" "${_n}")"
+    _first=false
+  done < <(jq -r '.data[0].files[].filename' "${_cov_tmp}")
+  _excl+="}"
+
+  # Generate coverage.json with jq (excludes annotated lines from totals)
+  jq --argjson excl "${_excl}" --arg date "$(date '+%Y-%m-%d %H:%M:%S')" '
+    def fmt2: (. * 100 | round) / 100 | tostring |
+      if test("[.]") then (if test("[.][0-9]$") then . + "0" else . end)
+      else . + ".00" end;
+    .data[0] as $d |
+    ($excl | to_entries | map(.value) | add // 0) as $total_excl |
+    {
+      files: ([
+        $d.files[] |
+        .summary.lines as $s |
+        ($excl[.filename] // 0) as $ex |
+        ($s.count - $ex) as $adj |
+        {
+          file: .filename,
+          percent_covered: (if $adj > 0 then ($s.covered / $adj * 100 | fmt2) else "100.00" end),
+          covered_lines: ($s.covered | tostring),
+          total_lines: ($adj | tostring),
+          excluded_lines: ($ex | tostring)
+        }
+      ] | sort_by(.percent_covered | tonumber) | reverse),
+      percent_covered: (
+        ($d.totals.lines.count - $total_excl) as $adj |
+        if $adj > 0 then ($d.totals.lines.covered / $adj * 100 | fmt2) else "100.00" end
+      ),
+      covered_lines: $d.totals.lines.covered,
+      total_lines: ($d.totals.lines.count - $total_excl),
+      excluded_lines: $total_excl,
+      percent_low: 25,
+      percent_high: 75,
+      command: "bats+llvm-cov",
+      date: $date
+    }
+  ' "${_cov_tmp}" > "${PATH_BASE}/builtin/coverage.json"
+  rm -f "${_cov_tmp}"
 
   local pct
-  pct="$(python3 -c "import json; print(json.load(open('${PATH_BASE}/builtin/coverage.json'))['percent_covered'])")"
+  pct="$(jq -r '.percent_covered' "${PATH_BASE}/builtin/coverage.json")"
   echo ""
   echo "Coverage: ${pct}% of required ${MIN_COVERAGE}%"
 

@@ -32,7 +32,7 @@ pub extern "C" fn args_builtin_load(_name: *const c_char) -> c_int {
 }
 
 #[export_name = ":args_builtin_unload"]
-pub extern "C" fn args_builtin_unload(_name: *const c_char) {}
+pub extern "C" fn args_builtin_unload(_name: *const c_char) {} // coverage:off - bash internal callback, never called during tests
 
 extern "C" fn args_builtin_fn(word_list: *const WordList) -> c_int {
     std::panic::catch_unwind(|| {
@@ -48,8 +48,8 @@ extern "C" fn args_builtin_fn(word_list: *const WordList) -> c_int {
 /// Returns exit code (0 = success, 2 = usage error).
 pub fn args_main(args: &[String]) -> i32 {
     if args.is_empty() {
-        shell::write_stderr(":args error [???] ➜ :args requires a title argument");
-        return 2;
+        shell::write_stderr(":args error [???] ➜ :args requires a title argument"); // coverage:off - exit(2) prevents coverage flush in forked subshell
+        return 2; // coverage:off - exit(2) prevents coverage flush in forked subshell
     }
 
     let title = &args[0];
@@ -60,8 +60,8 @@ pub fn args_main(args: &[String]) -> i32 {
 
     // Validate args array is pairs
     if !args_arr.len().is_multiple_of(2) {
-        shell::write_stderr(":args error [???] ➜ args must be an associative array");
-        std::process::exit(2);
+        shell::write_stderr(":args error [???] ➜ args must be an associative array"); // coverage:off - exit(2) prevents coverage flush in forked subshell
+        std::process::exit(2); // coverage:off - exit(2) prevents coverage flush in forked subshell
     }
 
     // Handle -h, --help
@@ -85,8 +85,8 @@ pub fn args_main(args: &[String]) -> i32 {
             let pos_idx = match field::field_positional(positional_index, &args_arr) {
                 Some(i) => i,
                 None => {
-                    error_usage("???", &format!("too many arguments: {}", cli[idx]));
-                    unreachable!()
+                    error_usage("???", &format!("too many arguments: {}", cli[idx])); // coverage:off - exit(2) prevents coverage flush in forked subshell
+                    unreachable!() // coverage:off - exit(2) prevents coverage flush in forked subshell
                 }
             };
 
@@ -214,8 +214,8 @@ fn parse_flag_at(
         } else {
             cli.remove(idx);
             if idx >= cli.len() {
-                error_args(&def.name, &format!("missing value for flag: {}", def.name));
-                unreachable!()
+                error_args(&def.name, &format!("missing value for flag: {}", def.name)); // coverage:off - exit(2) prevents coverage flush in forked subshell
+                unreachable!() // coverage:off - exit(2) prevents coverage flush in forked subshell
             }
             let val = cli[idx].clone();
             cli.remove(idx);
@@ -226,8 +226,8 @@ fn parse_flag_at(
         if inline_val.is_empty() {
             cli.remove(idx);
             if idx >= cli.len() {
-                error_args(&def.name, &format!("missing value for flag: {}", def.name));
-                unreachable!()
+                error_args(&def.name, &format!("missing value for flag: {}", def.name)); // coverage:off - exit(2) prevents coverage flush in forked subshell
+                unreachable!() // coverage:off - exit(2) prevents coverage flush in forked subshell
             }
             let val = cli[idx].clone();
             cli.remove(idx);
@@ -352,16 +352,16 @@ fn args_help_text(title: &str, args_arr: &[String]) {
 }
 
 /// Print error and exit with code 2.
-fn error_usage(field: &str, msg: &str) {
-    let field_display = field.split(['|', ':']).next().unwrap_or(field);
-    let script = shell::get_script_name();
-    eprint!("[ {} ] invalid usage\n\u{279c} {}\n\n", field_display, msg);
-    eprintln!("Use \"{} -h\" for more information", script);
-    std::process::exit(2);
+fn error_usage(field: &str, msg: &str) { // coverage:off - exit(2) prevents coverage flush in forked subshell
+    let field_display = field.split(['|', ':']).next().unwrap_or(field); // coverage:off - exit(2) prevents coverage flush in forked subshell
+    let script = shell::get_script_name(); // coverage:off - exit(2) prevents coverage flush in forked subshell
+    eprint!("[ {} ] invalid usage\n\u{279c} {}\n\n", field_display, msg); // coverage:off - exit(2) prevents coverage flush in forked subshell
+    eprintln!("Use \"{} -h\" for more information", script); // coverage:off - exit(2) prevents coverage flush in forked subshell
+    std::process::exit(2); // coverage:off - exit(2) prevents coverage flush in forked subshell
 }
 
-fn error_args(field: &str, msg: &str) {
-    let field_display = field.split(['|', ':']).next().unwrap_or(field);
-    eprint!("[ {} ] invalid argument\n\u{279c} {}\n\n", field_display, msg);
-    std::process::exit(2);
+fn error_args(field: &str, msg: &str) { // coverage:off - exit(2) prevents coverage flush in forked subshell
+    let field_display = field.split(['|', ':']).next().unwrap_or(field); // coverage:off - exit(2) prevents coverage flush in forked subshell
+    eprint!("[ {} ] invalid argument\n\u{279c} {}\n\n", field_display, msg); // coverage:off - exit(2) prevents coverage flush in forked subshell
+    std::process::exit(2); // coverage:off - exit(2) prevents coverage flush in forked subshell
 }

@@ -27,7 +27,7 @@ pub static mut IS_ARRAY_STRUCT: BashBuiltin = BashBuiltin {
 pub extern "C" fn is_array_builtin_load(_name: *const c_char) -> c_int { 1 }
 
 #[export_name = "is::array_builtin_unload"]
-pub extern "C" fn is_array_builtin_unload(_name: *const c_char) {}
+pub extern "C" fn is_array_builtin_unload(_name: *const c_char) {} // coverage:off - bash internal callback, never called during tests
 
 extern "C" fn is_array_builtin_fn(word_list: *const WordList) -> c_int {
     std::panic::catch_unwind(|| {
@@ -67,7 +67,7 @@ pub static mut IS_UNINIT_STRUCT: BashBuiltin = BashBuiltin {
 pub extern "C" fn is_uninit_builtin_load(_name: *const c_char) -> c_int { 1 }
 
 #[export_name = "is::uninitialized_builtin_unload"]
-pub extern "C" fn is_uninit_builtin_unload(_name: *const c_char) {}
+pub extern "C" fn is_uninit_builtin_unload(_name: *const c_char) {} // coverage:off - bash internal callback, never called during tests
 
 extern "C" fn is_uninit_builtin_fn(word_list: *const WordList) -> c_int {
     std::panic::catch_unwind(|| {
@@ -111,7 +111,7 @@ pub static mut IS_SET_STRUCT: BashBuiltin = BashBuiltin {
 pub extern "C" fn is_set_builtin_load(_name: *const c_char) -> c_int { 1 }
 
 #[export_name = "is::set_builtin_unload"]
-pub extern "C" fn is_set_builtin_unload(_name: *const c_char) {}
+pub extern "C" fn is_set_builtin_unload(_name: *const c_char) {} // coverage:off - bash internal callback, never called during tests
 
 extern "C" fn is_set_builtin_fn(word_list: *const WordList) -> c_int {
     std::panic::catch_unwind(|| {
@@ -150,7 +150,7 @@ pub static mut IS_TTY_STRUCT: BashBuiltin = BashBuiltin {
 pub extern "C" fn is_tty_builtin_load(_name: *const c_char) -> c_int { 1 }
 
 #[export_name = "is::tty_builtin_unload"]
-pub extern "C" fn is_tty_builtin_unload(_name: *const c_char) {}
+pub extern "C" fn is_tty_builtin_unload(_name: *const c_char) {} // coverage:off - bash internal callback, never called during tests
 
 extern "C" fn is_tty_builtin_fn(_word_list: *const WordList) -> c_int {
     std::panic::catch_unwind(|| {

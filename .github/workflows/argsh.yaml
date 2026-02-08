@@ -125,36 +125,59 @@ jobs:
             builtin/target/release/libargsh.so \
             --ignore-filename-regex='\.cargo/registry'
 
+          COV_TMP="$(mktemp)"
           "${LLVM_TOOLS}/llvm-cov" export \
             --instr-profile=builtin/target/coverage/coverage.profdata \
             builtin/target/release/libargsh.so \
             --ignore-filename-regex='\.cargo/registry' \
-            --summary-only | python3 -c "
-          import json, sys, datetime
-          data = json.load(sys.stdin)
-          totals = data['data'][0]['totals']['lines']
-          files = []
-          for f in data['data'][0]['files']:
-              s = f['summary']['lines']
-              files.append({
-                  'file': f['filename'],
-                  'percent_covered': f'{s[\"percent\"]:.2f}',
-                  'covered_lines': str(s['covered']),
-                  'total_lines': str(s['count'])
-              })
-          result = {
-              'files': sorted(files, key=lambda x: float(x['percent_covered']), reverse=True),
-              'percent_covered': f'{totals[\"percent\"]:.2f}',
-              'covered_lines': totals['covered'],
-              'total_lines': totals['count'],
-              'percent_low': 25,
-              'percent_high': 75,
-              'command': 'bats+llvm-cov',
-              'date': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-          }
-          json.dump(result, sys.stdout, indent=2)
-          print()
-          " > builtin/coverage.json
+            --summary-only > "$COV_TMP"
+
+          # Count // coverage:off lines per source file → JSON map
+          EXCL="{"
+          FIRST=true
+          while IFS= read -r f; do
+            n=$(grep -c '// coverage:off' "$f" 2>/dev/null) || n=0
+            $FIRST || EXCL+=","
+            EXCL+="$(printf '"%s":%d' "$f" "$n")"
+            FIRST=false
+          done < <(jq -r '.data[0].files[].filename' "$COV_TMP")
+          EXCL+="}"
+
+          # Generate coverage.json with jq (excludes annotated lines from totals)
+          jq --argjson excl "$EXCL" --arg date "$(date -u '+%Y-%m-%d %H:%M:%S')" '
+            def fmt2: (. * 100 | round) / 100 | tostring |
+              if test("[.]") then (if test("[.][0-9]$") then . + "0" else . end)
+              else . + ".00" end;
+            .data[0] as $d |
+            ($excl | to_entries | map(.value) | add // 0) as $total_excl |
+            {
+              files: ([
+                $d.files[] |
+                .summary.lines as $s |
+                ($excl[.filename] // 0) as $ex |
+                ($s.count - $ex) as $adj |
+                {
+                  file: .filename,
+                  percent_covered: (if $adj > 0 then ($s.covered / $adj * 100 | fmt2) else "100.00" end),
+                  covered_lines: ($s.covered | tostring),
+                  total_lines: ($adj | tostring),
+                  excluded_lines: ($ex | tostring)
+                }
+              ] | sort_by(.percent_covered | tonumber) | reverse),
+              percent_covered: (
+                ($d.totals.lines.count - $total_excl) as $adj |
+                if $adj > 0 then ($d.totals.lines.covered / $adj * 100 | fmt2) else "100.00" end
+              ),
+              covered_lines: $d.totals.lines.covered,
+              total_lines: ($d.totals.lines.count - $total_excl),
+              excluded_lines: $total_excl,
+              percent_low: 25,
+              percent_high: 75,
+              command: "bats+llvm-cov",
+              date: $date
+            }
+          ' "$COV_TMP" > builtin/coverage.json
+          rm -f "$COV_TMP"
       - name: Is insync
         run: |
           git diff --exit-code \

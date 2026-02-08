@@ -26,7 +26,7 @@ pub static mut TO_INT_STRUCT: BashBuiltin = BashBuiltin {
 pub extern "C" fn to_int_builtin_load(_name: *const c_char) -> c_int { 1 }
 
 #[export_name = "to::int_builtin_unload"]
-pub extern "C" fn to_int_builtin_unload(_name: *const c_char) {}
+pub extern "C" fn to_int_builtin_unload(_name: *const c_char) {} // coverage:off - bash internal callback, never called during tests
 
 extern "C" fn to_int_builtin_fn(word_list: *const WordList) -> c_int {
     std::panic::catch_unwind(|| {
@@ -63,7 +63,7 @@ pub static mut TO_FLOAT_STRUCT: BashBuiltin = BashBuiltin {
 pub extern "C" fn to_float_builtin_load(_name: *const c_char) -> c_int { 1 }
 
 #[export_name = "to::float_builtin_unload"]
-pub extern "C" fn to_float_builtin_unload(_name: *const c_char) {}
+pub extern "C" fn to_float_builtin_unload(_name: *const c_char) {} // coverage:off - bash internal callback, never called during tests
 
 extern "C" fn to_float_builtin_fn(word_list: *const WordList) -> c_int {
     std::panic::catch_unwind(|| {
@@ -114,7 +114,7 @@ pub static mut TO_BOOL_STRUCT: BashBuiltin = BashBuiltin {
 pub extern "C" fn to_bool_builtin_load(_name: *const c_char) -> c_int { 1 }
 
 #[export_name = "to::boolean_builtin_unload"]
-pub extern "C" fn to_bool_builtin_unload(_name: *const c_char) {}
+pub extern "C" fn to_bool_builtin_unload(_name: *const c_char) {} // coverage:off - bash internal callback, never called during tests
 
 extern "C" fn to_bool_builtin_fn(word_list: *const WordList) -> c_int {
     std::panic::catch_unwind(|| {
@@ -150,7 +150,7 @@ pub static mut TO_FILE_STRUCT: BashBuiltin = BashBuiltin {
 pub extern "C" fn to_file_builtin_load(_name: *const c_char) -> c_int { 1 }
 
 #[export_name = "to::file_builtin_unload"]
-pub extern "C" fn to_file_builtin_unload(_name: *const c_char) {}
+pub extern "C" fn to_file_builtin_unload(_name: *const c_char) {} // coverage:off - bash internal callback, never called during tests
 
 extern "C" fn to_file_builtin_fn(word_list: *const WordList) -> c_int {
     std::panic::catch_unwind(|| {
@@ -187,7 +187,7 @@ pub static mut TO_STRING_STRUCT: BashBuiltin = BashBuiltin {
 pub extern "C" fn to_string_builtin_load(_name: *const c_char) -> c_int { 1 }
 
 #[export_name = "to::string_builtin_unload"]
-pub extern "C" fn to_string_builtin_unload(_name: *const c_char) {}
+pub extern "C" fn to_string_builtin_unload(_name: *const c_char) {} // coverage:off - bash internal callback, never called during tests
 
 extern "C" fn to_string_builtin_fn(word_list: *const WordList) -> c_int {
     std::panic::catch_unwind(|| {

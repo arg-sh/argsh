@@ -27,7 +27,7 @@ pub static mut FIELD_NAME_STRUCT: BashBuiltin = BashBuiltin {
 pub extern "C" fn field_name_builtin_load(_name: *const c_char) -> c_int { 1 }
 
 #[export_name = "args::field_name_builtin_unload"]
-pub extern "C" fn field_name_builtin_unload(_name: *const c_char) {}
+pub extern "C" fn field_name_builtin_unload(_name: *const c_char) {} // coverage:off - bash internal callback, never called during tests
 
 extern "C" fn field_name_builtin_fn(word_list: *const WordList) -> c_int {
     std::panic::catch_unwind(|| {
