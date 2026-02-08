@@ -15,7 +15,10 @@ if [[ "${ARGSH_BUILTIN_TEST:-}" == "1" ]]; then
   enable -f "${BATS_TEST_DIRNAME}/../builtin/target/release/libargsh.so" \
     :usage :args is::array is::uninitialized is::set is::tty \
     args::field_name to::int to::float to::boolean to::file to::string
-  unset -f :usage :args is::uninitialized 2>/dev/null || true
+  unset -f :usage :args \
+    is::array is::uninitialized is::set is::tty \
+    to::int to::float to::boolean to::file to::string \
+    args::field_name 2>/dev/null || true
 fi
 
 # -----------------------------------------------------------------------------
