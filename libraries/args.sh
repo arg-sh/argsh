@@ -57,24 +57,27 @@ if __argsh_try_builtin; then
   # Rail guard: stale .so without import symbol → /usr/bin/import (hangs).
   # Restore the bash function if the builtin didn't actually load.
   # shellcheck disable=SC1090
-  [[ "$(type -t import 2>/dev/null)" == "builtin" ]] || \
-    import() { declare -A _i; (( ${_i[${1}]:-} )) || { _i[${1}]=1; . "${BASH_SOURCE[0]%/*}/${1}.sh"; } }
+  # shellcheck disable=SC2218
+  [[ "$(type -t import 2>/dev/null)" == "builtin" ]] || import() { declare -A _i; (( ${_i[${1}]:-} )) || { _i[${1}]=1; . "${BASH_SOURCE[0]%/*}/${1}.sh"; } }
 fi
 unset -f __argsh_try_builtin
 
-# Import remaining libraries needed regardless of builtin mode
+# Import remaining libraries (lines starting with `import` are stripped by obfus)
 import string
 import fmt
-if ! (( ARGSH_BUILTIN )); then
-  import is
-  import to
-fi
+import is
+import to
 import error
 import array
 
-# When native builtins are loaded, all functions below are provided by the .so
+# When native builtins are loaded, all functions below are provided by the .so.
+# Remove function versions of is::/to:: so builtin versions take precedence.
 # shellcheck disable=SC2317
-(( ARGSH_BUILTIN )) && return 0
+if (( ARGSH_BUILTIN )); then
+  unset -f is::array is::uninitialized is::set is::tty args::field_name \
+          to::int to::float to::boolean to::file to::string 2>/dev/null || true
+  return 0
+fi
 
 # @description Print usage information and dispatch to subcommands.
 #

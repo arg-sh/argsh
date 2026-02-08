@@ -172,7 +172,7 @@ sub obfuscate {
 		if ($delete_blanks && (
       $line =~ m/^[ \t]*#.*/ || # [^!] 
       $line =~ m/^[ \t]*$/ ||
-      $line =~ m/^import[( ].+$/ ||
+      $line =~ m/^[ \t]*import[( ].+$/ ||
       $line =~ m/^set -euo pipefail/
     )) {
 			next;

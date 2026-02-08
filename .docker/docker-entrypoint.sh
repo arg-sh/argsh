@@ -49,7 +49,7 @@ argsh::minify() {
     iVars=(-I "$(array::join "," "${ignore_variable[@]}")")
   fi
   # shellcheck disable=SC2086
-  obfus -i "${content}" -o "${tout}" -A "${iVars[@]}"
+  minifier -i "${content}" -o "${tout}" -O "${iVars[@]}"
   local -r data="$(cat "${tout}")"
   if [[ -z "${template:-}" ]]; then
     echo -n "${data}" >"${out}"
