@@ -38,6 +38,36 @@ to::custom() {
   echo "${value} custom"
 }
 
+:test::types_float() {
+  local val
+  # shellcheck disable=SC2034
+  local -a args=(
+    'val:~float' "A float value"
+  )
+  :args "Float type test" "${@}"
+  :validate >&3
+}
+
+:test::types_float_flag() {
+  local val
+  # shellcheck disable=SC2034
+  local -a args=(
+    'val|:~float' "A float value flag"
+  )
+  :args "Float flag type test" "${@}"
+  :validate >&3
+}
+
+:test::types_file() {
+  local val
+  # shellcheck disable=SC2034
+  local -a args=(
+    'val:~file' "A file path"
+  )
+  :args "File type test" "${@}"
+  :validate >&3
+}
+
 :test::attrs2() {
   local pos1
   # shellcheck disable=SC2034

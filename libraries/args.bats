@@ -581,3 +581,132 @@ source "${PATH_FIXTURES}/fmt.sh"
   assert "${status}" -eq 2
   is_empty stdout
 }
+
+# -----------------------------------------------------------------------------
+# Internal type conversion via :args (exercises field::convert_type)
+
+@test "types: float via :args" {
+  :validate() {
+    assert "${val}" = "3.14"
+  }
+  (
+    :test::types_float "3.14"
+  ) >"${stdout}" 2>"${stderr}" 3>&2 || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+}
+
+@test "types: negative float via :args flag" {
+  :validate() {
+    assert "${val}" = "-2.5"
+  }
+  (
+    :test::types_float_flag --val "-2.5"
+  ) >"${stdout}" 2>"${stderr}" 3>&2 || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+}
+
+@test "types: integer-only float via :args" {
+  :validate() {
+    assert "${val}" = "42"
+  }
+  (
+    :test::types_float "42"
+  ) >"${stdout}" 2>"${stderr}" 3>&2 || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+}
+
+@test "types: file via :args" {
+  local tmpfile
+  tmpfile="$(mktemp)"
+  :validate() {
+    assert "${val}" = "${tmpfile}"
+  }
+  (
+    :test::types_file "${tmpfile}"
+  ) >"${stdout}" 2>"${stderr}" 3>&2 || status=$?
+  rm -f "${tmpfile}"
+
+  assert "${status}" -eq 0
+  is_empty stderr
+}
+
+@test "types: file error via :args" {
+  (
+    :test::types_file "/nonexistent/file.txt"
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 2
+  is_empty stdout
+}
+
+@test "types: valid float arg4 with equals" {
+  :validate() {
+    assert "${pos1}" = "p1"
+    assert "${pos2}" = "p2"
+    assert "${pos3}" = "1"
+    assert "${arg4}" = "9.99"
+    assert "${arg6}" = "s"
+    assert "${arg8}" = "s"
+    assert "${arg9}" = "1"
+  }
+  (
+    :test::attrs "p1" "p2" "1" --arg4=9.99 --arg6 "s" --arg8 "s" --arg9
+  ) >"${stdout}" 2>"${stderr}" 3>&2 || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+}
+
+# -----------------------------------------------------------------------------
+# args::field_name builtin
+
+@test "args::field_name extracts name" {
+  result="$(args::field_name "flag|f:~int!")"
+  assert "${result}" = "flag"
+}
+
+@test "args::field_name with dashes" {
+  result="$(args::field_name "my-flag|m")"
+  assert "${result}" = "my_flag"
+}
+
+@test "args::field_name with hidden prefix" {
+  result="$(args::field_name "#hidden|h")"
+  assert "${result}" = "hidden"
+}
+
+# -----------------------------------------------------------------------------
+# Additional :args error edge cases
+
+@test "attrs: error: too many positionals (no rest array)" {
+  (
+    :test::attrs "pos1" "pos2" "3" --arg6 "s" --arg8 "s" --arg9 "extra"
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 2
+  is_empty stdout
+}
+
+@test "attrs: short flag with inline value" {
+  :validate() {
+    assert "${pos1}" = "p1"
+    assert "${pos2}" = "p2"
+    assert "${pos3}" = "1"
+    assert "${arg2}" = "inline"
+    assert "${arg6}" = "s"
+    assert "${arg8}" = "s"
+    assert "${arg9}" = "1"
+  }
+  (
+    :test::attrs "p1" "p2" "1" -2inline --arg6 "s" --arg8 "s" --arg9
+  ) >"${stdout}" 2>"${stderr}" 3>&2 || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+}
