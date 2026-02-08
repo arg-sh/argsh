@@ -1,56 +1,56 @@
 {
   "files": [
     {
-      "file": "/home/fentas/github/kernpilot/.lok8s/implementation/arg-sh/argsh/builtin/src/shell.rs",
+      "file": "builtin/src/shell.rs",
       "percent_covered": "106.59",
       "covered_lines": "178",
       "total_lines": "167",
       "excluded_lines": "32"
     },
     {
-      "file": "/home/fentas/github/kernpilot/.lok8s/implementation/arg-sh/argsh/builtin/src/import.rs",
+      "file": "builtin/src/import.rs",
       "percent_covered": "102.38",
       "covered_lines": "129",
       "total_lines": "126",
       "excluded_lines": "10"
     },
     {
-      "file": "/home/fentas/github/kernpilot/.lok8s/implementation/arg-sh/argsh/builtin/src/to.rs",
+      "file": "builtin/src/to.rs",
       "percent_covered": "100.00",
       "covered_lines": "87",
       "total_lines": "87",
       "excluded_lines": "5"
     },
     {
-      "file": "/home/fentas/github/kernpilot/.lok8s/implementation/arg-sh/argsh/builtin/src/args.rs",
+      "file": "builtin/src/args.rs",
       "percent_covered": "99.54",
       "covered_lines": "215",
       "total_lines": "216",
       "excluded_lines": "21"
     },
     {
-      "file": "/home/fentas/github/kernpilot/.lok8s/implementation/arg-sh/argsh/builtin/src/is.rs",
+      "file": "builtin/src/is.rs",
       "percent_covered": "95.00",
       "covered_lines": "57",
       "total_lines": "60",
       "excluded_lines": "4"
     },
     {
-      "file": "/home/fentas/github/kernpilot/.lok8s/implementation/arg-sh/argsh/builtin/src/usage.rs",
+      "file": "builtin/src/usage.rs",
       "percent_covered": "94.85",
       "covered_lines": "258",
       "total_lines": "272",
       "excluded_lines": "35"
     },
     {
-      "file": "/home/fentas/github/kernpilot/.lok8s/implementation/arg-sh/argsh/builtin/src/field.rs",
+      "file": "builtin/src/field.rs",
       "percent_covered": "93.17",
       "covered_lines": "191",
       "total_lines": "205",
       "excluded_lines": "1"
     },
     {
-      "file": "/home/fentas/github/kernpilot/.lok8s/implementation/arg-sh/argsh/builtin/src/lib.rs",
+      "file": "builtin/src/lib.rs",
       "percent_covered": "92.31",
       "covered_lines": "12",
       "total_lines": "13",
