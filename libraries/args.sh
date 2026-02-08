@@ -23,7 +23,8 @@ __argsh_try_builtin() {
   local -r _n="argsh.so"
   local -ra _builtins=(:usage :args
     is::array is::uninitialized is::set is::tty
-    args::field_name to::int to::float to::boolean to::file to::string)
+    args::field_name to::int to::float to::boolean to::file to::string
+    import import::clear)
   # Search order: explicit path, PATH_LIB, PATH_BIN, LD_LIBRARY_PATH, BASH_LOADABLES_PATH
   for _so in \
     "${ARGSH_BUILTIN_PATH:-}" \
@@ -52,6 +53,7 @@ __argsh_try_builtin() {
 declare -i ARGSH_BUILTIN=0
 if __argsh_try_builtin; then
   ARGSH_BUILTIN=1
+  unset -f import 2>/dev/null || true
 fi
 unset -f __argsh_try_builtin
 

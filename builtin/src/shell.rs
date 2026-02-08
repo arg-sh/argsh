@@ -1,5 +1,6 @@
 //! FFI bindings to bash internals + high-level shell variable helpers.
 
+use std::collections::HashSet;
 use std::ffi::{c_char, c_int, c_void, CString};
 
 // ── Bash FFI ──────────────────────────────────────────────────────
@@ -22,6 +23,8 @@ extern "C" {
     fn find_function(name: *const c_char) -> *mut c_void;
     fn find_variable(name: *const c_char) -> *mut ShellVar;
     fn unbind_variable(name: *const c_char) -> c_int;
+    fn unbind_func(name: *const c_char) -> c_int;
+    fn all_visible_functions() -> *mut *mut ShellVar;
     fn make_new_array_variable(name: *const c_char) -> *mut c_void;
     fn parse_and_execute(
         string: *mut c_char,
@@ -200,4 +203,119 @@ pub fn write_stderr(msg: &str) { // coverage:off - exit(2) prevents coverage flu
     use std::io::Write; // coverage:off - exit(2) prevents coverage flush in forked subshell
     let _ = std::io::stderr().write_all(msg.as_bytes()); // coverage:off - exit(2) prevents coverage flush in forked subshell
     let _ = std::io::stderr().write_all(b"\n"); // coverage:off - exit(2) prevents coverage flush in forked subshell
+}
+
+// ── Import helpers ───────────────────────────────────────────────
+
+/// Execute a bash command string via parse_and_execute.
+/// Returns the exit code. Handles malloc allocation for bash's xfree().
+pub fn run_bash(cmd: &str) -> c_int {
+    if let Ok(cstr) = CString::new(cmd) {
+        let from = CString::new("import").unwrap();
+        let bytes = cstr.as_bytes_with_nul();
+        unsafe {
+            let ptr = libc::malloc(bytes.len()) as *mut c_char;
+            if ptr.is_null() {
+                return 1;
+            }
+            std::ptr::copy_nonoverlapping(bytes.as_ptr(), ptr as *mut u8, bytes.len());
+            parse_and_execute(ptr, from.as_ptr(), 0)
+            // Do NOT free ptr — bash already freed it
+        }
+    } else {
+        1
+    }
+}
+
+/// Get all currently visible function names.
+/// Uses all_visible_functions() which returns a malloc'd NULL-terminated array.
+/// We free the array but NOT the ShellVar pointers (they belong to bash).
+pub fn get_all_function_names() -> HashSet<String> {
+    let mut result = HashSet::new();
+    unsafe {
+        let arr = all_visible_functions();
+        if arr.is_null() {
+            return result;
+        }
+        let mut i = 0;
+        loop {
+            let var_ptr = *arr.add(i);
+            if var_ptr.is_null() {
+                break;
+            }
+            if !(*var_ptr).name.is_null() {
+                let cstr = std::ffi::CStr::from_ptr((*var_ptr).name);
+                if let Ok(s) = cstr.to_str() {
+                    result.insert(s.to_string());
+                }
+            }
+            i += 1;
+        }
+        libc::free(arr as *mut libc::c_void);
+    }
+    result
+}
+
+/// Remove a shell function by name.
+pub fn remove_function(name: &str) {
+    if let Ok(cname) = CString::new(name) {
+        unsafe {
+            unbind_func(cname.as_ptr());
+        }
+    }
+}
+
+/// Source a bash file using parse_and_execute(". path").
+pub fn source_bash_file(path: &str) -> c_int {
+    run_bash(&format!(". \"{}\"", path))
+}
+
+/// Create a function alias: new_name() { old_name "$@"; }
+pub fn create_function_alias(old_name: &str, new_name: &str) {
+    run_bash(&format!("{} () {{ {} \"$@\"; }}", new_name, old_name));
+}
+
+/// Get a value from a bash associative array.
+pub fn assoc_get(array_name: &str, key: &str) -> Option<String> {
+    let tmp = "__argsh_import_tmp";
+    let cmd = format!("{}=\"${{{}[{}]:-}}\"", tmp, array_name, key);
+    if run_bash(&cmd) != 0 {
+        return None;
+    }
+    let val = get_scalar(tmp);
+    set_scalar(tmp, "");
+    val.filter(|s| !s.is_empty())
+}
+
+/// Set a value in a bash associative array.
+pub fn assoc_set(array_name: &str, key: &str, value: &str) {
+    run_bash(&format!("{}[{}]=\"{}\"", array_name, key, value));
+}
+
+/// Get all keys from a bash associative array.
+pub fn get_assoc_keys(array_name: &str) -> Vec<String> {
+    let tmp = "__argsh_import_tmp";
+    let cmd = format!("{}=\"${{!{}[@]}}\"", tmp, array_name);
+    if run_bash(&cmd) != 0 {
+        return Vec::new();
+    }
+    let val = get_scalar(tmp).unwrap_or_default();
+    set_scalar(tmp, "");
+    if val.is_empty() {
+        Vec::new()
+    } else {
+        val.split_whitespace().map(|s| s.to_string()).collect()
+    }
+}
+
+/// Read BASH_SOURCE[0].
+pub fn get_bash_source_first() -> Option<String> {
+    bash_builtins::variables::array_get("BASH_SOURCE", 0)
+        .map(|s| s.to_string_lossy().into_owned())
+}
+
+/// Read last element of BASH_SOURCE.
+pub fn get_bash_source_last() -> Option<String> {
+    let arr = read_array("BASH_SOURCE");
+    arr.last().cloned()
 }

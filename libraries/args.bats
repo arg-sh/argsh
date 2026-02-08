@@ -14,11 +14,12 @@ if [[ "${ARGSH_BUILTIN_TEST:-}" == "1" ]]; then
   # shellcheck disable=SC2229
   enable -f "${BATS_TEST_DIRNAME}/../builtin/target/release/libargsh.so" \
     :usage :args is::array is::uninitialized is::set is::tty \
-    args::field_name to::int to::float to::boolean to::file to::string
+    args::field_name to::int to::float to::boolean to::file to::string \
+    import import::clear
   unset -f :usage :args \
     is::array is::uninitialized is::set is::tty \
     to::int to::float to::boolean to::file to::string \
-    args::field_name 2>/dev/null || true
+    args::field_name import import::source import::clear 2>/dev/null || true
 fi
 
 # -----------------------------------------------------------------------------

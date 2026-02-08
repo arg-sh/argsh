@@ -23,7 +23,8 @@ argsh::try_builtin() {
   # shellcheck disable=SC2034
   local -ra _builtins=(:usage :args
     is::array is::uninitialized is::set is::tty
-    args::field_name to::int to::float to::boolean to::file to::string)
+    args::field_name to::int to::float to::boolean to::file to::string
+    import import::clear)
   # If explicit path given, only try that
   if [[ -n "${1:-}" ]]; then
     [[ -f "${1}" ]] || return 1
