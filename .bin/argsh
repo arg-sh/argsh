@@ -175,10 +175,11 @@ coverage::builtin() {
     bats "${PATH_BASE}/libraries/args.bats" \
          "${PATH_BASE}/libraries/import.bats"
 
-  # Merge profile data
+  # Merge profile data and clean up raw profiles
   "${llvm_tools}/llvm-profdata" merge -sparse \
     "${cov_dir}"/coverage-*.profraw \
     -o "${cov_dir}/coverage.profdata"
+  rm -f "${cov_dir}"/coverage-*.profraw
 
   echo ""
   "${llvm_tools}/llvm-cov" report \
@@ -244,6 +245,10 @@ coverage::builtin() {
   pct="$(jq -r '.percent_covered' "${PATH_BASE}/builtin/coverage.json")"
   echo ""
   echo "Coverage: ${pct}% of required ${MIN_COVERAGE}%"
+
+  # Clean up coverage artifacts (profraw files from instrumented .so in main process)
+  rm -rf "${cov_dir}"
+  find "${PATH_BASE}" -maxdepth 2 -name '*.profraw' -delete 2>/dev/null || true
 
   # Rebuild without instrumentation for normal use
   echo "Rebuilding without instrumentation..."
