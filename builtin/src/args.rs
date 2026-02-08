@@ -1,9 +1,48 @@
 //! :args builtin — argument parsing with type checking.
+//!
+//! Mirrors: libraries/args.sh (:args function)
 
+use crate::{word_list_to_vec, BashBuiltin, SyncPtr, WordList, BUILTIN_ENABLED};
 use crate::field;
 use crate::shell;
 use crate::usage;
+use std::ffi::{c_char, c_int};
 use std::io::Write;
+
+// ── Builtin registration ─────────────────────────────────────────
+
+static ARGS_LONG_DOC: [SyncPtr; 2] = [
+    SyncPtr(c"Parse arguments and flags from the args array.".as_ptr()),
+    SyncPtr(std::ptr::null()),
+];
+
+#[export_name = ":args_struct"]
+pub static mut ARGS_STRUCT: BashBuiltin = BashBuiltin {
+    name: c":args".as_ptr(),
+    function: args_builtin_fn,
+    flags: BUILTIN_ENABLED,
+    short_doc: c":args <title> [args...]".as_ptr(),
+    long_doc: ARGS_LONG_DOC.as_ptr().cast(),
+    handle: std::ptr::null(),
+};
+
+#[export_name = ":args_builtin_load"]
+pub extern "C" fn args_builtin_load(_name: *const c_char) -> c_int {
+    1 // success
+}
+
+#[export_name = ":args_builtin_unload"]
+pub extern "C" fn args_builtin_unload(_name: *const c_char) {}
+
+extern "C" fn args_builtin_fn(word_list: *const WordList) -> c_int {
+    std::panic::catch_unwind(|| {
+        let args = word_list_to_vec(word_list);
+        args_main(&args)
+    })
+    .unwrap_or(1)
+}
+
+// ── Implementation ───────────────────────────────────────────────
 
 /// Main entry point for :args builtin.
 /// Returns exit code (0 = success, 2 = usage error).
@@ -20,7 +59,7 @@ pub fn args_main(args: &[String]) -> i32 {
     let args_arr = shell::read_array("args");
 
     // Validate args array is pairs
-    if args_arr.len() % 2 != 0 {
+    if !args_arr.len().is_multiple_of(2) {
         shell::write_stderr(":args error [???] ➜ args must be an associative array");
         std::process::exit(2);
     }
@@ -127,8 +166,8 @@ fn parse_flag_at(
     let arg = cli[idx].clone();
     let flag_part = arg.split('=').next().unwrap_or(&arg);
 
-    let (lookup_name, is_long) = if flag_part.starts_with("--") {
-        (flag_part[2..].to_string(), true)
+    let (lookup_name, is_long) = if let Some(stripped) = flag_part.strip_prefix("--") {
+        (stripped.to_string(), true)
     } else if flag_part.starts_with('-') && flag_part.len() >= 2 {
         (flag_part[1..2].to_string(), false)
     } else {
@@ -169,7 +208,7 @@ fn parse_flag_at(
     // Value flag
     let value = if is_long {
         if arg.contains('=') {
-            let val = arg.splitn(2, '=').nth(1).unwrap_or("").to_string();
+            let val = arg.split_once('=').map(|x| x.1).unwrap_or("").to_string();
             cli.remove(idx);
             val
         } else {
@@ -194,8 +233,8 @@ fn parse_flag_at(
             cli.remove(idx);
             val
         } else {
-            let val = if inline_val.starts_with('=') {
-                inline_val[1..].to_string()
+            let val = if let Some(stripped) = inline_val.strip_prefix('=') {
+                stripped.to_string()
             } else {
                 inline_val.to_string()
             };
@@ -314,7 +353,7 @@ fn args_help_text(title: &str, args_arr: &[String]) {
 
 /// Print error and exit with code 2.
 fn error_usage(field: &str, msg: &str) {
-    let field_display = field.split(|c: char| c == '|' || c == ':').next().unwrap_or(field);
+    let field_display = field.split(['|', ':']).next().unwrap_or(field);
     let script = shell::get_script_name();
     eprint!("[ {} ] invalid usage\n\u{279c} {}\n\n", field_display, msg);
     eprintln!("Use \"{} -h\" for more information", script);
@@ -322,7 +361,7 @@ fn error_usage(field: &str, msg: &str) {
 }
 
 fn error_args(field: &str, msg: &str) {
-    let field_display = field.split(|c: char| c == '|' || c == ':').next().unwrap_or(field);
+    let field_display = field.split(['|', ':']).next().unwrap_or(field);
     eprint!("[ {} ] invalid argument\n\u{279c} {}\n\n", field_display, msg);
     std::process::exit(2);
 }

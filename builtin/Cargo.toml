@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [lib]
+name = "argsh"
 crate-type = ["cdylib"]
 
 [dependencies]
@@ -14,3 +15,5 @@ libc = "0.2"
 lto = true
 opt-level = "s"
 strip = true
+panic = "abort"
+codegen-units = 1

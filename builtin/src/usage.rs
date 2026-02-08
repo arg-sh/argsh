@@ -1,8 +1,47 @@
 //! :usage builtin — subcommand dispatch with prefix resolution.
+//!
+//! Mirrors: libraries/args.sh (:usage function)
 
+use crate::{word_list_to_vec, BashBuiltin, SyncPtr, WordList, BUILTIN_ENABLED};
 use crate::field;
 use crate::shell;
+use std::ffi::{c_char, c_int};
 use std::io::Write;
+
+// ── Builtin registration ─────────────────────────────────────────
+
+static USAGE_LONG_DOC: [SyncPtr; 2] = [
+    SyncPtr(c"Parse subcommands from the usage array and dispatch.".as_ptr()),
+    SyncPtr(std::ptr::null()),
+];
+
+#[export_name = ":usage_struct"]
+pub static mut USAGE_STRUCT: BashBuiltin = BashBuiltin {
+    name: c":usage".as_ptr(),
+    function: usage_builtin_fn,
+    flags: BUILTIN_ENABLED,
+    short_doc: c":usage <title> [args...]".as_ptr(),
+    long_doc: USAGE_LONG_DOC.as_ptr().cast(),
+    handle: std::ptr::null(),
+};
+
+#[export_name = ":usage_builtin_load"]
+pub extern "C" fn usage_builtin_load(_name: *const c_char) -> c_int {
+    1 // success
+}
+
+#[export_name = ":usage_builtin_unload"]
+pub extern "C" fn usage_builtin_unload(_name: *const c_char) {}
+
+extern "C" fn usage_builtin_fn(word_list: *const WordList) -> c_int {
+    std::panic::catch_unwind(|| {
+        let args = word_list_to_vec(word_list);
+        usage_main(&args)
+    })
+    .unwrap_or(1)
+}
+
+// ── Implementation ───────────────────────────────────────────────
 
 /// Main entry point for :usage builtin.
 /// Returns exit code (0 = success, 2 = usage error).
@@ -20,7 +59,7 @@ pub fn usage_main(args: &[String]) -> i32 {
     let args_arr = shell::read_array("args");
 
     // Validate usage array is pairs
-    if usage_arr.len() % 2 != 0 {
+    if !usage_arr.len().is_multiple_of(2) {
         shell::write_stderr(":args error [???] ➜ usage must be an associative array");
         std::process::exit(2);
     }
@@ -77,7 +116,7 @@ pub fn usage_main(args: &[String]) -> i32 {
     let cmd = match cmd {
         Some(c) => c,
         None => {
-            error_usage("???", &format!("Invalid command: "));
+            error_usage("???", "Invalid command: ");
             unreachable!()
         }
     };
@@ -156,12 +195,12 @@ pub fn usage_main(args: &[String]) -> i32 {
     }
 
     // Append to COMMANDNAME
-    let cmd_name = found_field.split(|c: char| c == '|' || c == ':').next().unwrap_or(&found_field);
+    let cmd_name = found_field.split(['|', ':']).next().unwrap_or(&found_field);
     shell::append_commandname(cmd_name);
 
     // Set usage = (func remaining_args...)
     let mut new_usage = vec![func];
-    new_usage.extend(cli.into_iter());
+    new_usage.extend(cli);
     shell::write_array("usage", &new_usage);
 
     0 // EXECUTION_SUCCESS
@@ -182,8 +221,8 @@ fn parse_flag_at(
     let arg = cli[idx].clone();
     let flag_part = arg.split('=').next().unwrap_or(&arg);
 
-    let (lookup_name, is_long) = if flag_part.starts_with("--") {
-        (flag_part[2..].to_string(), true)
+    let (lookup_name, is_long) = if let Some(stripped) = flag_part.strip_prefix("--") {
+        (stripped.to_string(), true)
     } else if flag_part.starts_with('-') && flag_part.len() >= 2 {
         (flag_part[1..2].to_string(), false)
     } else {
@@ -227,7 +266,7 @@ fn parse_flag_at(
     let value = if is_long {
         // Check for --flag=value
         if arg.contains('=') {
-            let val = arg.splitn(2, '=').nth(1).unwrap_or("").to_string();
+            let val = arg.split_once('=').map(|x| x.1).unwrap_or("").to_string();
             cli.remove(idx);
             val
         } else {
@@ -256,8 +295,8 @@ fn parse_flag_at(
             val
         } else {
             // Check for =value
-            let val = if inline_val.starts_with('=') {
-                inline_val[1..].to_string()
+            let val = if let Some(stripped) = inline_val.strip_prefix('=') {
+                stripped.to_string()
             } else {
                 inline_val.to_string()
             };
@@ -270,7 +309,7 @@ fn parse_flag_at(
     let converted = match field::convert_type(&def.type_name, &value, &def.name) {
         Ok(v) => v,
         Err(msg) => {
-            error_usage(&field_str, &msg);
+            error_usage(field_str, &msg);
             unreachable!()
         }
     };
@@ -303,12 +342,11 @@ fn check_required_flags(args_arr: &[String], matched: &[String]) {
         let def = field::parse_field(field_str);
 
         // Set boolean to false if not matched and no default
-        if def.is_boolean && !def.has_default {
-            if !matched.contains(field_str) {
+        if def.is_boolean && !def.has_default
+            && !matched.contains(field_str) {
                 // For arrays: sets arr[0]=0. For scalars: sets var=0.
                 shell::set_scalar(&def.name, "0");
             }
-        }
 
         // Check required
         if def.required && !matched.contains(field_str) {
@@ -358,7 +396,7 @@ fn usage_help_text(title: &str, usage_arr: &[String], args_arr: &[String]) {
         }
 
         // Command name (before | or :)
-        let name = entry.split(|c: char| c == '|' || c == ':').next().unwrap_or(entry);
+        let name = entry.split(['|', ':']).next().unwrap_or(entry);
         let _ = writeln!(out, "  {:width$} {}", name, desc, width = fw);
     }
 
@@ -430,7 +468,7 @@ pub fn print_flags_section<W: Write>(out: &mut W, args_arr: &[String], _fw: usiz
 
 /// Print error and exit with code 2.
 fn error_usage(field: &str, msg: &str) {
-    let field_display = field.split(|c: char| c == '|' || c == ':').next().unwrap_or(field);
+    let field_display = field.split(['|', ':']).next().unwrap_or(field);
     let script = shell::get_script_name();
     eprint!("[ {} ] invalid usage\n\u{279c} {}\n\n", field_display, msg);
     eprintln!("Use \"{} -h\" for more information", script);
@@ -438,7 +476,7 @@ fn error_usage(field: &str, msg: &str) {
 }
 
 fn error_args(field: &str, msg: &str) {
-    let field_display = field.split(|c: char| c == '|' || c == ':').next().unwrap_or(field);
+    let field_display = field.split(['|', ':']).next().unwrap_or(field);
     eprint!("[ {} ] invalid argument\n\u{279c} {}\n\n", field_display, msg);
     std::process::exit(2);
 }

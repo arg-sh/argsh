@@ -1,9 +1,53 @@
 //! Parse argsh field definitions and format help text.
+//!
+//! Mirrors: libraries/args.sh (args::field_name function, field parsing internals)
 
+use crate::{word_list_to_vec, BashBuiltin, SyncPtr, WordList, BUILTIN_ENABLED};
 use crate::shell;
+use std::ffi::{c_char, c_int};
+
+// ── args::field_name builtin registration ────────────────────────
+
+static FIELD_NAME_LONG_DOC: [SyncPtr; 2] = [
+    SyncPtr(c"Extract variable name from an argsh field definition.".as_ptr()),
+    SyncPtr(std::ptr::null()),
+];
+
+#[export_name = "args::field_name_struct"]
+pub static mut FIELD_NAME_STRUCT: BashBuiltin = BashBuiltin {
+    name: c"args::field_name".as_ptr(),
+    function: field_name_builtin_fn,
+    flags: BUILTIN_ENABLED,
+    short_doc: c"args::field_name <field> [asref]".as_ptr(),
+    long_doc: FIELD_NAME_LONG_DOC.as_ptr().cast(),
+    handle: std::ptr::null(),
+};
+
+#[export_name = "args::field_name_builtin_load"]
+pub extern "C" fn field_name_builtin_load(_name: *const c_char) -> c_int { 1 }
+
+#[export_name = "args::field_name_builtin_unload"]
+pub extern "C" fn field_name_builtin_unload(_name: *const c_char) {}
+
+extern "C" fn field_name_builtin_fn(word_list: *const WordList) -> c_int {
+    std::panic::catch_unwind(|| {
+        let args = word_list_to_vec(word_list);
+        if args.is_empty() {
+            return 2;
+        }
+        let asref = args.get(1).map(|s| s != "0").unwrap_or(true);
+        let name = field_name(&args[0], asref);
+        println!("{}", name);
+        0
+    })
+    .unwrap_or(1)
+}
+
+// ── Field parsing ────────────────────────────────────────────────
 
 /// Parsed field definition from the args array.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct FieldDef {
     pub name: String,         // variable name (dashes → underscores)
     pub display_name: String, // original name (with dashes)
@@ -26,7 +70,7 @@ pub struct FieldDef {
 pub fn field_name(field: &str, asref: bool) -> String {
     let mut name = field;
     // Remove everything after first | or :
-    if let Some(pos) = name.find(|c: char| c == '|' || c == ':') {
+    if let Some(pos) = name.find(['|', ':']) {
         name = &name[..pos];
     }
     // Remove leading #
