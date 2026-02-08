@@ -11,6 +11,7 @@ on:
       - '.docker/**'
       - 'libraries/**'
       - 'test/**'
+      - 'builtin/**'
       - '.envrc'
 
 defaults:
@@ -31,6 +32,134 @@ jobs:
       - name: Test
         run: |
           argsh test
+
+  builtin-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v4
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            builtin/target
+            ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-${{ hashFiles('builtin/Cargo.lock') }}
+      - name: Clippy
+        working-directory: builtin
+        run: cargo clippy --release -- -D warnings
+      - name: Build builtin
+        working-directory: builtin
+        run: cargo build --release
+      - name: Copy argsh.so to PATH_BIN
+        run: cp builtin/target/release/libargsh.so .bin/argsh.so
+      - name: Install bats
+        uses: bats-core/bats-action@2.0.0
+        with:
+          bats-version: 1.11.1
+          support-install: false
+          assert-install: false
+          detik-install: false
+          file-install: false
+      - name: Test with builtins
+        env:
+          ARGSH_SOURCE: argsh
+          ARGSH_BUILTIN_TEST: "1"
+        run: bats libraries/args.bats
+
+  builtin-coverage:
+    runs-on: ubuntu-latest
+    needs: [builtin-test]
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v4
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            builtin/target
+            ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-cov-${{ hashFiles('builtin/Cargo.lock') }}
+      - name: Build with coverage
+        working-directory: builtin
+        run: |
+          RUSTFLAGS="-C instrument-coverage" \
+          CARGO_PROFILE_RELEASE_STRIP="none" \
+          CARGO_PROFILE_RELEASE_LTO="false" \
+          CARGO_PROFILE_RELEASE_PANIC="unwind" \
+            cargo build --release
+      - name: Install bats
+        uses: bats-core/bats-action@2.0.0
+        with:
+          bats-version: 1.11.1
+          support-install: false
+          assert-install: false
+          detik-install: false
+          file-install: false
+      - name: Run tests with coverage
+        env:
+          ARGSH_SOURCE: argsh
+          ARGSH_BUILTIN_TEST: "1"
+          LLVM_PROFILE_FILE: builtin/target/coverage/coverage-%p-%m.profraw
+        run: |
+          mkdir -p builtin/target/coverage
+          bats libraries/args.bats
+      - name: Generate coverage report
+        run: |
+          LLVM_TOOLS="$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | awk '/host:/{print $2}')/bin"
+
+          "${LLVM_TOOLS}/llvm-profdata" merge -sparse \
+            builtin/target/coverage/coverage-*.profraw \
+            -o builtin/target/coverage/coverage.profdata
+
+          "${LLVM_TOOLS}/llvm-cov" report \
+            --instr-profile=builtin/target/coverage/coverage.profdata \
+            builtin/target/release/libargsh.so \
+            --ignore-filename-regex='\.cargo/registry'
+
+          "${LLVM_TOOLS}/llvm-cov" export \
+            --instr-profile=builtin/target/coverage/coverage.profdata \
+            builtin/target/release/libargsh.so \
+            --ignore-filename-regex='\.cargo/registry' \
+            --summary-only | python3 -c "
+          import json, sys, datetime
+          data = json.load(sys.stdin)
+          totals = data['data'][0]['totals']['lines']
+          files = []
+          for f in data['data'][0]['files']:
+              s = f['summary']['lines']
+              files.append({
+                  'file': f['filename'],
+                  'percent_covered': f'{s[\"percent\"]:.2f}',
+                  'covered_lines': str(s['covered']),
+                  'total_lines': str(s['count'])
+              })
+          result = {
+              'files': sorted(files, key=lambda x: float(x['percent_covered']), reverse=True),
+              'percent_covered': f'{totals[\"percent\"]:.2f}',
+              'covered_lines': totals['covered'],
+              'total_lines': totals['count'],
+              'percent_low': 25,
+              'percent_high': 75,
+              'command': 'bats+llvm-cov',
+              'date': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+          }
+          json.dump(result, sys.stdout, indent=2)
+          print()
+          " > builtin/coverage.json
+      - name: Is insync
+        run: |
+          git diff --exit-code \
+            --ignore-matching-lines '^  "date":' \
+            -- builtin/coverage.json
 
   coverage:
     runs-on: ubuntu-latest
@@ -73,6 +202,80 @@ jobs:
           retention-days: 7
           path: |
             argsh.min.sh
+
+  minify-so:
+    runs-on: ubuntu-latest
+    needs: [minify, builtin-test]
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v4
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            builtin/target
+            ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-${{ hashFiles('builtin/Cargo.lock') }}
+      - name: Build builtin
+        working-directory: builtin
+        run: cargo build --release
+      - name: Download argsh artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: argsh
+          path: .
+      - name: Compose argsh-so.min.sh
+        run: |
+          so_b64=$(base64 -w0 builtin/target/release/libargsh.so)
+          {
+            head -3 argsh.min.sh
+            echo '# ── Inline native builtins ──────────────────────────────────────────'
+            echo '# obfus ignore variable'
+            echo "__ARGSH_SO_B64='${so_b64}'"
+            cat << 'SOEOF'
+          # obfus ignore function
+          __argsh_load_inline_so() {
+            local _t; _t="$(mktemp "${TMPDIR:-/tmp}/argsh.XXXXXX.so")"
+            # shellcheck disable=SC2064
+            trap "rm -f '${_t}'" EXIT
+            base64 -d <<< "${__ARGSH_SO_B64}" > "${_t}" || return 1
+            # shellcheck disable=SC2229
+            enable -f "${_t}" :usage :args \
+              is::array is::uninitialized is::set is::tty \
+              args::field_name to::int to::float to::boolean to::file to::string \
+              2>/dev/null || return 1
+            rm -f "${_t}"
+            return 0
+          }
+          # obfus ignore variable
+          declare -gi ARGSH_BUILTIN=0
+          if __argsh_load_inline_so; then
+            ARGSH_BUILTIN=1
+          fi
+          unset -f __argsh_load_inline_so
+          unset __ARGSH_SO_B64
+          SOEOF
+            echo '# ────────────────────────────────────────────────────────────────────'
+            tail -n +4 argsh.min.sh
+          } > argsh-so.min.sh
+          chmod +x argsh-so.min.sh
+      - name: Smoke test
+        run: |
+          bash -c '
+            source argsh-so.min.sh
+            (( ARGSH_BUILTIN )) || { echo "Builtins not loaded"; exit 1; }
+            echo "argsh-so: builtins loaded successfully (ARGSH_BUILTIN=${ARGSH_BUILTIN})"
+          '
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: argsh-so
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            argsh-so.min.sh
 
   docker:
     runs-on: ubuntu-latest
@@ -123,7 +326,7 @@ jobs:
       contents: write
       pull-requests: write
     environment: release
-    needs: [minify, docker]
+    needs: [minify, minify-so, docker]
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
       - name: Clone repository
@@ -131,21 +334,22 @@ jobs:
       - name: Download executables
         uses: actions/download-artifact@v4
         with:
-          pattern: argsh
+          pattern: argsh*
           merge-multiple: true
           path: .
       - name: Executable
         run: |
-          chmod +x argsh.min.sh
+          chmod +x argsh.min.sh argsh-so.min.sh
       - name: Upload release
         env:
           TAG_NAME: ${{ github.ref_name }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cp argsh.min.sh argsh
-          sha256sum argsh > sha256sum.txt
+          cp argsh-so.min.sh argsh-so
+          sha256sum argsh argsh-so > sha256sum.txt
           gh release create "${TAG_NAME}" --draft --title "argsh ${TAG_NAME}" --generate-notes
-          gh release upload "${TAG_NAME}" --clobber argsh sha256sum.txt
+          gh release upload "${TAG_NAME}" --clobber argsh argsh-so sha256sum.txt
 
           git config user.name 'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'

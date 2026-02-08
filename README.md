@@ -18,8 +18,10 @@
 		<img alt="Stargazers" src="https://img.shields.io/github/stars/arg-sh/argsh?style=for-the-badge&logo=starship&color=C9CBFF&logoColor=D9E0EE&labelColor=302D41"></a>
 	<a href="https://github.com/arg-sh/argsh/releases/latest">
 		<img alt="Releases" src="https://img.shields.io/github/release/arg-sh/argsh.svg?style=for-the-badge&logo=github&color=F2CDCD&logoColor=D9E0EE&labelColor=302D41"/></a>
-	<a href="https://github.com/arg-sh/argsh/blob/main/CONTRIBUTING.md">
-		<img alt="Coverage" src="https://img.shields.io/badge/dynamic/json?style=for-the-badge&logo=gnubash&color=F2CDCD&logoColor=D9E0EE&labelColor=302D41&url=https%3A%2F%2Fraw.githubusercontent.com%2Farg-sh%2Fargsh%2Fmain%2Fcoverage%2Fcoverage.json&query=%24.percent_covered&label=Coverage&suffix=%25"/></a>
+	<a href="https://github.com/arg-sh/argsh/blob/main/coverage/coverage.json">
+		<img alt="Bash Coverage" src="https://img.shields.io/badge/dynamic/json?style=for-the-badge&logo=gnubash&color=F2CDCD&logoColor=D9E0EE&labelColor=302D41&url=https%3A%2F%2Fraw.githubusercontent.com%2Farg-sh%2Fargsh%2Fmain%2Fcoverage%2Fcoverage.json&query=%24.percent_covered&label=Bash&suffix=%25"/></a>
+	<a href="https://github.com/arg-sh/argsh/blob/main/builtin/coverage.json">
+		<img alt="Rust Coverage" src="https://img.shields.io/badge/dynamic/json?style=for-the-badge&logo=rust&color=F2CDCD&logoColor=D9E0EE&labelColor=302D41&url=https%3A%2F%2Fraw.githubusercontent.com%2Farg-sh%2Fargsh%2Fmain%2Fbuiltin%2Fcoverage.json&query=%24.percent_covered&label=Rust&suffix=%25"/></a>
 	<a href="https://github.com/arg-sh/argsh/issues">
 		<img alt="Issues" src="https://img.shields.io/github/issues/arg-sh/argsh?style=for-the-badge&logo=gitbook&color=B5E8E0&logoColor=D9E0EE&labelColor=302D41"></a>
 	<a href="https://discord.gg/VsQpUQX3Zr">
@@ -50,6 +52,38 @@ This is what argsh is trying to do. Check out the [Quickstart](https://arg.sh/ge
 - **Be Consistent**: Consistency is key. It makes your scripts easier to read and maintain.
 - **Perfect is the enemy of good**: Don't try to make your scripts perfect. Make them good and maintainable.
 - **Write for the next person**: Write your scripts for the next person that has to read and maintain them. This person might be you.
+
+&nbsp;
+
+### ⚡ Native Builtins (Rust)
+
+argsh ships with optional **Bash loadable builtins** compiled from Rust. When the shared library is available, the core parsing commands (`:args`, `:usage`, type converters, etc.) run as native code inside the Bash process — zero fork overhead, zero subshell cost.
+
+| Builtin | Purpose |
+|---|---|
+| `:args` | CLI argument parser with type checking |
+| `:usage` | Subcommand router with help generation |
+| `is::array`, `is::uninitialized`, `is::set`, `is::tty` | Variable introspection |
+| `to::int`, `to::float`, `to::boolean`, `to::file`, `to::string` | Type converters |
+| `args::field_name` | Field name extraction |
+
+**Transparent fallback** — `args.sh` auto-detects the `.so` at load time. If found, builtins are enabled via `enable -f` and the pure-Bash function definitions are skipped. If not found, everything works as before with no change in behavior.
+
+```bash
+# Build (requires Rust toolchain)
+cd builtin && cargo build --release
+# Output: builtin/target/release/libargsh.so
+
+# Copy to PATH_BIN and auto-load
+cp builtin/target/release/libargsh.so .bin/argsh.so
+source libraries/args.sh
+
+# Or set explicit path
+export ARGSH_BUILTIN_PATH="/path/to/argsh.so"
+source libraries/args.sh
+```
+
+Search order: `ARGSH_BUILTIN_PATH` > `PATH_LIB` > `PATH_BIN` > `LD_LIBRARY_PATH` > `BASH_LOADABLES_PATH`
 
 &nbsp;
 

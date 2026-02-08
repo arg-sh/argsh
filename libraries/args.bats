@@ -1,9 +1,22 @@
 #!/usr/bin/env bats
 # shellcheck disable=SC1091 disable=SC2154 disable=SC2317 disable=SC2329
 # shellcheck shell=bats
+#
+# Shared tests for both pure-bash and native builtin implementations.
+# Set ARGSH_BUILTIN_TEST=1 to test with Rust loadable builtins.
 
 load ../test/helper
 load_source
+
+# Load native builtins when requested.
+# All builtins are loaded from the same .so to ensure consistent coverage tracking.
+if [[ "${ARGSH_BUILTIN_TEST:-}" == "1" ]]; then
+  # shellcheck disable=SC2229
+  enable -f "${BATS_TEST_DIRNAME}/../builtin/target/release/libargsh.so" \
+    :usage :args is::array is::uninitialized is::set is::tty \
+    args::field_name to::int to::float to::boolean to::file to::string
+  unset -f :usage :args is::uninitialized 2>/dev/null || true
+fi
 
 # -----------------------------------------------------------------------------
 # First test the attributes

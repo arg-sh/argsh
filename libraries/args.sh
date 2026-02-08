@@ -19,20 +19,32 @@ import() { declare -A _i; (( ${_i[${1}]:-} )) || { _i[${1}]=1; . "${BASH_SOURCE[
 # Falls back to pure bash if unavailable.
 # shellcheck disable=SC2120
 __argsh_try_builtin() {
-  local so
-  # Check ARGSH_BUILTIN_PATH first, then relative to this file
-  for so in \
+  local _so _d
+  local -r _n="argsh.so"
+  local -ra _builtins=(:usage :args
+    is::array is::uninitialized is::set is::tty
+    args::field_name to::int to::float to::boolean to::file to::string)
+  # Search order: explicit path, PATH_LIB, PATH_BIN, LD_LIBRARY_PATH, BASH_LOADABLES_PATH
+  for _so in \
     "${ARGSH_BUILTIN_PATH:-}" \
-    "${BASH_SOURCE[0]%/*}/../builtin/target/release/libargsh_builtin.so" \
-    "${BASH_LOADABLES_PATH:+${BASH_LOADABLES_PATH}/libargsh_builtin.so}" \
+    "${PATH_LIB:+${PATH_LIB}/${_n}}" \
+    "${PATH_BIN:+${PATH_BIN}/${_n}}" \
   ; do
-    [[ -n "${so}" && -f "${so}" ]] || continue
+    [[ -n "${_so}" && -f "${_so}" ]] || continue
     # shellcheck disable=SC2229
-    enable -f "${so}" :usage :args \
-      is::array is::uninitialized is::set is::tty \
-      args::field_name to::int to::float to::boolean to::file to::string \
-      2>/dev/null || continue
+    enable -f "${_so}" "${_builtins[@]}" 2>/dev/null || continue
     return 0
+  done
+  # Search colon-separated path variables: LD_LIBRARY_PATH, BASH_LOADABLES_PATH
+  for _d in "${LD_LIBRARY_PATH:-}" "${BASH_LOADABLES_PATH:-}"; do
+    [[ -n "${_d}" ]] || continue
+    local IFS=:
+    for _so in ${_d}; do
+      [[ -n "${_so}" && -f "${_so}/${_n}" ]] || continue
+      # shellcheck disable=SC2229
+      enable -f "${_so}/${_n}" "${_builtins[@]}" 2>/dev/null || continue
+      return 0
+    done
   done
   return 1
 }

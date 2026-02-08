@@ -1,9 +1,9 @@
 {
   "files": [
     {"file": "/workspace/libraries/fixtures/import/print_out.sh", "percent_covered": "100.00", "covered_lines": "2", "total_lines": "2"},
-    {"file": "/workspace/libraries/fixtures/args/rest.sh", "percent_covered": "71.43", "covered_lines": "5", "total_lines": "7"},
-    {"file": "/workspace/libraries/fixtures/args/usage.sh", "percent_covered": "67.57", "covered_lines": "25", "total_lines": "37"},
-    {"file": "/workspace/libraries/fixtures/args/attrs.sh", "percent_covered": "52.50", "covered_lines": "21", "total_lines": "40"},
+    {"file": "/workspace/libraries/fixtures/args/rest.sh", "percent_covered": "83.33", "covered_lines": "5", "total_lines": "6"},
+    {"file": "/workspace/libraries/fixtures/args/usage.sh", "percent_covered": "72.00", "covered_lines": "36", "total_lines": "50"},
+    {"file": "/workspace/libraries/fixtures/args/attrs.sh", "percent_covered": "52.63", "covered_lines": "20", "total_lines": "38"},
     {"file": "/workspace/libraries/array.sh", "percent_covered": "35.71", "covered_lines": "5", "total_lines": "14"},
     {"file": "/workspace/libraries/error.sh", "percent_covered": "27.78", "covered_lines": "5", "total_lines": "18"},
     {"file": "/workspace/libraries/to.sh", "percent_covered": "41.67", "covered_lines": "10", "total_lines": "24"},
@@ -11,14 +11,14 @@
     {"file": "/workspace/libraries/fmt.sh", "percent_covered": "62.50", "covered_lines": "5", "total_lines": "8"},
     {"file": "/workspace/libraries/import.sh", "percent_covered": "100.00", "covered_lines": "20", "total_lines": "20"},
     {"file": "/workspace/libraries/string.sh", "percent_covered": "100.00", "covered_lines": "41", "total_lines": "41"},
-    {"file": "/workspace/libraries/fixtures/args/fmt.sh", "percent_covered": "33.33", "covered_lines": "13", "total_lines": "39"},
-    {"file": "/workspace/libraries/args.sh", "percent_covered": "90.03", "covered_lines": "280", "total_lines": "311"}
+    {"file": "/workspace/libraries/fixtures/args/fmt.sh", "percent_covered": "37.14", "covered_lines": "13", "total_lines": "35"},
+    {"file": "/workspace/libraries/args.sh", "percent_covered": "88.15", "covered_lines": "305", "total_lines": "346"}
   ],
-  "percent_covered": "76.98",
-  "covered_lines": 438,
-  "total_lines": 569,
+  "percent_covered": "77.54",
+  "covered_lines": 473,
+  "total_lines": 610,
   "percent_low": 25,
   "percent_high": 75,
   "command": "bats",
-  "date": "2024-04-05 12:15:20"
+  "date": "2026-02-08 10:25:49"
 }

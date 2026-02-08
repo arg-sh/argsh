@@ -58,8 +58,14 @@ minify::argsh() {
 }
 
 coverage::argsh() {
-  :args "Generate coverage report for argsh" "${@}"
+  :args "Generate coverage report for argsh (bash + builtin)" "${@}"
   argsh::main coverage libraries -o coverage --min "${MIN_COVERAGE}"
+  # Also generate builtin coverage if Rust toolchain is available
+  if binary::exists cargo; then
+    echo ""
+    echo "── Builtin (Rust) coverage ──"
+    coverage::builtin
+  fi
 }
 
 test::argsh() {
@@ -95,6 +101,131 @@ argsh::docker() {
   )
   :args "Build docker image for argsh" "${@}"
   docker build -t "ghcr.io/arg-sh/argsh:${tag}" -f "${PATH_BASE}/Dockerfile" "${PATH_BASE}"
+}
+
+###
+### builtin (Rust native builtins)
+###
+_require_rust() {
+  binary::exists cargo || {
+    echo "Rust toolchain required. Install: https://rustup.rs"
+    return 1
+  } >&2
+}
+
+lint::builtin() {
+  :args "Run clippy on native builtins" "${@}"
+  _require_rust
+  cargo clippy --release \
+    --manifest-path "${PATH_BASE}/builtin/Cargo.toml" \
+    -- -D warnings
+}
+
+test::builtin() {
+  :args "Build and test native builtins" "${@}"
+  _require_rust
+  cargo build --release \
+    --manifest-path "${PATH_BASE}/builtin/Cargo.toml"
+  cp "${PATH_BASE}/builtin/target/release/libargsh.so" "${PATH_BIN}/argsh.so"
+  binary::exists bats || {
+    echo "bats required. Install: https://github.com/bats-core/bats-core"
+    return 1
+  } >&2
+  ARGSH_BUILTIN_TEST=1 ARGSH_SOURCE=argsh \
+    bats "${PATH_BASE}/libraries/args.bats"
+}
+
+coverage::builtin() {
+  :args "Generate coverage for native builtins" "${@}"
+  _require_rust
+  binary::exists bats || {
+    echo "bats required. Install: https://github.com/bats-core/bats-core"
+    return 1
+  } >&2
+
+  local host_triple llvm_tools cov_dir so_path
+  host_triple="$(rustc -vV | awk '/host:/{print $2}')"
+  llvm_tools="$(rustc --print sysroot)/lib/rustlib/${host_triple}/bin"
+  cov_dir="${PATH_BASE}/builtin/target/coverage"
+  so_path="${PATH_BASE}/builtin/target/release/libargsh.so"
+
+  # Ensure llvm-tools
+  [[ -x "${llvm_tools}/llvm-profdata" ]] || {
+    echo "Installing llvm-tools..."
+    rustup component add llvm-tools
+  }
+
+  # Build with coverage instrumentation (override release profile settings that break coverage)
+  echo "Building with coverage instrumentation..."
+  RUSTFLAGS="-C instrument-coverage" \
+  CARGO_PROFILE_RELEASE_STRIP="none" \
+  CARGO_PROFILE_RELEASE_LTO="false" \
+  CARGO_PROFILE_RELEASE_PANIC="unwind" \
+    cargo build --release \
+      --manifest-path "${PATH_BASE}/builtin/Cargo.toml"
+
+  cp "${so_path}" "${PATH_BIN}/argsh.so"
+  rm -rf "${cov_dir}"
+  mkdir -p "${cov_dir}"
+
+  echo "Running tests..."
+  LLVM_PROFILE_FILE="${cov_dir}/coverage-%p-%m.profraw" \
+  ARGSH_BUILTIN_TEST=1 ARGSH_SOURCE=argsh \
+    bats "${PATH_BASE}/libraries/args.bats"
+
+  # Merge profile data
+  "${llvm_tools}/llvm-profdata" merge -sparse \
+    "${cov_dir}"/coverage-*.profraw \
+    -o "${cov_dir}/coverage.profdata"
+
+  echo ""
+  "${llvm_tools}/llvm-cov" report \
+    --instr-profile="${cov_dir}/coverage.profdata" \
+    "${so_path}" \
+    --ignore-filename-regex='\.cargo/registry'
+
+  # Export JSON and generate builtin/coverage.json
+  "${llvm_tools}/llvm-cov" export \
+    --instr-profile="${cov_dir}/coverage.profdata" \
+    "${so_path}" \
+    --ignore-filename-regex='\.cargo/registry' \
+    --summary-only | python3 -c "
+import json, sys, datetime
+data = json.load(sys.stdin)
+totals = data['data'][0]['totals']['lines']
+files = []
+for f in data['data'][0]['files']:
+    s = f['summary']['lines']
+    files.append({
+        'file': f['filename'],
+        'percent_covered': f'{s[\"percent\"]:.2f}',
+        'covered_lines': str(s['covered']),
+        'total_lines': str(s['count'])
+    })
+result = {
+    'files': sorted(files, key=lambda x: float(x['percent_covered']), reverse=True),
+    'percent_covered': f'{totals[\"percent\"]:.2f}',
+    'covered_lines': totals['covered'],
+    'total_lines': totals['count'],
+    'percent_low': 25,
+    'percent_high': 75,
+    'command': 'bats+llvm-cov',
+    'date': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+}
+json.dump(result, sys.stdout, indent=2)
+print()
+" > "${PATH_BASE}/builtin/coverage.json"
+
+  local pct
+  pct="$(python3 -c "import json; print(json.load(open('${PATH_BASE}/builtin/coverage.json'))['percent_covered'])")"
+  echo ""
+  echo "Coverage: ${pct}% of required ${MIN_COVERAGE}%"
+
+  # Rebuild without instrumentation for normal use
+  echo "Rebuilding without instrumentation..."
+  cargo build --release \
+    --manifest-path "${PATH_BASE}/builtin/Cargo.toml"
+  cp "${so_path}" "${PATH_BIN}/argsh.so"
 }
 
 ###
@@ -139,6 +270,10 @@ _main() {
     'docs-lint:-lint::docs'     "Run linters"
     'docs-test:-test::docs'     "Run tests"
     'vale:-lint::vale'          "Run vale tests"
+    -                           "Commands builtin (Rust)"
+    'builtin-lint:-lint::builtin'         "Run clippy"
+    'builtin-test:-test::builtin'         "Build and test"
+    'builtin-coverage:-coverage::builtin' "Generate coverage"
     -                           "Additional commands"
     'docker:-argsh::docker'     "Build docker image"
   )
