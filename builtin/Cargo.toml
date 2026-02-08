@@ -15,5 +15,5 @@ libc = "0.2"
 lto = true
 opt-level = "s"
 strip = true
-panic = "abort"
+panic = "unwind"
 codegen-units = 1

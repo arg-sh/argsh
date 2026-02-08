@@ -57,17 +57,6 @@ minify::argsh() {
   argsh::main minify libraries -t argsh.min.tmpl -o argsh.min.sh
 }
 
-coverage::argsh() {
-  :args "Generate coverage report for argsh (bash + builtin)" "${@}"
-  argsh::main coverage libraries -o coverage --min "${MIN_COVERAGE}"
-  # Also generate builtin coverage if Rust toolchain is available
-  if binary::exists cargo; then
-    echo ""
-    echo "── Builtin (Rust) coverage ──"
-    coverage::builtin
-  fi
-}
-
 test::argsh() {
   local test_minify
   local -a args=(
@@ -290,7 +279,6 @@ _main() {
   local -a usage
   usage=(
     -                           "Commands argsh"
-    'coverage:-coverage::argsh' "Generate coverage"
     'lint:-lint::argsh'         "Run linters"
     'test:-test::argsh'         "Run tests"
     'minify:-minify::argsh'     "Minify argsh libraries"
@@ -302,7 +290,7 @@ _main() {
     -                           "Commands builtin (Rust)"
     'builtin-lint:-lint::builtin'         "Run clippy"
     'builtin-test:-test::builtin'         "Build and test"
-    'builtin-coverage:-coverage::builtin' "Generate coverage"
+    'coverage:-coverage::builtin' "Generate coverage"
     -                           "Additional commands"
     'docker:-argsh::docker'     "Build docker image"
   )

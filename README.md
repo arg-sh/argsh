@@ -85,6 +85,32 @@ source libraries/args.sh
 
 Search order: `ARGSH_BUILTIN_PATH` > `PATH_LIB` > `PATH_BIN` > `LD_LIBRARY_PATH` > `BASH_LOADABLES_PATH`
 
+#### Benchmark
+
+Subcommand dispatch (`cmd x x ... x -h`) — 50 iterations:
+
+| Depth | Pure Bash | Builtin | Speedup |
+|------:|----------:|--------:|--------:|
+|    10 |   1188 ms |   21 ms |    57x  |
+|    25 |   2686 ms |   53 ms |    51x  |
+|    50 |   5434 ms |  155 ms |    35x  |
+
+Argument parsing (`cmd --flag1 v1 ... --flagN vN`) — 50 iterations:
+
+| Flags | Pure Bash | Builtin | Speedup |
+|------:|----------:|--------:|--------:|
+|    10 |   5405 ms |    4 ms |  1351x  |
+|    25 |  13986 ms |    9 ms |  1554x  |
+|    50 |  29603 ms |   20 ms |  1480x  |
+
+Real-world (`:usage` + `:args` with 2 flags at every level, depth 10) — 50 iterations:
+
+| Scenario  | Pure Bash | Builtin | Speedup |
+|----------:|----------:|--------:|--------:|
+| 10 levels |    567 ms |   43 ms |    13x  |
+
+Run `bash bench/usage-depth.sh` to reproduce.
+
 &nbsp;
 
 ### 🚧 State of this Project

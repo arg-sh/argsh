@@ -73,7 +73,7 @@ jobs:
           bats libraries/args.bats
           bats libraries/import.bats
 
-  builtin-coverage:
+  coverage:
     runs-on: ubuntu-latest
     needs: [builtin-test]
     steps:
@@ -147,7 +147,7 @@ jobs:
           EXCL+="}"
 
           # Generate coverage.json with jq (excludes annotated lines from totals)
-          jq --argjson excl "$EXCL" --arg date "$(date -u '+%Y-%m-%d %H:%M:%S')" '
+          jq --argjson excl "$EXCL" --arg date "$(date -u '+%Y-%m-%d %H:%M:%S')" --arg prefix "${GITHUB_WORKSPACE}/" '
             def fmt2: (. * 100 | round) / 100 | tostring |
               if test("[.]") then (if test("[.][0-9]$") then . + "0" else . end)
               else . + ".00" end;
@@ -160,7 +160,7 @@ jobs:
                 ($excl[.filename] // 0) as $ex |
                 ($s.count - $ex) as $adj |
                 {
-                  file: .filename,
+                  file: (.filename | ltrimstr($prefix)),
                   percent_covered: (if $adj > 0 then ($s.covered / $adj * 100 | fmt2) else "100.00" end),
                   covered_lines: ($s.covered | tostring),
                   total_lines: ($adj | tostring),
@@ -187,25 +187,9 @@ jobs:
             --ignore-matching-lines '^  "date":' \
             -- builtin/coverage.json
 
-  coverage:
-    runs-on: ubuntu-latest
-    needs: [test]
-    steps:
-      - name: Clone repository
-        uses: actions/checkout@v4
-      - name: Direnv
-        uses: HatsuneMiku3939/direnv-action@v1
-      - name: Coverage
-        run: |
-          argsh coverage
-      - name: Is insync
-        run: |
-          git diff --exit-code \
-            --ignore-matching-lines '^  "date":'
-
   minify:
     runs-on: ubuntu-latest
-    needs: [coverage]
+    needs: [test]
     steps:
       - name: Clone repository
         uses: actions/checkout@v4
