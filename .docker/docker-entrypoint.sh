@@ -165,7 +165,7 @@ argsh::docs() {
     glob=(${in})
   fi
   
-  local file f name to
+  local file f name to tags
   for file in "${glob[@]}"; do
     [[ -e "${file}" ]] || continue
 
@@ -174,8 +174,16 @@ argsh::docs() {
     export name
 
     to="${out}/${name}.mdx"
-    # shellcheck disable=SC2016
-    echo "${prefix}" | envsubst '$name' >"${to}"
+    # Extract @tags from source file for frontmatter
+    tags="$(grep -oP '(?<=^# @tags ).*' "${file}" 2>/dev/null || :)"
+    if [[ -n "${tags}" ]]; then
+      # shellcheck disable=SC2016
+      printf -- '---\ntags: [%s]\n---\n\n' "${tags}" >"${to}"
+      echo "${prefix}" | envsubst '$name' >>"${to}"
+    else
+      # shellcheck disable=SC2016
+      echo "${prefix}" | envsubst '$name' >"${to}"
+    fi
     shdoc <"${file}" >>"${to}"
   done
 }

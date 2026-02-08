@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # @file error
 # @brief Functions for error handling
+# @tags core
 # @description
 #   This file contains functions for error handling
 set -euo pipefail

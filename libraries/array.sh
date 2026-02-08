@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # @file array
 # @brief Array manipulation functions
+# @tags core
 # @description
 #   This file contains functions for manipulating arrays
 

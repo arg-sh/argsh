@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # @file to
 # @brief Convert a value to a specific type
+# @tags core, builtin
 # @description
 #   This file contains functions for converting a value to a specific type
 set -euo pipefail

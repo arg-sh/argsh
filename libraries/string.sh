@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # @file string
 # @brief String manipulation functions
+# @tags core
 # @description
 #   This file contains functions for manipulating strings
 set -euo pipefail

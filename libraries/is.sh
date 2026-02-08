@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # @file is
 # @brief Functions for checking types
+# @tags core, builtin
 # @description
 #   This file contains functions for checking types
 

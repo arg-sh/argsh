@@ -1,6 +1,7 @@
 #!/usr/bin/bash
 # @file fmt
 # @brief Functions for formatting text
+# @tags core
 # @description
 #   This file contains functions for formatting text
 set -euo pipefail
