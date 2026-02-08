@@ -174,7 +174,9 @@ coverage::builtin() {
   "${llvm_tools}/llvm-cov" report \
     --instr-profile="${cov_dir}/coverage.profdata" \
     "${so_path}" \
-    --ignore-filename-regex='\.cargo/registry'
+    --ignore-filename-regex='\.cargo/registry' \
+    --ignore-filename-regex='\.rustup/toolchains' \
+    --ignore-filename-regex='^/rustc/'
 
   # Export JSON and generate builtin/coverage.json
   local _cov_tmp; _cov_tmp="$(mktemp)"
@@ -182,6 +184,8 @@ coverage::builtin() {
     --instr-profile="${cov_dir}/coverage.profdata" \
     "${so_path}" \
     --ignore-filename-regex='\.cargo/registry' \
+    --ignore-filename-regex='\.rustup/toolchains' \
+    --ignore-filename-regex='^/rustc/' \
     --summary-only > "${_cov_tmp}"
 
   # Count // coverage:off lines per source file → JSON map
@@ -319,7 +323,8 @@ coverage::minifier() {
     --instr-profile="${cov_dir}/coverage.profdata" \
     "${obj_args[@]}" \
     --ignore-filename-regex='\.cargo/registry' \
-    --ignore-filename-regex='\.rustup/toolchains'
+    --ignore-filename-regex='\.rustup/toolchains' \
+    --ignore-filename-regex='^/rustc/'
 
   # Export JSON and generate minifier/coverage.json
   local _cov_tmp; _cov_tmp="$(mktemp)"
@@ -328,6 +333,7 @@ coverage::minifier() {
     "${obj_args[@]}" \
     --ignore-filename-regex='\.cargo/registry' \
     --ignore-filename-regex='\.rustup/toolchains' \
+    --ignore-filename-regex='^/rustc/' \
     --summary-only > "${_cov_tmp}"
 
   # Count // coverage:off lines per source file → JSON map
@@ -392,7 +398,7 @@ coverage::minifier() {
 _coverage() {
   local target="all"
   local -a args=(
-    'target:all' "Coverage target (all, builtin, minifier)"
+    'target' "Coverage target (all, builtin, minifier)"
   )
   :args "Generate code coverage reports" "${@}"
 

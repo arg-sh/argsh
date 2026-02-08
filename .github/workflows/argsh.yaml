@@ -160,13 +160,17 @@ jobs:
           "${LLVM_TOOLS}/llvm-cov" report \
             --instr-profile=builtin/target/coverage/coverage.profdata \
             builtin/target/release/libargsh.so \
-            --ignore-filename-regex='\.cargo/registry'
+            --ignore-filename-regex='\.cargo/registry' \
+            --ignore-filename-regex='\.rustup/toolchains' \
+            --ignore-filename-regex='^/rustc/'
 
           COV_TMP="$(mktemp)"
           "${LLVM_TOOLS}/llvm-cov" export \
             --instr-profile=builtin/target/coverage/coverage.profdata \
             builtin/target/release/libargsh.so \
             --ignore-filename-regex='\.cargo/registry' \
+            --ignore-filename-regex='\.rustup/toolchains' \
+            --ignore-filename-regex='^/rustc/' \
             --summary-only > "$COV_TMP"
 
           # Count // coverage:off lines per source file → JSON map
@@ -269,7 +273,8 @@ jobs:
             --instr-profile=minifier/target/coverage/coverage.profdata \
             ${OBJ_ARGS} \
             --ignore-filename-regex='\.cargo/registry' \
-            --ignore-filename-regex='\.rustup/toolchains'
+            --ignore-filename-regex='\.rustup/toolchains' \
+            --ignore-filename-regex='^/rustc/'
 
           COV_TMP="$(mktemp)"
           # shellcheck disable=SC2086
@@ -278,6 +283,7 @@ jobs:
             ${OBJ_ARGS} \
             --ignore-filename-regex='\.cargo/registry' \
             --ignore-filename-regex='\.rustup/toolchains' \
+            --ignore-filename-regex='^/rustc/' \
             --summary-only > "$COV_TMP"
 
           # Count // coverage:off lines per source file → JSON map
