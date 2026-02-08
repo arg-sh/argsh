@@ -35,7 +35,7 @@ The workspace has the following two directories:
 
 The documentation content is written in Markdown format and is located in the [www/apps/docs/content](https://github.com/arg-sh/argsh/tree/develop/www/apps/docs/content) directory of the argsh repository. If you’re not familiar with Markdown, check out [this cheat sheet](https://www.markdownguide.org/cheat-sheet/) for a quick start.
 
-You’ll also find MDX files. MDX files combine the power of Markdown with React. So, the content of the file can contain JSX components and import statements, among other features. You can learn more about [MDX in docusaurus’s guide.](https://docusaurus.io/docs/markdown-features/react).
+You'll also find MDX files. MDX files combine the power of Markdown with React. The content of the file can contain JSX components and import statements, among other features. You can learn more about [MDX in docusaurus's guide.](https://docusaurus.io/docs/markdown-features/react).
 
 ## Style Guide
 
@@ -109,7 +109,7 @@ export default function IconBolt(props: IconProps) {
 }
 ```
 
-Make sure to set the `stroke` or `fill` of the icon to `currentColor` as shown in the example above. The source code for the Sidebar passes the icon a color. So, this ensures the color is correctly used.
+Make sure to set the `stroke` or `fill` of the icon to `currentColor` as shown in the example above. The source code for the Sidebar passes the icon a color, and this ensures the color is correctly used.
 
 If you added a new icon, add it in the exported object in the file `www/apps/docs/src/theme/Icon/index.ts`, where the property is the kebab-case version of the icon's name, and the value being the component you created. Make sure to add it in the correct alphabetical position as well. For example:
 
@@ -145,7 +145,7 @@ module.exports = {
 
 ### Sidebar Item Types
 
-There are different sidebar item types used in the documentation:
+The documentation uses different sidebar item types:
 
 - Homepage Items: If a sidebar item is shown under the `homepage` sidebar, you should set the `className` property of the item to `homepage-sidebar-item`. You can use this with other sidebar item types. For example:
   
