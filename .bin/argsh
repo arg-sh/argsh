@@ -247,6 +247,170 @@ coverage::builtin() {
 }
 
 ###
+### minifier (Rust bash minifier)
+###
+lint::minifier() {
+  :args "Run clippy on minifier" "${@}"
+  _require_rust
+  cargo clippy \
+    --manifest-path "${PATH_BASE}/minifier/Cargo.toml" \
+    -- -D warnings
+}
+
+test::minifier() {
+  :args "Build and test minifier" "${@}"
+  _require_rust
+  cargo test \
+    --manifest-path "${PATH_BASE}/minifier/Cargo.toml"
+}
+
+# shellcheck disable=SC2016
+coverage::minifier() {
+  :args "Generate coverage for minifier" "${@}"
+  _require_rust
+
+  local host_triple llvm_tools cov_dir
+  host_triple="$(rustc -vV | awk '/host:/{print $2}')"
+  llvm_tools="$(rustc --print sysroot)/lib/rustlib/${host_triple}/bin"
+  cov_dir="${PATH_BASE}/minifier/target/coverage"
+
+  # Ensure llvm-tools
+  [[ -x "${llvm_tools}/llvm-profdata" ]] || {
+    echo "Installing llvm-tools..."
+    rustup component add llvm-tools
+  }
+
+  # Build test binaries with coverage and capture their paths
+  echo "Building tests with coverage instrumentation..."
+  local -a bins=()
+  while IFS= read -r line; do
+    bins+=("${line}")
+  done < <(
+    RUSTFLAGS="-C instrument-coverage" \
+    cargo test --no-run --message-format=json \
+      --manifest-path "${PATH_BASE}/minifier/Cargo.toml" 2>/dev/null |
+    jq -r 'select(.executable) | .executable'
+  )
+
+  rm -rf "${cov_dir}"
+  mkdir -p "${cov_dir}"
+
+  # Run tests with coverage
+  echo "Running tests..."
+  RUSTFLAGS="-C instrument-coverage" \
+  LLVM_PROFILE_FILE="${cov_dir}/coverage-%p-%m.profraw" \
+    cargo test --manifest-path "${PATH_BASE}/minifier/Cargo.toml"
+
+  # Merge profile data
+  "${llvm_tools}/llvm-profdata" merge -sparse \
+    "${cov_dir}"/coverage-*.profraw \
+    -o "${cov_dir}/coverage.profdata"
+  rm -f "${cov_dir}"/coverage-*.profraw
+
+  # Build --object args for llvm-cov (multiple test binaries)
+  local -a obj_args=()
+  local bin
+  for bin in "${bins[@]}"; do
+    obj_args+=("--object" "${bin}")
+  done
+
+  echo ""
+  "${llvm_tools}/llvm-cov" report \
+    --instr-profile="${cov_dir}/coverage.profdata" \
+    "${obj_args[@]}" \
+    --ignore-filename-regex='\.cargo/registry' \
+    --ignore-filename-regex='\.rustup/toolchains'
+
+  # Export JSON and generate minifier/coverage.json
+  local _cov_tmp; _cov_tmp="$(mktemp)"
+  "${llvm_tools}/llvm-cov" export \
+    --instr-profile="${cov_dir}/coverage.profdata" \
+    "${obj_args[@]}" \
+    --ignore-filename-regex='\.cargo/registry' \
+    --ignore-filename-regex='\.rustup/toolchains' \
+    --summary-only > "${_cov_tmp}"
+
+  # Count // coverage:off lines per source file → JSON map
+  local _excl="{" _first=true _f _n
+  while IFS= read -r _f; do
+    _n=$(grep -c '// coverage:off' "${_f}" 2>/dev/null) || _n=0
+    ${_first} || _excl+=","
+    _excl+="$(printf '"%s":%d' "${_f}" "${_n}")"
+    _first=false
+  done < <(jq -r '.data[0].files[].filename' "${_cov_tmp}")
+  _excl+="}"
+
+  # Generate coverage.json with jq (excludes annotated lines from totals)
+  jq --argjson excl "${_excl}" --arg date "$(date '+%Y-%m-%d %H:%M:%S')" --arg prefix "${PATH_BASE}/" '
+    def fmt2: (. * 100 | round) / 100 | tostring |
+      if test("[.]") then (if test("[.][0-9]$") then . + "0" else . end)
+      else . + ".00" end;
+    .data[0] as $d |
+    ($excl | to_entries | map(.value) | add // 0) as $total_excl |
+    {
+      files: ([
+        $d.files[] |
+        .summary.lines as $s |
+        ($excl[.filename] // 0) as $ex |
+        ($s.count - $ex) as $adj |
+        {
+          file: (.filename | ltrimstr($prefix)),
+          percent_covered: (if $adj > 0 then ($s.covered / $adj * 100 | fmt2) else "100.00" end),
+          covered_lines: ($s.covered | tostring),
+          total_lines: ($adj | tostring),
+          excluded_lines: ($ex | tostring)
+        }
+      ] | sort_by(.percent_covered | tonumber) | reverse),
+      percent_covered: (
+        ($d.totals.lines.count - $total_excl) as $adj |
+        if $adj > 0 then ($d.totals.lines.covered / $adj * 100 | fmt2) else "100.00" end
+      ),
+      covered_lines: $d.totals.lines.covered,
+      total_lines: ($d.totals.lines.count - $total_excl),
+      excluded_lines: $total_excl,
+      percent_low: 25,
+      percent_high: 75,
+      command: "cargo-test+llvm-cov",
+      date: $date
+    }
+  ' "${_cov_tmp}" > "${PATH_BASE}/minifier/coverage.json"
+  rm -f "${_cov_tmp}"
+
+  local pct
+  pct="$(jq -r '.percent_covered' "${PATH_BASE}/minifier/coverage.json")"
+  echo ""
+  echo "Coverage: ${pct}% of required ${MIN_COVERAGE}%"
+
+  # Clean up coverage artifacts
+  rm -rf "${cov_dir}"
+  find "${PATH_BASE}/minifier" -maxdepth 2 -name '*.profraw' -delete 2>/dev/null || true
+}
+
+###
+### coverage dispatcher
+###
+_coverage() {
+  local target
+  local -a args=(
+    'target:all' "Coverage target (all, builtin, minifier)"
+  )
+  :args "Generate code coverage reports" "${@}"
+
+  case "${target}" in
+    all)
+      coverage::builtin
+      coverage::minifier
+      ;;
+    builtin)  coverage::builtin ;;
+    minifier) coverage::minifier ;;
+    *)
+      echo "Unknown target: ${target}. Use: all, builtin, minifier" >&2
+      return 1
+      ;;
+  esac
+}
+
+###
 ### main
 ###
 argsh::main() {
@@ -290,7 +454,11 @@ _main() {
     -                           "Commands builtin (Rust)"
     'builtin-lint:-lint::builtin'         "Run clippy"
     'builtin-test:-test::builtin'         "Build and test"
-    'coverage:-coverage::builtin' "Generate coverage"
+    -                           "Commands minifier (Rust)"
+    'minifier-lint:-lint::minifier'       "Run clippy"
+    'minifier-test:-test::minifier'       "Run tests"
+    -                           "Coverage"
+    'coverage:-_coverage'       "Generate coverage [all|builtin|minifier]"
     -                           "Additional commands"
     'docker:-argsh::docker'     "Build docker image"
   )
