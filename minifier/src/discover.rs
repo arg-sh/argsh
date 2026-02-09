@@ -167,7 +167,14 @@ pub fn parse_ignore_patterns(pattern: &str) -> Result<Vec<Regex>> {
     pattern
         .split(',')
         .filter(|s| !s.is_empty())
-        .map(|s| Regex::new(&format!("^(?:{s})$")).map_err(Into::into))
+        .map(|s| {
+            // If user already supplied anchors, use pattern as-is
+            if s.starts_with('^') || s.ends_with('$') {
+                Regex::new(s).map_err(Into::into)
+            } else {
+                Regex::new(&format!("^(?:{s})$")).map_err(Into::into)
+            }
+        })
         .collect()
 }
 
@@ -277,6 +284,15 @@ mod tests {
     fn parse_ignore_empty_segment() {
         let pats = parse_ignore_patterns("foo,,bar").unwrap();
         assert_eq!(pats.len(), 2);
+    }
+
+    #[test]
+    fn parse_ignore_anchored_regex() {
+        let pats = parse_ignore_patterns("^u").unwrap();
+        assert_eq!(pats.len(), 1);
+        assert!(pats[0].is_match("usage"));
+        assert!(pats[0].is_match("user"));
+        assert!(!pats[0].is_match("args"));
     }
 
     #[test]
