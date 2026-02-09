@@ -6,6 +6,12 @@ WORKDIR /build
 COPY minifier/ .
 RUN cargo build --release
 
+# builtin — build Rust loadable builtins
+FROM rust:1-slim AS builtin-build
+WORKDIR /build
+COPY builtin/ .
+RUN cargo build --release
+
 # coverage
 FROM kcov/kcov
 
@@ -40,8 +46,10 @@ RUN set -eux \
 
 # argsh itself
 COPY --from=minifier-build /build/target/release/minifier /usr/local/bin/minifier
+COPY --from=builtin-build /build/target/release/libargsh.so /usr/local/lib/argsh.so
 COPY .bin/shdoc /usr/local/bin/shdoc
 COPY ./argsh.min.sh /usr/local/bin/argsh
+ENV ARGSH_BUILTIN_PATH=/usr/local/lib/argsh.so
 
 # docker
 COPY ./.docker/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh

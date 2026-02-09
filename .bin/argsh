@@ -70,6 +70,35 @@ test::argsh() {
   argsh::main test libraries .docker/test
 }
 
+_test() {
+  local target="all"
+  local test_minify
+  local -a args=(
+    'test-minify|m:+' "Run tests for argsh.min.sh"
+    'target' "Test target (all, argsh, builtin, minifier)"
+  )
+  :args "Run tests" "${@}"
+  ! (( test_minify )) || {
+    BATS_LOAD="argsh.min.sh"
+    export BATS_LOAD
+  }
+  case "${target}" in
+    all)
+      ARGSH_BUILTIN_TEST=1 argsh::main test libraries .docker/test
+      if command -v cargo &>/dev/null; then
+        test::minifier
+      fi
+      ;;
+    argsh)    argsh::main test libraries .docker/test ;;
+    builtin)  ARGSH_BUILTIN_TEST=1 argsh::main test libraries .docker/test ;;
+    minifier) test::minifier ;;
+    *)
+      echo "Unknown target: ${target}. Use: all, argsh, builtin, minifier" >&2
+      return 1
+      ;;
+  esac
+}
+
 lint::argsh() {
   local test_minify
   local -a args=(
@@ -81,6 +110,42 @@ lint::argsh() {
   else
     argsh::main lint libraries
   fi
+}
+
+_lint() {
+  local target="all"
+  local test_minify
+  local -a args=(
+    'test-minify|m:+' "Lint argsh.min.sh"
+    'target' "Lint target (all, argsh, builtin, minifier)"
+  )
+  :args "Run linters" "${@}"
+  case "${target}" in
+    all)
+      if (( test_minify )); then
+        argsh::main lint argsh.min.sh
+      else
+        argsh::main lint libraries
+      fi
+      if command -v cargo &>/dev/null; then
+        lint::builtin
+        lint::minifier
+      fi
+      ;;
+    argsh)
+      if (( test_minify )); then
+        argsh::main lint argsh.min.sh
+      else
+        argsh::main lint libraries
+      fi
+      ;;
+    builtin)  lint::builtin ;;
+    minifier) lint::minifier ;;
+    *)
+      echo "Unknown target: ${target}. Use: all, argsh, builtin, minifier" >&2
+      return 1
+      ;;
+  esac
 }
 
 argsh::docker() {
@@ -432,6 +497,7 @@ argsh::main() {
   docker run --rm ${tty} $(docker::user) -w /workspace \
     -e "BATS_LOAD" \
     -e "ARGSH_SOURCE" \
+    -e "ARGSH_BUILTIN_TEST" \
     -e "GIT_COMMIT_SHA=$(git rev-parse HEAD 2>/dev/null || :)" \
     -e "GIT_VERSION=$(git describe --tags --dirty 2>/dev/null || :)" \
     ghcr.io/arg-sh/argsh:latest "${@}" 
@@ -452,23 +518,16 @@ _main() {
 
   local -a usage
   usage=(
-    -                           "Commands argsh"
-    'lint:-lint::argsh'         "Run linters"
-    'test:-test::argsh'         "Run tests"
-    'minify:-minify::argsh'     "Minify argsh libraries"
-    -                           "Commands documentation"
-    'generate:-generate::docs'  "Generate argsh library documentation"
-    'docs-lint:-lint::docs'     "Run linters"
-    'docs-test:-test::docs'     "Run tests"
-    'vale:-lint::vale'          "Run vale tests"
-    -                           "Commands builtin (Rust)"
-    'builtin-lint:-lint::builtin'         "Run clippy"
-    'builtin-test:-test::builtin'         "Build and test"
-    -                           "Commands minifier (Rust)"
-    'minifier-lint:-lint::minifier'       "Run clippy"
-    'minifier-test:-test::minifier'       "Run tests"
-    -                           "Coverage"
+    -                           "Commands"
+    'lint:-_lint'               "Run linters [all|argsh|builtin|minifier]"
+    'test:-_test'               "Run tests [all|argsh|builtin|minifier]"
     'coverage:-_coverage'       "Generate coverage [all|builtin|minifier]"
+    'minify:-minify::argsh'     "Minify argsh libraries"
+    -                           "Documentation"
+    'generate:-generate::docs'  "Generate library documentation"
+    'docs-lint:-lint::docs'     "Run documentation linters"
+    'docs-test:-test::docs'     "Run documentation tests"
+    'vale:-lint::vale'          "Run vale"
     -                           "Additional commands"
     'docker:-argsh::docker'     "Build docker image"
   )
