@@ -77,6 +77,8 @@ pub fn is_uninitialized(name: &str) -> bool {
 }
 
 /// Read a bash indexed array into a Vec<String>.
+/// NOTE: stops at the first gap — only correct for dense (non-sparse) arrays.
+/// All argsh arrays (usage, args, COMMANDNAME) are dense.
 pub fn read_array(name: &str) -> Vec<String> {
     let mut result = Vec::new();
     let mut i = 0;
@@ -101,13 +103,10 @@ pub fn write_array(name: &str, values: &[String]) {
 }
 
 /// Append a value to a bash indexed array.
+/// Uses bash's native +=() syntax which handles sparse arrays correctly.
 pub fn array_append(name: &str, value: &str) {
-    // Find current length
-    let mut len = 0;
-    while bash_builtins::variables::array_get(name, len).is_some() {
-        len += 1;
-    }
-    let _ = bash_builtins::variables::array_set(name, len, value);
+    let ev = shell_escape_dquote(value);
+    run_bash(&format!("{}+=(\"{}\")", name, ev));
 }
 
 pub fn get_scalar(name: &str) -> Option<String> {
@@ -270,15 +269,45 @@ pub fn source_bash_file(path: &str) -> c_int {
     run_bash(&format!(". \"{}\"", path))
 }
 
+/// Returns true if `name` is a valid bash function/variable name (letters, digits,
+/// underscores, colons — must not start with a digit).
+fn is_valid_bash_name(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == ':')
+        && !name.starts_with(|c: char| c.is_ascii_digit())
+}
+
+/// Escape a string for safe interpolation inside bash double quotes.
+/// Escapes `"`, `$`, `` ` ``, and `\`.
+fn shell_escape_dquote(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for ch in s.chars() {
+        match ch {
+            '"' | '$' | '`' | '\\' => {
+                out.push('\\');
+                out.push(ch);
+            }
+            _ => out.push(ch),
+        }
+    }
+    out
+}
+
 /// Create a function alias: new_name() { old_name "$@"; }
 pub fn create_function_alias(old_name: &str, new_name: &str) {
+    if !is_valid_bash_name(old_name) || !is_valid_bash_name(new_name) {
+        return; // coverage:off - callers use names from get_all_function_names()
+    }
     run_bash(&format!("{} () {{ {} \"$@\"; }}", new_name, old_name));
 }
 
 /// Get a value from a bash associative array.
 pub fn assoc_get(array_name: &str, key: &str) -> Option<String> {
     let tmp = "__argsh_import_tmp";
-    let cmd = format!("{}=\"${{{}[{}]:-}}\"", tmp, array_name, key);
+    let ek = shell_escape_dquote(key);
+    let cmd = format!("{}=\"${{{}[\"{}\"]:-}}\"", tmp, array_name, ek);
     if run_bash(&cmd) != 0 { // coverage:off - declare/assoc access doesn't fail in practice
         return None; // coverage:off
     } // coverage:off
@@ -289,7 +318,9 @@ pub fn assoc_get(array_name: &str, key: &str) -> Option<String> {
 
 /// Set a value in a bash associative array.
 pub fn assoc_set(array_name: &str, key: &str, value: &str) {
-    run_bash(&format!("{}[{}]=\"{}\"", array_name, key, value));
+    let ek = shell_escape_dquote(key);
+    let ev = shell_escape_dquote(value);
+    run_bash(&format!("{}[\"{}\"]=\"{}\"", array_name, ek, ev));
 }
 
 /// Get all keys from a bash associative array.

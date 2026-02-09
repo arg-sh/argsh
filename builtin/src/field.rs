@@ -235,6 +235,13 @@ pub fn convert_type(
             }
         }
         custom => {
+            // Validate type name to prevent injection
+            if !custom
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_')
+            {
+                return Err(format!("invalid type name: {}", custom));
+            }
             // Try calling the bash function to::${custom}
             let func_name = format!("to::{}", custom);
             if shell::function_exists(&func_name) {

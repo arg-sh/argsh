@@ -122,8 +122,6 @@ if ! (( ARGSH_BUILTIN )); then
   declare -p args &>/dev/null || local -a args=()
   [[ $(( ${#usage[@]} % 2 )) -eq 0 ]] ||
     :args::_error "usage must be an associative array"
-  [[ $(( ${#usage[@]} % 2 )) -eq 0 ]] ||
-    :args::_error "usage must be an associative array"
 
   if [[ -z ${1:-} || ${1} == "-h" || ${1} == "--help" ]]; then
     :usage::text "${title}"

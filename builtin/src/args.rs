@@ -186,7 +186,7 @@ fn parse_flag_at(
 
     // Boolean flag (no value)
     if def.is_boolean {
-        if def.is_multiple {
+        if def.is_multiple || shell::is_array(&def.name) {
             shell::array_append(&def.name, "1");
         } else {
             shell::set_scalar(&def.name, "1");
