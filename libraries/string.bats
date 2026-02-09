@@ -36,18 +36,24 @@ load_source
   assert "foo" = "${result}"
 }
 
+# 3>&- on /dev/urandom pipelines: prevents bats 1.11+ hang where forked
+# pipeline processes inherit bats' FD3 output-capture descriptor.
+
 @test "random" {
-  result="$(string::random)"
+  result="$(string::random 3>&-)"
   assert "${#result}" -eq 42
+  # Must start with a letter (not a digit)
+  [[ "${result}" =~ ^[[:alpha:]] ]]
 }
 
 @test "random with length" {
-  result="$(string::random 10)"
+  result="$(string::random 10 3>&-)"
   assert "${#result}" -eq 10
+  [[ "${result}" =~ ^[[:alpha:]] ]]
 }
 
 @test "random with length and characters" {
-  result="$(string::random 10 "abc")"
+  result="$(string::random 10 "abc" 3>&-)"
   assert "${#result}" -eq 10
   assert "" = "${result//[abc]/}"
 }

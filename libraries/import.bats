@@ -26,11 +26,13 @@ fi
 # Existing tests
 
 @test "can import library" {
+  # 3>&- prevents bats 1.11+ hang: pipeline processes (tr < /dev/urandom)
+  # inherit bats' FD3 output-capture descriptor and hold it open until SIGPIPE.
   (
     unset ARGSH_SOURCE
     import "string"
     string::random
-  ) >"${stdout}" 2>"${stderr}" || status="${?}"
+  ) >"${stdout}" 2>"${stderr}" 3>&- || status="${?}"
 
   if [[ "${BATS_LOAD}" == "argsh.min.sh" ]]; then
     # argsh.min.sh: stripped bundle can't find separate library files.
