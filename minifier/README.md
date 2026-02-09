@@ -13,7 +13,7 @@ Options:
   -B, --bundle     Enable source bundling (resolve and inline imports)
   -S, --search-path <dir>  Search directory for resolving imports (repeatable), requires -B
   -O, --obfuscate  Enable variable name obfuscation
-  -V <prefix>      Variable name prefix (default: "a"), requires -O
+  -V <pattern>     Exclude variables matching pattern from obfuscation (repeatable), requires -O
   -I <patterns>    Ignore variables matching regex (comma-separated, default: "usage,args"), requires -O
   -h, --help       Print help
 ```
