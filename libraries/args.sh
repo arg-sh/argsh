@@ -50,7 +50,7 @@ __argsh_try_builtin() {
   return 1
 }
 # obfus ignore variable
-declare -i ARGSH_BUILTIN=0
+declare -gi ARGSH_BUILTIN="${ARGSH_BUILTIN:-0}"
 if __argsh_try_builtin; then
   ARGSH_BUILTIN=1
   unset -f import 2>/dev/null || true

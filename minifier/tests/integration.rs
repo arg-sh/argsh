@@ -56,21 +56,25 @@ fn cli_obfuscate() {
 }
 
 #[test]
-fn cli_custom_prefix() {
+fn cli_exclude_vars() {
     let mut infile = NamedTempFile::new().unwrap();
-    infile.write_all(b"local foo=1\necho $foo\n").unwrap();
+    infile
+        .write_all(b"local foo=1\nlocal bar=2\necho $foo $bar\n")
+        .unwrap();
     let outfile = NamedTempFile::new().unwrap();
 
     cmd()
         .args(["-i", infile.path().to_str().unwrap()])
         .args(["-o", outfile.path().to_str().unwrap()])
         .arg("-O")
-        .args(["-V", "x"])
+        .args(["-V", "foo", "-V", "bar"])
         .assert()
         .success();
 
     let result = std::fs::read_to_string(outfile.path()).unwrap();
-    assert!(result.contains("x0"), "Got: {result}");
+    // Both should be excluded from obfuscation
+    assert!(result.contains("foo"), "foo should be kept, got: {result}");
+    assert!(result.contains("bar"), "bar should be kept, got: {result}");
 }
 
 #[test]

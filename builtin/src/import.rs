@@ -193,9 +193,7 @@ pub fn import_main(args: &[String]) -> i32 {
         for spec in &specifiers {
             if let Some(ref alias) = spec.alias {
                 shell::create_function_alias(&spec.original, alias);
-                // Don't keep the original — the alias wrapper calls it,
-                // but we need the original to exist for the wrapper to work.
-                // Actually we must keep the original since the alias calls it.
+                // Keep the original; the alias wrapper calls it.
                 keep.insert(spec.original.clone());
             } else {
                 keep.insert(spec.original.clone());

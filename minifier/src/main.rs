@@ -46,9 +46,9 @@ struct Cli {
     #[arg(short = 'O', long = "obfuscate")]
     obfuscate: bool,
 
-    /// Variable name prefix (default: "a"). Requires -O.
-    #[arg(short = 'V', default_value = "a")]
-    var_prefix: String,
+    /// Exclude variables matching these patterns from obfuscation (repeatable). Requires -O.
+    #[arg(short = 'V')]
+    exclude_vars: Vec<String>,
 
     /// Ignore variables matching regex patterns (comma-separated, default: "usage,args"). Requires -O.
     #[arg(short = 'I', default_value = "usage,args")]
@@ -103,13 +103,21 @@ fn main() -> Result<()> {
         .with_context(|| format!("Failed to read {}", cli.input))?;
 
     let input_path = PathBuf::from(&cli.input);
+    // Merge -V patterns into the -I ignore list
+    let ignore_vars = if cli.exclude_vars.is_empty() {
+        cli.ignore_vars.clone()
+    } else {
+        let mut parts = vec![cli.ignore_vars.clone()];
+        parts.extend(cli.exclude_vars);
+        parts.join(",")
+    };
     let config = MinifyConfig {
         do_bundle: cli.bundle,
         input_path: Some(&input_path),
         search_paths: &cli.search_paths,
         do_obfuscate: cli.obfuscate,
-        var_prefix: &cli.var_prefix,
-        ignore_vars: &cli.ignore_vars,
+        var_prefix: "a",
+        ignore_vars: &ignore_vars,
     };
     let result = minify(&source, &config)?;
 
