@@ -26,18 +26,14 @@ fi
 # Existing tests
 
 @test "can import library" {
-  # 3>&- prevents bats 1.11+ hang: pipeline processes (tr < /dev/urandom)
-  # inherit bats' FD3 output-capture descriptor and hold it open until SIGPIPE.
-  echo "# DEBUG: test1 start" >&3
+  # 3>&- prevents bats 1.11+ hang: forked pipeline processes (tr < /dev/urandom
+  # inside string::random) inherit bats' FD3 output-capture descriptor and hold
+  # it open until SIGPIPE propagates, blocking bats indefinitely.
   (
     unset ARGSH_SOURCE
-    echo "DEBUG: before import" >&2
     import "string"
-    echo "DEBUG: import done, calling string::random" >&2
-    timeout 5 bash -c 'source libraries/string.sh; string::random' || echo "DEBUG: timeout/fail" >&2
-    echo "DEBUG: string::random done" >&2
+    string::random
   ) >"${stdout}" 2>"${stderr}" 3>&- || status="${?}"
-  echo "# DEBUG: test1 subshell exit status=${status}" >&3
 
   if [[ "${BATS_LOAD}" == "argsh.min.sh" ]]; then
     # argsh.min.sh: stripped bundle can't find separate library files.
@@ -47,6 +43,7 @@ fi
   else
     # Both pure-bash and builtin resolve relative imports via __ARGSH_LIB_DIR
     assert "${status}" -eq 0
+    is_empty stderr
     not_empty stdout
   fi
 }
