@@ -9,9 +9,9 @@
     },
     {
       "file": "builtin/src/import.rs",
-      "percent_covered": "102.38",
-      "covered_lines": "129",
-      "total_lines": "126",
+      "percent_covered": "102.42",
+      "covered_lines": "127",
+      "total_lines": "124",
       "excluded_lines": "10"
     },
     {
@@ -58,11 +58,11 @@
     }
   ],
   "percent_covered": "98.34",
-  "covered_lines": 1127,
-  "total_lines": 1146,
+  "covered_lines": 1125,
+  "total_lines": 1144,
   "excluded_lines": 108,
   "percent_low": 25,
   "percent_high": 75,
   "command": "bats+llvm-cov",
-  "date": "2026-02-08 21:40:12"
+  "date": "2026-02-09 09:40:45"
 }

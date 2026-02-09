@@ -171,11 +171,12 @@ cargo build --release
 ## Test
 
 ```bash
-# Unit + integration tests (102 tests)
+# Unit + integration tests
 cargo test
 
-# Code coverage (requires cargo-tarpaulin)
-cargo tarpaulin
+# Code coverage (requires llvm-tools: rustup component add llvm-tools)
+# Run via the project helper:
+#   argsh coverage minifier
 ```
 
 ## Architecture
