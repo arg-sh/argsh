@@ -159,7 +159,7 @@ coverage::builtin() {
   mkdir -p "${cov_dir}"
 
   echo "Running tests..."
-  LLVM_PROFILE_FILE="${cov_dir}/coverage-%p-%m.profraw" \
+  LLVM_PROFILE_FILE="${cov_dir}/coverage-%p.profraw" \
   ARGSH_BUILTIN_TEST=1 ARGSH_SOURCE=argsh \
     bats "${PATH_BASE}/libraries/args.bats" \
          "${PATH_BASE}/libraries/import.bats"
@@ -302,7 +302,7 @@ coverage::minifier() {
   # Run tests with coverage
   echo "Running tests..."
   RUSTFLAGS="-C instrument-coverage" \
-  LLVM_PROFILE_FILE="${cov_dir}/coverage-%p-%m.profraw" \
+  LLVM_PROFILE_FILE="${cov_dir}/coverage-%p.profraw" \
     cargo test --manifest-path "${PATH_BASE}/minifier/Cargo.toml"
 
   # Merge profile data

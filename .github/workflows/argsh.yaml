@@ -151,7 +151,7 @@ jobs:
         env:
           ARGSH_SOURCE: argsh
           ARGSH_BUILTIN_TEST: "1"
-          LLVM_PROFILE_FILE: builtin/target/coverage/coverage-%p-%m.profraw
+          LLVM_PROFILE_FILE: builtin/target/coverage/coverage-%p.profraw
         run: |
           mkdir -p builtin/target/coverage
           bats libraries/args.bats
