@@ -10,8 +10,8 @@
     {
       "file": "minifier/src/strip.rs",
       "percent_covered": "100.00",
-      "covered_lines": "66",
-      "total_lines": "66",
+      "covered_lines": "94",
+      "total_lines": "94",
       "excluded_lines": "0"
     },
     {
@@ -30,9 +30,9 @@
     },
     {
       "file": "minifier/src/flatten.rs",
-      "percent_covered": "100.00",
-      "covered_lines": "36",
-      "total_lines": "36",
+      "percent_covered": "98.97",
+      "covered_lines": "96",
+      "total_lines": "97",
       "excluded_lines": "0"
     },
     {
@@ -64,12 +64,12 @@
       "excluded_lines": "0"
     }
   ],
-  "percent_covered": "98.58",
-  "covered_lines": 1461,
-  "total_lines": 1482,
+  "percent_covered": "98.60",
+  "covered_lines": 1549,
+  "total_lines": 1571,
   "excluded_lines": 0,
   "percent_low": 25,
   "percent_high": 75,
   "command": "cargo-test+llvm-cov",
-  "date": "2026-02-09 09:35:52"
+  "date": "2026-02-09 18:26:39"
 }

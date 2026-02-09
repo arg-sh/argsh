@@ -2,17 +2,10 @@
   "files": [
     {
       "file": "builtin/src/shell.rs",
-      "percent_covered": "106.59",
-      "covered_lines": "178",
+      "percent_covered": "103.59",
+      "covered_lines": "173",
       "total_lines": "167",
       "excluded_lines": "32"
-    },
-    {
-      "file": "builtin/src/import.rs",
-      "percent_covered": "102.42",
-      "covered_lines": "127",
-      "total_lines": "124",
-      "excluded_lines": "10"
     },
     {
       "file": "builtin/src/to.rs",
@@ -20,6 +13,13 @@
       "covered_lines": "87",
       "total_lines": "87",
       "excluded_lines": "5"
+    },
+    {
+      "file": "builtin/src/import.rs",
+      "percent_covered": "100.00",
+      "covered_lines": "127",
+      "total_lines": "127",
+      "excluded_lines": "10"
     },
     {
       "file": "builtin/src/args.rs",
@@ -57,12 +57,12 @@
       "excluded_lines": "0"
     }
   ],
-  "percent_covered": "98.34",
-  "covered_lines": 1125,
-  "total_lines": 1144,
+  "percent_covered": "97.65",
+  "covered_lines": 1120,
+  "total_lines": 1147,
   "excluded_lines": 108,
   "percent_low": 25,
   "percent_high": 75,
   "command": "bats+llvm-cov",
-  "date": "2026-02-09 09:40:45"
+  "date": "2026-02-09 18:26:32"
 }
