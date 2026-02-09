@@ -23,6 +23,9 @@ declare -ga __ARGSH_BUILTINS=(:usage :args
   is::array is::uninitialized is::set is::tty
   args::field_name to::int to::float to::boolean to::file to::string
   import import::clear)
+# Library directory for builtin import resolution (plain names like `import string`)
+# obfus ignore variable
+declare -g __ARGSH_LIB_DIR="${BASH_SOURCE[0]%/*}"
 
 # shellcheck disable=SC2120
 __argsh_try_builtin() {

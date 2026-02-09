@@ -76,7 +76,7 @@ export BASH_LOADABLES_PATH="/usr/local/lib"
 source libraries/args.sh
 ```
 
-When builtins are loaded, `args.sh` sets `ARGSH_BUILTIN=1` and skips the pure-Bash function definitions. The `is` and `to` library imports are also skipped since the `.so` provides those builtins directly.
+When builtins are loaded, `args.sh` sets `ARGSH_BUILTIN=1` and skips the pure-Bash function definitions. The `is` and `to` libraries are still sourced, but their function definitions are removed via `unset -f`, allowing the faster builtin implementations from the `.so` to take effect.
 
 ### Manual
 

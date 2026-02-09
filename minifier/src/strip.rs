@@ -27,6 +27,8 @@ static RE_SET_PIPEFAIL: LazyLock<Regex> =
 /// producing lines like `}#!/usr/bin/env bash`.
 static RE_MIDLINE_SHEBANG: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(.)#!/").unwrap());
+static RE_HEREDOC: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"<<-?\s*['"]?(\w+)['"]?"#).unwrap());
 
 /// Returns true if the line should be stripped (removed entirely).
 ///
@@ -47,14 +49,31 @@ pub fn should_strip(line: &str) -> bool {
 ///
 /// Pre-processes input to split mid-line shebangs caused by file
 /// concatenation (e.g. `}#!/usr/bin/env bash` → `}` + `#!/usr/bin/env bash`).
+/// Preserves heredoc content verbatim (comments, imports, blank lines inside
+/// heredocs are kept).
 pub fn strip_lines(input: &str) -> Vec<String> {
     // Split mid-line shebangs onto their own lines so they get stripped
     let normalized = RE_MIDLINE_SHEBANG.replace_all(input, "$1\n#!/");
-    normalized
-        .lines()
-        .filter(|line| !should_strip(line))
-        .map(|s| s.to_string())
-        .collect()
+    let mut result = Vec::new();
+    let mut heredoc_delim: Option<String> = None;
+
+    for line in normalized.lines() {
+        if let Some(ref delim) = heredoc_delim {
+            result.push(line.to_string());
+            if line.trim() == delim.as_str() {
+                heredoc_delim = None;
+            }
+            continue;
+        }
+        // Check for heredoc start BEFORE stripping
+        if let Some(cap) = RE_HEREDOC.captures(line) {
+            heredoc_delim = Some(cap[1].to_string());
+        }
+        if !should_strip(line) {
+            result.push(line.to_string());
+        }
+    }
+    result
 }
 
 #[cfg(test)]
@@ -126,5 +145,32 @@ mod tests {
         let input = "echo a\n#!/usr/bin/env bash\necho b";
         let result = strip_lines(input);
         assert_eq!(result, vec!["echo a", "echo b"]);
+    }
+
+    #[test]
+    fn preserves_heredoc_content() {
+        let input = "cat <<EOF\n# not a comment\nimport something\n  indented\nEOF\necho after";
+        let result = strip_lines(input);
+        assert_eq!(
+            result,
+            vec![
+                "cat <<EOF",
+                "# not a comment",
+                "import something",
+                "  indented",
+                "EOF",
+                "echo after",
+            ]
+        );
+    }
+
+    #[test]
+    fn preserves_quoted_heredoc() {
+        let input = "cat <<'MARKER'\n# comment\nMARKER\necho done";
+        let result = strip_lines(input);
+        assert_eq!(
+            result,
+            vec!["cat <<'MARKER'", "# comment", "MARKER", "echo done"]
+        );
     }
 }

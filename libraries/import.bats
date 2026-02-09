@@ -24,13 +24,13 @@ fi
     string::random
   ) >"${stdout}" 2>"${stderr}" || status="${?}"
 
-  if [[ "${ARGSH_BUILTIN_TEST:-}" == "1" || "${BATS_LOAD}" == "argsh.min.sh" ]]; then
-    # Builtin: BASH_SOURCE[0] is the caller, not import.sh, so relative resolve fails.
+  if [[ "${BATS_LOAD}" == "argsh.min.sh" ]]; then
     # argsh.min.sh: stripped bundle can't find separate library files.
     assert "${status}" -ne 0
     is_empty stdout
     contains "Library not found" stderr
   else
+    # Both pure-bash and builtin resolve relative imports via __ARGSH_LIB_DIR
     assert "${status}" -eq 0
     is_empty stderr
     not_empty stdout

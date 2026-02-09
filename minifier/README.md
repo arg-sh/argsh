@@ -42,10 +42,10 @@ minifier -i script.sh -o script.min.sh -O
 minifier -i script.sh -o script.min.sh -B -S ./libraries -O
 ```
 
-### Custom variable prefix and ignore patterns
+### Exclude variables from obfuscation
 
 ```bash
-minifier -i script.sh -o script.min.sh -O -V x -I "usage,args,config"
+minifier -i script.sh -o script.min.sh -O -V MYVAR -V CONFIG_ -I "usage,args"
 ```
 
 ## Pipeline

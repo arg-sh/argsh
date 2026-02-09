@@ -221,7 +221,8 @@ fn get_argsh_source_path() -> Option<String> {
 }
 
 /// Resolve module path following import.sh semantics.
-/// Prefixes: @ → PATH_BASE, ~ → ARGSH_SOURCE/BASH_SOURCE[-1], plain → ARGSH_SOURCE/BASH_SOURCE[0]
+/// Prefixes: @ → PATH_BASE, ~ → ARGSH_SOURCE/BASH_SOURCE[-1],
+/// plain → ARGSH_SOURCE/__ARGSH_LIB_DIR/BASH_SOURCE[0]
 /// Extension fallback: "", ".sh", ".bash"
 fn resolve_module_path(module: &str) -> Option<String> {
     let base_path = if let Some(rest) = module.strip_prefix('@') {
@@ -232,9 +233,17 @@ fn resolve_module_path(module: &str) -> Option<String> {
             .or_else(shell::get_bash_source_last)?;
         format!("{}/{}", path_dirname(&src), rest)
     } else {
-        let src = get_argsh_source_path()
-            .or_else(shell::get_bash_source_first)?;
-        format!("{}/{}", path_dirname(&src), module)
+        // For plain names: try ARGSH_SOURCE (file path → dirname), then
+        // __ARGSH_LIB_DIR (already a directory), then BASH_SOURCE[0] (file path → dirname).
+        if let Some(src) = get_argsh_source_path() {
+            format!("{}/{}", path_dirname(&src), module)
+        } else if let Some(lib_dir) = shell::get_scalar("__ARGSH_LIB_DIR") {
+            // __ARGSH_LIB_DIR is already a directory, don't apply path_dirname
+            format!("{}/{}", lib_dir, module)
+        } else {
+            let src = shell::get_bash_source_first()?;
+            format!("{}/{}", path_dirname(&src), module)
+        }
     };
 
     for ext in &["", ".sh", ".bash"] {
