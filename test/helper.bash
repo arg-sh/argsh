@@ -7,6 +7,7 @@ declare stdout stderr status
 setup() {
   # shellcheck disable=SC2317
   :validate() { :; }
+  [[ -z "${__BUILTIN_SKIP:-}" ]] || skip "${__BUILTIN_SKIP}"
   status=0
   stdout="$(mktemp)"
   stderr="$(mktemp)"

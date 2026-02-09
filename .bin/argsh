@@ -211,19 +211,21 @@ coverage::builtin() {
         .summary.lines as $s |
         ($excl[.filename] // 0) as $ex |
         ($s.count - $ex) as $adj |
+        ([$s.covered, $adj] | min) as $cov |
         {
           file: (.filename | ltrimstr($prefix)),
-          percent_covered: (if $adj > 0 then ($s.covered / $adj * 100 | fmt2) else "100.00" end),
-          covered_lines: ($s.covered | tostring),
+          percent_covered: (if $adj > 0 then ($cov / $adj * 100 | fmt2) else "100.00" end),
+          covered_lines: ($cov | tostring),
           total_lines: ($adj | tostring),
           excluded_lines: ($ex | tostring)
         }
       ] | sort_by(.percent_covered | tonumber) | reverse),
       percent_covered: (
         ($d.totals.lines.count - $total_excl) as $adj |
-        if $adj > 0 then ($d.totals.lines.covered / $adj * 100 | fmt2) else "100.00" end
+        ([$d.totals.lines.covered, $adj] | min) as $cov |
+        if $adj > 0 then ($cov / $adj * 100 | fmt2) else "100.00" end
       ),
-      covered_lines: $d.totals.lines.covered,
+      covered_lines: ([$d.totals.lines.covered, ($d.totals.lines.count - $total_excl)] | min),
       total_lines: ($d.totals.lines.count - $total_excl),
       excluded_lines: $total_excl,
       percent_low: 25,
@@ -359,19 +361,21 @@ coverage::minifier() {
         .summary.lines as $s |
         ($excl[.filename] // 0) as $ex |
         ($s.count - $ex) as $adj |
+        ([$s.covered, $adj] | min) as $cov |
         {
           file: (.filename | ltrimstr($prefix)),
-          percent_covered: (if $adj > 0 then ($s.covered / $adj * 100 | fmt2) else "100.00" end),
-          covered_lines: ($s.covered | tostring),
+          percent_covered: (if $adj > 0 then ($cov / $adj * 100 | fmt2) else "100.00" end),
+          covered_lines: ($cov | tostring),
           total_lines: ($adj | tostring),
           excluded_lines: ($ex | tostring)
         }
       ] | sort_by(.percent_covered | tonumber) | reverse),
       percent_covered: (
         ($d.totals.lines.count - $total_excl) as $adj |
-        if $adj > 0 then ($d.totals.lines.covered / $adj * 100 | fmt2) else "100.00" end
+        ([$d.totals.lines.covered, $adj] | min) as $cov |
+        if $adj > 0 then ($cov / $adj * 100 | fmt2) else "100.00" end
       ),
-      covered_lines: $d.totals.lines.covered,
+      covered_lines: ([$d.totals.lines.covered, ($d.totals.lines.count - $total_excl)] | min),
       total_lines: ($d.totals.lines.count - $total_excl),
       excluded_lines: $total_excl,
       percent_low: 25,

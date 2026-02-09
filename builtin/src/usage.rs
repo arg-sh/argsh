@@ -47,7 +47,7 @@ extern "C" fn usage_builtin_fn(word_list: *const WordList) -> c_int {
 /// Returns exit code (0 = success, 2 = usage error).
 pub fn usage_main(args: &[String]) -> i32 {
     if args.is_empty() {
-        shell::write_stderr(":args error [???] ➜ :usage requires a title argument"); // coverage:off - exit(2) prevents coverage flush in forked subshell
+        shell::write_stderr(":usage error [???] ➜ :usage requires a title argument"); // coverage:off - exit(2) prevents coverage flush in forked subshell
         return 2; // coverage:off - exit(2) prevents coverage flush in forked subshell
     }
 
@@ -116,7 +116,7 @@ pub fn usage_main(args: &[String]) -> i32 {
     let cmd = match cmd {
         Some(c) => c,
         None => {
-            error_usage("???", "Invalid command: "); // coverage:off - exit(2) prevents coverage flush in forked subshell
+            error_usage("???", "Missing command"); // coverage:off - exit(2) prevents coverage flush in forked subshell
             unreachable!() // coverage:off - exit(2) prevents coverage flush in forked subshell
         }
     };
