@@ -156,6 +156,9 @@ fn discover_from_segment(segment: &str, vars: &mut std::collections::HashSet<Str
 }
 
 /// Parse the ignore pattern string (comma-separated regexes) into compiled Regex objects.
+///
+/// Each pattern is anchored with `^...$` so it matches the full variable name,
+/// not just a substring.  E.g. `usage` only matches `usage`, not `usage_count`.
 pub fn parse_ignore_patterns(pattern: &str) -> Result<Vec<Regex>> {
     if pattern == "*" {
         // Special: ignore ALL variables
@@ -164,7 +167,7 @@ pub fn parse_ignore_patterns(pattern: &str) -> Result<Vec<Regex>> {
     pattern
         .split(',')
         .filter(|s| !s.is_empty())
-        .map(|s| Regex::new(s).map_err(Into::into))
+        .map(|s| Regex::new(&format!("^(?:{s})$")).map_err(Into::into))
         .collect()
 }
 

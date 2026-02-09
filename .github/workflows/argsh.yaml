@@ -521,7 +521,7 @@ jobs:
         run: |
           cp argsh.min.sh argsh
           cp argsh-so.min.sh argsh-so
-          cp libargsh.so argsh.so
+          cp builtin/target/release/libargsh.so argsh.so
           sha256sum argsh argsh-so argsh.so > sha256sum.txt
           gh release create "${TAG_NAME}" --draft --title "argsh ${TAG_NAME}" --generate-notes
           gh release upload "${TAG_NAME}" --clobber argsh argsh-so argsh.so sha256sum.txt

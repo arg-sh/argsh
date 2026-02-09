@@ -51,7 +51,7 @@ binary::github() {
 # @example
 #   binary::arch # amd64
 binary::arch() {
-  local short="${1}"
+  local short="${1:-0}"
   local -r arch="$(uname -m)"
   case "${arch}" in
     x86_64|amd64) if (( short )); then echo "64-bit"; else echo "amd64"; fi ;;

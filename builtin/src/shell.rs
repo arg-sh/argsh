@@ -105,6 +105,9 @@ pub fn write_array(name: &str, values: &[String]) {
 /// Append a value to a bash indexed array.
 /// Uses bash's native +=() syntax which handles sparse arrays correctly.
 pub fn array_append(name: &str, value: &str) {
+    if !is_valid_bash_name(name) {
+        return;
+    }
     let ev = shell_escape_dquote(value);
     run_bash(&format!("{}+=(\"{}\")", name, ev));
 }
@@ -266,7 +269,8 @@ pub fn remove_function(name: &str) {
 
 /// Source a bash file using parse_and_execute(". path").
 pub fn source_bash_file(path: &str) -> c_int {
-    run_bash(&format!(". \"{}\"", path))
+    let ep = shell_escape_dquote(path);
+    run_bash(&format!(". \"{}\"", ep))
 }
 
 /// Returns true if `name` is a valid bash function/variable name (letters, digits,
@@ -305,6 +309,9 @@ pub fn create_function_alias(old_name: &str, new_name: &str) {
 
 /// Get a value from a bash associative array.
 pub fn assoc_get(array_name: &str, key: &str) -> Option<String> {
+    if !is_valid_bash_name(array_name) {
+        return None;
+    }
     let tmp = "__argsh_import_tmp";
     let ek = shell_escape_dquote(key);
     let cmd = format!("{}=\"${{{}[\"{}\"]:-}}\"", tmp, array_name, ek);
@@ -318,6 +325,9 @@ pub fn assoc_get(array_name: &str, key: &str) -> Option<String> {
 
 /// Set a value in a bash associative array.
 pub fn assoc_set(array_name: &str, key: &str, value: &str) {
+    if !is_valid_bash_name(array_name) {
+        return;
+    }
     let ek = shell_escape_dquote(key);
     let ev = shell_escape_dquote(value);
     run_bash(&format!("{}[\"{}\"]=\"{}\"", array_name, ek, ev));
@@ -325,6 +335,9 @@ pub fn assoc_set(array_name: &str, key: &str, value: &str) {
 
 /// Get all keys from a bash associative array.
 pub fn get_assoc_keys(array_name: &str) -> Vec<String> {
+    if !is_valid_bash_name(array_name) {
+        return Vec::new();
+    }
     let tmp = "__argsh_import_tmp";
     let cmd = format!("{}=\"${{!{}[@]}}\"", tmp, array_name);
     if run_bash(&cmd) != 0 { // coverage:off - assoc key expansion doesn't fail in practice

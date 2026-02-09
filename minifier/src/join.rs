@@ -13,7 +13,7 @@ use std::io::BufRead;
 use std::sync::LazyLock;
 
 static RE_HEREDOC: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"<<\s*['"]?(\w+)['"]?\s*"#).unwrap());
+    LazyLock::new(|| Regex::new(r#"<<-?\s*['"]?(\w+)['"]?\s*"#).unwrap());
 static RE_CASE_START: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^\s*case\b").unwrap());
 static RE_ESAC: LazyLock<Regex> =

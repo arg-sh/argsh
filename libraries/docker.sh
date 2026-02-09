@@ -34,9 +34,12 @@ docker::user() {
     curr="${home}${curr}"
   fi
 
-  echo "${user}:x:${uid}:${gid}::${home}:${shell}" > /tmp/docker_passwd
-  echo "${user}:x:${gid}:" > /tmp/docker_group
-  echo "-v /tmp/docker_passwd:/etc/passwd -v /tmp/docker_group:/etc/group"
+  local _passwd _group
+  _passwd="$(mktemp /tmp/docker_passwd.XXXXXX)"
+  _group="$(mktemp /tmp/docker_group.XXXXXX)"
+  echo "${user}:x:${uid}:${gid}::${home}:${shell}" > "${_passwd}"
+  echo "${user}:x:${gid}:" > "${_group}"
+  echo "-v ${_passwd}:/etc/passwd -v ${_group}:/etc/group"
   echo "-u ${uid}:${gid}"
 
   echo "-v ${PATH_BASE:-"$(pwd)"}:${home}"

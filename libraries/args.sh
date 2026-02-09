@@ -495,9 +495,9 @@ if ! (( ARGSH_BUILTIN )); then
   [[ -n ${set_value:-} ]] || {
     cli_value="${cli[0]/${flag}}"
     if [[ ${cli_value} == "" ]]; then
-      (( ${#cli[@]} )) ||
+      (( ${#cli[@]} > 1 )) ||
         :args::error "missing value for flag: ${attrs[0]}"
-      
+
       set_value="${cli[1]}"
       cli=("${cli[@]:1}")
     else
