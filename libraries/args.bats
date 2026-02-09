@@ -12,23 +12,31 @@ load_source
 # All builtins are loaded from the same .so to ensure consistent coverage tracking.
 declare -g __BUILTIN_SKIP=""
 if [[ "${ARGSH_BUILTIN_TEST:-}" == "1" ]]; then
-  _so="${BATS_TEST_DIRNAME}/../builtin/target/release/libargsh.so"
-  if [[ ! -f "${_so}" ]]; then
-    __BUILTIN_SKIP="builtin .so not found: ${_so}"
+  if (( ARGSH_BUILTIN )); then
+    # Builtins already loaded by args.sh (e.g., via ARGSH_BUILTIN_PATH in Docker)
+    unset -f :usage :args \
+      is::array is::uninitialized is::set is::tty \
+      to::int to::float to::boolean to::file to::string \
+      args::field_name import import::source import::clear 2>/dev/null || true
   else
-    # shellcheck disable=SC2229
-    enable -f "${_so}" \
-      :usage :args is::array is::uninitialized is::set is::tty \
-      args::field_name to::int to::float to::boolean to::file to::string \
-      import import::clear 2>/dev/null || __BUILTIN_SKIP="builtin .so failed to load"
-    if [[ -z "${__BUILTIN_SKIP}" ]]; then
-      unset -f :usage :args \
-        is::array is::uninitialized is::set is::tty \
-        to::int to::float to::boolean to::file to::string \
-        args::field_name import import::source import::clear 2>/dev/null || true
+    _so="${BATS_TEST_DIRNAME}/../builtin/target/release/libargsh.so"
+    if [[ ! -f "${_so}" ]]; then
+      __BUILTIN_SKIP="builtin .so not found: ${_so}"
+    else
+      # shellcheck disable=SC2229
+      enable -f "${_so}" \
+        :usage :args is::array is::uninitialized is::set is::tty \
+        args::field_name to::int to::float to::boolean to::file to::string \
+        import import::clear 2>/dev/null || __BUILTIN_SKIP="builtin .so failed to load"
+      if [[ -z "${__BUILTIN_SKIP}" ]]; then
+        unset -f :usage :args \
+          is::array is::uninitialized is::set is::tty \
+          to::int to::float to::boolean to::file to::string \
+          args::field_name import import::source import::clear 2>/dev/null || true
+      fi
     fi
+    unset _so
   fi
-  unset _so
 fi
 
 # -----------------------------------------------------------------------------
