@@ -17,15 +17,18 @@ import() { declare -A _i; (( ${_i[${1}]:-} )) || { _i[${1}]=1; . "${BASH_SOURCE[
 
 # ── Try loading native builtins (.so) for 100-1000x performance ────
 # Falls back to pure bash if unavailable.
+# Shared builtins list — also used by argsh::builtin::try() in main.sh.
+# obfus ignore variable
+declare -ga __ARGSH_BUILTINS=(:usage :args
+  is::array is::uninitialized is::set is::tty
+  args::field_name to::int to::float to::boolean to::file to::string
+  import import::clear)
+
 # shellcheck disable=SC2120
 __argsh_try_builtin() {
   local _so _d
   local -r _n="argsh.so"
-  local -ra _builtins=(:usage :args
-    is::array is::uninitialized is::set is::tty
-    args::field_name to::int to::float to::boolean to::file to::string
-    import import::clear)
-  # Search order: explicit path, PATH_LIB, PATH_BIN, LD_LIBRARY_PATH, BASH_LOADABLES_PATH
+  # Search order: ARGSH_BUILTIN_PATH, PATH_LIB, PATH_BIN, LD_LIBRARY_PATH, BASH_LOADABLES_PATH
   for _so in \
     "${ARGSH_BUILTIN_PATH:-}" \
     "${PATH_LIB:+${PATH_LIB}/${_n}}" \
@@ -33,7 +36,7 @@ __argsh_try_builtin() {
   ; do
     [[ -n "${_so}" && -f "${_so}" ]] || continue
     # shellcheck disable=SC2229
-    enable -f "${_so}" "${_builtins[@]}" 2>/dev/null || continue
+    enable -f "${_so}" "${__ARGSH_BUILTINS[@]}" 2>/dev/null || continue
     return 0
   done
   # Search colon-separated path variables: LD_LIBRARY_PATH, BASH_LOADABLES_PATH
@@ -43,7 +46,7 @@ __argsh_try_builtin() {
     for _so in ${_d}; do
       [[ -n "${_so}" && -f "${_so}/${_n}" ]] || continue
       # shellcheck disable=SC2229
-      enable -f "${_so}/${_n}" "${_builtins[@]}" 2>/dev/null || continue
+      enable -f "${_so}/${_n}" "${__ARGSH_BUILTINS[@]}" 2>/dev/null || continue
       return 0
     done
   done
@@ -60,7 +63,6 @@ if __argsh_try_builtin; then
   # shellcheck disable=SC2218
   [[ "$(type -t import 2>/dev/null)" == "builtin" ]] || import() { declare -A _i; (( ${_i[${1}]:-} )) || { _i[${1}]=1; . "${BASH_SOURCE[0]%/*}/${1}.sh"; } }
 fi
-unset -f __argsh_try_builtin
 
 # Import remaining libraries (lines starting with `import` are stripped by obfus)
 import string

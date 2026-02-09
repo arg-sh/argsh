@@ -14,47 +14,22 @@ import docker
 import github
 
 # @description Try loading argsh native builtins (.so).
+# Delegates search to __argsh_try_builtin() (defined in args.sh) to avoid
+# duplicating the search logic. Only adds explicit-path handling.
 # @arg $1 string Optional explicit path to argsh.so
 # @set ARGSH_BUILTIN int 1 if builtins loaded, 0 otherwise
 # @internal
 # shellcheck disable=SC2120
 argsh::builtin::try() {
-  local _so _d
-  local -r _n="argsh.so"
-  # shellcheck disable=SC2034
-  local -ra _builtins=(:usage :args
-    is::array is::uninitialized is::set is::tty
-    args::field_name to::int to::float to::boolean to::file to::string
-    import import::clear)
   # If explicit path given, only try that
   if [[ -n "${1:-}" ]]; then
     [[ -f "${1}" ]] || return 1
     # shellcheck disable=SC2229
-    enable -f "${1}" "${_builtins[@]}" 2>/dev/null || return 1
+    enable -f "${1}" "${__ARGSH_BUILTINS[@]}" 2>/dev/null || return 1
     return 0
   fi
-  # Search order: ARGSH_BUILTIN_PATH, PATH_LIB, PATH_BIN, LD_LIBRARY_PATH, BASH_LOADABLES_PATH
-  for _so in \
-    "${ARGSH_BUILTIN_PATH:-}" \
-    "${PATH_LIB:+${PATH_LIB}/${_n}}" \
-    "${PATH_BIN:+${PATH_BIN}/${_n}}" \
-  ; do
-    [[ -n "${_so}" && -f "${_so}" ]] || continue
-    # shellcheck disable=SC2229
-    enable -f "${_so}" "${_builtins[@]}" 2>/dev/null || continue
-    return 0
-  done
-  for _d in "${LD_LIBRARY_PATH:-}" "${BASH_LOADABLES_PATH:-}"; do
-    [[ -n "${_d}" ]] || continue
-    local IFS=:
-    for _so in ${_d}; do
-      [[ -n "${_so}" && -f "${_so}/${_n}" ]] || continue
-      # shellcheck disable=SC2229
-      enable -f "${_so}/${_n}" "${_builtins[@]}" 2>/dev/null || continue
-      return 0
-    done
-  done
-  return 1
+  # Search standard paths (ARGSH_BUILTIN_PATH, PATH_LIB, PATH_BIN, LD_LIBRARY_PATH, BASH_LOADABLES_PATH)
+  __argsh_try_builtin
 }
 
 # @description Find the path where argsh.so is currently loaded from.
