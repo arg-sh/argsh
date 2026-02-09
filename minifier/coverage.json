@@ -37,9 +37,9 @@
     },
     {
       "file": "minifier/src/discover.rs",
-      "percent_covered": "98.88",
-      "covered_lines": "177",
-      "total_lines": "179",
+      "percent_covered": "98.95",
+      "covered_lines": "188",
+      "total_lines": "190",
       "excluded_lines": "0"
     },
     {
@@ -64,12 +64,12 @@
       "excluded_lines": "0"
     }
   ],
-  "percent_covered": "98.60",
-  "covered_lines": 1549,
-  "total_lines": 1571,
+  "percent_covered": "98.61",
+  "covered_lines": 1560,
+  "total_lines": 1582,
   "excluded_lines": 0,
   "percent_low": 25,
   "percent_high": 75,
   "command": "cargo-test+llvm-cov",
-  "date": "2026-02-09 23:40:40"
+  "date": "2026-02-09 23:47:08"
 }
