@@ -81,7 +81,8 @@ argsh::builtin::install_dir() {
   fi
   # 4. User-local fallback
   _d="${HOME}/.local/lib/bash"
-  if [[ -d "${_d}" && -w "${_d}" ]] || mkdir -p "${_d}" 2>/dev/null; then
+  mkdir -p "${_d}" 2>/dev/null || true
+  if [[ -d "${_d}" && -w "${_d}" ]]; then
     echo "${_d}"; return 0
   fi
   return 1

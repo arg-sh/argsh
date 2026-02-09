@@ -114,7 +114,7 @@ All builtins are wrapped in `std::panic::catch_unwind` to prevent Rust panics fr
 
 ### Priority and Function Overrides
 
-Bash resolves commands in this order: **aliases > functions > builtins**. When `args.sh` auto-loads the `.so`, it uses `return 0` to skip defining the bash functions entirely. This way the builtins take effect without needing to `unset -f` anything.
+Bash resolves commands in this order: **aliases > functions > builtins**. When `args.sh` auto-loads the `.so`, it wraps the pure-Bash function definitions in `if ! (( ARGSH_BUILTIN )); then ... fi`, so they are never defined when builtins are active. This way the builtins take effect without needing to `unset -f` anything.
 
 If you load builtins manually after sourcing `args.sh`, the bash functions will shadow them. Use `unset -f :args :usage` to let the builtins take precedence.
 
