@@ -81,7 +81,7 @@ impl VarPatterns {
 
         // 7. for loop
         add(
-            &format!(r"^([ \t]*for\s+){v}"),
+            &format!(r"^([ \t]*for\s+){v}\b"),
             format!("${{1}}{r}"),
             false,
         );
@@ -109,7 +109,7 @@ impl VarPatterns {
 
         // 11. Pre-increment: `(( ++var`
         add(
-            &format!(r"^([ \t]*\({{2}}\s*[-+]{{2}}){v}"),
+            &format!(r"^([ \t]*\({{2}}\s*[-+]{{2}}){v}\b"),
             format!("${{1}}{r}"),
             false,
         );
@@ -128,9 +128,9 @@ impl VarPatterns {
             true,
         );
 
-        // 14. Array index arithmetic: `${arr[i+1]}`
+        // 14. Array index arithmetic: `${arr[i+1]}`, `${arr[i]}`, `${arr[i-1]}`
         add(
-            &format!(r"(\$\{{[^}}]+[[+\-]){v}([]+\-][^}}]*\}})"),
+            &format!(r"(\$\{{[^}}]+[\[+\-]){v}([\]+\-][^}}]*\}})"),
             format!("${{1}}{r}${{2}}"),
             true,
         );
@@ -166,7 +166,7 @@ impl VarPatterns {
 
         // 19. [[ / (( ${#var}
         add(
-            &format!(r"([(\[]{{2}}[^)]*\$\{{#?){v}([[:}}])"),
+            &format!(r"([(\[]{{2}}[^)]*\$\{{#?){v}([\[:}}])"),
             format!("${{1}}{r}${{2}}"),
             true,
         );
@@ -326,5 +326,168 @@ mod tests {
         let ob = make_obfuscator(&["line"], "a");
         let result = ob.obfuscate_line("read -r line ");
         assert!(result.contains("a0"), "Got: {result}");
+    }
+
+    #[test]
+    fn renames_array_subscript_simple() {
+        let ob = make_obfuscator(&["i"], "a");
+        assert_eq!(
+            ob.obfuscate_line(r#"echo "${usage[i]}""#),
+            r#"echo "${usage[a0]}""#,
+        );
+    }
+
+    #[test]
+    fn renames_array_subscript_arithmetic() {
+        let ob = make_obfuscator(&["i"], "a");
+        assert_eq!(
+            ob.obfuscate_line(r#"echo "${arr[i+1]}""#),
+            r#"echo "${arr[a0+1]}""#,
+        );
+    }
+
+    #[test]
+    fn renames_array_subscript_in_conditional() {
+        let ob = make_obfuscator(&["i"], "a");
+        assert_eq!(
+            ob.obfuscate_line(r#"[[ "${args[i]}" != "-" ]]"#),
+            r#"[[ "${args[a0]}" != "-" ]]"#,
+        );
+    }
+
+    #[test]
+    fn renames_var_in_hash_length() {
+        // Rule 19: [[ / (( ${#var}
+        let ob = make_obfuscator(&["arr"], "a");
+        assert_eq!(
+            ob.obfuscate_line(r#"(( ${#arr[@]} > 0 ))"#),
+            r#"(( ${#a0[@]} > 0 ))"#,
+        );
+    }
+
+    #[test]
+    fn renames_arithmetic_context_assignment() {
+        // Rule 20b: (( var+= ))
+        let ob = make_obfuscator(&["i"], "a");
+        assert_eq!(ob.obfuscate_line("(( a0+=2 ))"), "(( a0+=2 ))");
+        // Actually test with the real var
+        let ob2 = make_obfuscator(&["count"], "a");
+        assert_eq!(ob2.obfuscate_line("(( count+=1 ))"), "(( a0+=1 ))");
+    }
+
+    #[test]
+    fn all_patterns_compile() {
+        // Ensure no regex patterns are silently skipped due to compile errors
+        let ob = make_obfuscator(&["testvar"], "a");
+        // If any pattern failed to compile, the obfuscator would have fewer rules.
+        // Test a comprehensive input that exercises many patterns.
+        let input = r#"local testvar=1; echo $testvar ${testvar} ${arr[testvar]} ${arr[testvar+1]} (( testvar+=1 ))"#;
+        let result = ob.obfuscate_line(input);
+        // All occurrences should be renamed
+        assert!(
+            !result.contains("testvar"),
+            "All occurrences of testvar should be renamed, got: {result}"
+        );
+    }
+
+    // ---- Multi-variable collision tests ----
+    // These test that renaming short variables (like `a`) doesn't corrupt
+    // already-renamed longer variables (like `alias` → `a0`).
+
+    #[test]
+    fn multi_var_for_loop_no_collision() {
+        // `alias` (longer) is renamed first to `a0`, then `a` to `a1`.
+        // Rule 7 must NOT match `a` inside `a0`.
+        let ob = make_obfuscator(&["alias", "a"], "a");
+        // alias=a0, a=a1 (sorted by length desc)
+        assert_eq!(
+            ob.obfuscate_line("for alias in x y z"),
+            "for a0 in x y z",
+        );
+        assert_eq!(
+            ob.obfuscate_line("for a in x y z"),
+            "for a1 in x y z",
+        );
+    }
+
+    #[test]
+    fn multi_var_for_loop_preserves_renamed() {
+        // After `alias` → `a0`, processing `a` must not corrupt `for a0 in`
+        let ob = make_obfuscator(&["alias", "a"], "a");
+        let lines = vec![
+            "for alias in 1 2 3".to_string(),
+            "echo $alias $a ".to_string(),
+        ];
+        let result = ob.obfuscate_lines(&lines);
+        assert_eq!(result[0], "for a0 in 1 2 3");
+        assert_eq!(result[1], "echo $a0 $a1 ");
+    }
+
+    #[test]
+    fn multi_var_pre_increment_no_collision() {
+        // Rule 11: `(( ++var` must not match `a` inside `a0`
+        let ob = make_obfuscator(&["count", "c"], "a");
+        // count=a0, c=a1
+        assert_eq!(ob.obfuscate_line("(( ++count ))"), "(( ++a0 ))");
+    }
+
+    #[test]
+    fn multi_var_assignment_no_collision() {
+        // After `alias` → `a0`, `a0=val` should NOT be further mangled by rule 1 for `a`
+        let ob = make_obfuscator(&["alias", "a"], "a");
+        assert_eq!(ob.obfuscate_line("alias=val"), "a0=val");
+        assert_eq!(ob.obfuscate_line("a=val"), "a1=val");
+    }
+
+    #[test]
+    fn multi_var_dollar_no_collision() {
+        // $a must not match inside $a0
+        let ob = make_obfuscator(&["alias", "a"], "a");
+        assert_eq!(ob.obfuscate_line("echo $alias "), "echo $a0 ");
+        assert_eq!(ob.obfuscate_line("echo $a "), "echo $a1 ");
+    }
+
+    #[test]
+    fn multi_var_brace_no_collision() {
+        // ${a} must not match inside ${a0}
+        let ob = make_obfuscator(&["alias", "a"], "a");
+        assert_eq!(ob.obfuscate_line("echo ${alias}"), "echo ${a0}");
+        assert_eq!(ob.obfuscate_line("echo ${a}"), "echo ${a1}");
+    }
+
+    #[test]
+    fn multi_var_many_variables() {
+        // Simulate realistic scenario with many vars of varying lengths
+        let ob = make_obfuscator(&["field", "alias", "all", "cmd", "i", "a"], "a");
+        // field=a0, alias=a1, all=a2, cmd=a3, i=a4, a=a5
+        let lines = vec![
+            "for alias in x y".to_string(),
+            "for i in 1 2 3".to_string(),
+            "for a in p q".to_string(),
+            "echo $field $alias $all $cmd $i $a ".to_string(),
+        ];
+        let result = ob.obfuscate_lines(&lines);
+        assert_eq!(result[0], "for a1 in x y", "alias for-loop");
+        assert_eq!(result[1], "for a4 in 1 2 3", "i for-loop");
+        assert_eq!(result[2], "for a5 in p q", "a for-loop");
+        // Verify no original var names remain in the dollar-var line
+        let dollar_line = &result[3];
+        for var in &["field", "alias", "all", "cmd"] {
+            assert!(
+                !dollar_line.contains(var),
+                "'{var}' should be renamed in: {dollar_line}"
+            );
+        }
+    }
+
+    #[test]
+    fn multi_var_prefix_is_var_name() {
+        // Edge case: the prefix itself is a variable name
+        // With prefix "x" and variable "x", renamed to "x0".
+        // Then `for x0 in` should not be corrupted by pattern for `x`.
+        let ob = make_obfuscator(&["xvar", "x"], "x");
+        // xvar=x0, x=x1
+        assert_eq!(ob.obfuscate_line("for xvar in a b"), "for x0 in a b");
+        assert_eq!(ob.obfuscate_line("for x in a b"), "for x1 in a b");
     }
 }

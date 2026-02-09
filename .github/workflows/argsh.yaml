@@ -106,6 +106,13 @@ jobs:
         run: |
           bats libraries/args.bats
           bats libraries/import.bats
+      - name: Upload builtin library
+        uses: actions/upload-artifact@v4
+        with:
+          name: argsh-builtin-so
+          if-no-files-found: error
+          retention-days: 7
+          path: builtin/target/release/libargsh.so
 
   coverage:
     runs-on: ubuntu-latest
@@ -514,9 +521,10 @@ jobs:
         run: |
           cp argsh.min.sh argsh
           cp argsh-so.min.sh argsh-so
-          sha256sum argsh argsh-so > sha256sum.txt
+          cp libargsh.so argsh.so
+          sha256sum argsh argsh-so argsh.so > sha256sum.txt
           gh release create "${TAG_NAME}" --draft --title "argsh ${TAG_NAME}" --generate-notes
-          gh release upload "${TAG_NAME}" --clobber argsh argsh-so sha256sum.txt
+          gh release upload "${TAG_NAME}" --clobber argsh argsh-so argsh.so sha256sum.txt
 
           git config user.name 'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'

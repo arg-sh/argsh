@@ -76,8 +76,11 @@ import array
 if (( ARGSH_BUILTIN )); then
   unset -f is::array is::uninitialized is::set is::tty args::field_name \
           to::int to::float to::boolean to::file to::string 2>/dev/null || true
-  return 0
 fi
+
+# When builtins are loaded, :usage/:args are provided by the .so.
+# Skip the pure-bash function definitions below.
+if ! (( ARGSH_BUILTIN )); then
 
 # @description Print usage information and dispatch to subcommands.
 #
@@ -730,3 +733,5 @@ args::field_name() {
   
   echo "${format}"
 }
+
+fi # ! ARGSH_BUILTIN
