@@ -245,6 +245,27 @@ fi
 # -----------------------------------------------------------------------------
 # Cache interaction
 
+@test "selective: second selective import bypasses cache" {
+  [[ "${ARGSH_BUILTIN_TEST:-}" == "1" ]] || return 0
+  (
+    export PATH_BASE="${PATH_FIXTURES}"
+    # First selective import: caches the module, keeps only func_alpha
+    import func_alpha "@multi_func"
+    func_alpha
+    # Second selective import of same module with different function —
+    # without cache bypass this would silently skip (func_beta missing).
+    import func_beta "@multi_func"
+    func_beta
+    # Both should be available
+    func_alpha
+  ) >"${stdout}" 2>"${stderr}" || status="${?}"
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains "alpha" stdout
+  contains "beta" stdout
+}
+
 @test "cache prevents re-sourcing" {
   (
     export PATH_BASE="${PATH_FIXTURES}"

@@ -69,7 +69,7 @@ pub extern "C" fn import_clear_builtin_unload(_name: *const c_char) {} // covera
 
 extern "C" fn import_clear_builtin_fn(_word_list: *const WordList) -> c_int {
     std::panic::catch_unwind(|| {
-        shell::run_bash("import_cache=()");
+        shell::run_bash("declare -gA import_cache=()");
         0
     })
     .unwrap_or(1)
@@ -139,8 +139,9 @@ pub fn import_main(args: &[String]) -> i32 {
         Vec::new()
     };
 
-    // Cache check
-    if !force && shell::assoc_get("import_cache", &module).is_some() {
+    // Cache check — bypass when selective specifiers are present since a prior
+    // full import cached the module but we may need different functions.
+    if !force && specifiers.is_empty() && shell::assoc_get("import_cache", &module).is_some() {
         return 0;
     }
 

@@ -60,7 +60,7 @@ pub fn usage_main(args: &[String]) -> i32 {
 
     // Validate usage array is pairs
     if !usage_arr.len().is_multiple_of(2) {
-        shell::write_stderr(":args error [???] ➜ usage must be an associative array"); // coverage:off - exit(2) prevents coverage flush in forked subshell
+        shell::write_stderr(":usage error [???] ➜ usage must be an associative array"); // coverage:off - exit(2) prevents coverage flush in forked subshell
         std::process::exit(2); // coverage:off - exit(2) prevents coverage flush in forked subshell
     }
 
@@ -87,6 +87,7 @@ pub fn usage_main(args: &[String]) -> i32 {
     let mut cmd: Option<String> = None;
     let mut matched: Vec<String> = Vec::new();
 
+    // idx stays 0: we always process the front element; cli.remove(0) shifts the rest down
     let idx = 0;
     while idx < cli.len() {
         // Non-flag argument = command
@@ -116,7 +117,8 @@ pub fn usage_main(args: &[String]) -> i32 {
     let cmd = match cmd {
         Some(c) => c,
         None => {
-            error_usage("???", "Missing command"); // coverage:off - exit(2) prevents coverage flush in forked subshell
+            let display = commandname.last().cloned().unwrap_or_default();
+            error_usage(&display, "Missing command"); // coverage:off - exit(2) prevents coverage flush in forked subshell
             unreachable!() // coverage:off - exit(2) prevents coverage flush in forked subshell
         }
     };
@@ -151,7 +153,7 @@ pub fn usage_main(args: &[String]) -> i32 {
     }
 
     if func.is_empty() {
-        error_usage("???", &format!("Invalid command: {}", cmd)); // coverage:off - exit(2) prevents coverage flush in forked subshell
+        error_usage(&cmd, &format!("Invalid command: {}", cmd)); // coverage:off - exit(2) prevents coverage flush in forked subshell
         unreachable!() // coverage:off - exit(2) prevents coverage flush in forked subshell
     }
 

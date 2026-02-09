@@ -17,7 +17,9 @@ impl QuoteTracker {
         for (i, &ch) in chars.iter().enumerate() {
             let prev = if i > 0 { chars[i - 1] } else { '\0' };
             match ch {
-                '\'' if !in_double && prev != '\\' => {
+                // Inside single quotes backslash is literal, so always toggle.
+                // Outside single quotes, skip escaped quotes (prev == '\\').
+                '\'' if !in_double && (in_single || prev != '\\') => {
                     in_single = !in_single;
                 }
                 '"' if !in_single && prev != '\\' => {
@@ -59,6 +61,23 @@ mod tests {
     fn single_inside_double() {
         let (s, d) = QuoteTracker::line_has_open_quote(r#"echo "it's fine""#);
         assert!(!s);
+        assert!(!d);
+    }
+
+    #[test]
+    fn backslash_inside_single_quotes_is_literal() {
+        // In bash, backslash has no special meaning inside single quotes.
+        // So 'hello\' is: open-quote, h,e,l,l,o,\, close-quote → balanced.
+        let (s, d) = QuoteTracker::line_has_open_quote(r"echo 'hello\'");
+        assert!(!s, "backslash is literal inside single quotes");
+        assert!(!d);
+    }
+
+    #[test]
+    fn escaped_single_quote_outside_quotes() {
+        // Outside quotes, \' is an escaped quote — NOT a string delimiter.
+        let (s, d) = QuoteTracker::line_has_open_quote(r"echo \'hello");
+        assert!(!s, "escaped single quote should not open a string");
         assert!(!d);
     }
 }

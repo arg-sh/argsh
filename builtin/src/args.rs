@@ -78,6 +78,7 @@ pub fn args_main(args: &[String]) -> i32 {
     let mut matched: Vec<String> = Vec::new();
     let mut first_array = false;
 
+    // idx stays 0: we always process the front element; cli.remove(0) shifts the rest down
     let idx = 0;
     while idx < cli.len() {
         // Positional argument

@@ -14,6 +14,7 @@ __argsh_load_inline_so() {
   enable -f "${_t}" :usage :args \
     is::array is::uninitialized is::set is::tty \
     args::field_name to::int to::float to::boolean to::file to::string \
+    import import::clear \
     2>/dev/null || return 1
   rm -f "${_t}"
   return 0

@@ -21,7 +21,7 @@ static RE_IMPORT_CALL: LazyLock<Regex> =
 static RE_IMPORT_DEF: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[ \t]*import\(\)\s*\{.+\}\s*$").unwrap());
 static RE_SET_PIPEFAIL: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^set -euo pipefail").unwrap());
+    LazyLock::new(|| Regex::new(r"^[ \t]*set -euo pipefail").unwrap());
 /// Matches a shebang `#!/` that appears mid-line (after a non-newline char).
 /// This happens when files are concatenated without trailing newlines,
 /// producing lines like `}#!/usr/bin/env bash`.
@@ -125,6 +125,8 @@ mod tests {
     #[test]
     fn strips_set_pipefail() {
         assert!(should_strip("set -euo pipefail"));
+        assert!(should_strip("  set -euo pipefail"));
+        assert!(should_strip("\tset -euo pipefail"));
     }
 
     #[test]

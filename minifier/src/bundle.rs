@@ -172,15 +172,15 @@ fn bundle_recursive(
     let mut output = Vec::new();
     let mut brace_depth: i32 = 0;
     let mut force_next = false;
-    let mut in_open_quote = false;
+    let mut open_quote_char: Option<char> = None;
 
     for line in source.lines() {
         // If we're inside a multi-line quoted string, emit as-is
-        if in_open_quote {
+        if let Some(qchar) = open_quote_char {
             output.push(line.to_string());
-            let (sq, dq) = QuoteTracker::line_has_open_quote(line);
-            if !sq && !dq {
-                in_open_quote = false;
+            // Close when the line contains the opening quote character
+            if line.contains(qchar) {
+                open_quote_char = None;
             }
             continue;
         }
@@ -235,8 +235,10 @@ fn bundle_recursive(
 
         // Track open quotes for multi-line strings
         let (sq, dq) = QuoteTracker::line_has_open_quote(line);
-        if sq || dq {
-            in_open_quote = true;
+        if sq {
+            open_quote_char = Some('\'');
+        } else if dq {
+            open_quote_char = Some('"');
         }
     }
 
@@ -440,6 +442,21 @@ mod tests {
         let source = fs::read_to_string(dir.path().join("main.sh")).unwrap();
         let result = bundle(&source, &dir.path().join("main.sh"), &make_config(vec![])).unwrap();
         assert!(result.contains("echo core"), "Got: {result}");
+    }
+
+    #[test]
+    fn multiline_quote_not_broken_by_import() {
+        // A multi-line quoted string spanning 3+ lines must not have
+        // middle lines misinterpreted as import statements.
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("lib.sh"), "echo lib\n").unwrap();
+        let source = "echo \"line1\nimport lib\nline3\"\necho after\n";
+        let result = bundle(source, &dir.path().join("main.sh"), &make_config(vec![])).unwrap();
+        // The `import lib` is inside quotes — should NOT be inlined
+        assert!(result.contains("import lib"), "import inside quotes should stay, got: {result}");
+        assert!(result.contains("echo after"), "Got: {result}");
+        // `echo lib` should NOT appear — the import was inside a string
+        assert!(!result.contains("echo lib"), "import inside quotes should not be resolved, got: {result}");
     }
 
     #[test]

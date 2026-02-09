@@ -138,14 +138,9 @@ pub fn join_newlines(input: &str) -> String {
             output.push(quote_char);
             for inner in lines.by_ref() {
                 let inner = inner.unwrap_or_default();
-                let (isq, idq) = QuoteTracker::line_has_open_quote(&inner);
-                let closed = if sq_open { !isq } else { !idq };
                 output.push_str(&inner);
-                if closed
-                    || inner.contains(|c: char| {
-                        (sq_open && c == '\'') || (dq_open && c == '"')
-                    })
-                {
+                // Close when we find the matching quote character
+                if inner.contains(quote_char) {
                     break;
                 }
                 output.push(quote_char);
@@ -376,12 +371,15 @@ mod tests {
 
     #[test]
     fn multiline_double_quote_three_lines() {
-        // 3+ lines to exercise the continuation loop (lines 142-144)
+        // 3+ lines: the middle line has no quotes, so the continuation loop
+        // must NOT break early — only break when we see the closing `"`.
         let input = "echo \"hello\nmiddle\nworld\"\n";
         let result = join_newlines(input);
         assert!(result.contains("hello"), "Got: {result}");
         assert!(result.contains("middle"), "Got: {result}");
         assert!(result.contains("world"), "Got: {result}");
+        // The middle line must be joined with $'\n' concatenation, not a `;`
+        assert!(!result.contains("middle;"), "middle should not be a separate statement, got: {result}");
     }
 
     #[test]
@@ -391,6 +389,7 @@ mod tests {
         assert!(result.contains("hello"), "Got: {result}");
         assert!(result.contains("middle"), "Got: {result}");
         assert!(result.contains("world"), "Got: {result}");
+        assert!(!result.contains("middle;"), "middle should not be a separate statement, got: {result}");
     }
 
     #[test]

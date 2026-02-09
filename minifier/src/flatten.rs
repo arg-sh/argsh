@@ -27,7 +27,9 @@ fn strip_eol_comment(line: &str) -> String {
         let prev = if i > 0 { chars[i - 1] } else { '\0' };
 
         match ch {
-            '\'' if !in_double && prev != '\\' => in_single = !in_single,
+            // Inside single quotes backslash is literal, so always toggle.
+            // Outside single quotes, skip escaped quotes (prev == '\\').
+            '\'' if !in_double && (in_single || prev != '\\') => in_single = !in_single,
             '"' if !in_single && prev != '\\' => in_double = !in_double,
             '#' if !in_single && !in_double => {
                 // Must be preceded by whitespace and followed by whitespace (` # ...`)
@@ -136,6 +138,16 @@ mod tests {
         assert_eq!(result[0], "echo hello");
         assert_eq!(result[1], "local x=1");
         assert_eq!(result[2], "echo world ");
+    }
+
+    #[test]
+    fn backslash_inside_single_quotes_is_literal() {
+        // 'hello\' is a complete single-quoted string (backslash is literal).
+        // The ` # comment` after it should be stripped.
+        assert_eq!(
+            flatten_line(r"echo 'hello\' # comment"),
+            r"echo 'hello\' "
+        );
     }
 
     #[test]
