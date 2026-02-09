@@ -412,8 +412,10 @@ source "${PATH_FIXTURES}/fmt.sh"
 @test "to: int invalid" {
   to::int "abc" >"${stdout}" 2>"${stderr}" || status=$?
   assert "${status}" -eq 1
+  status=0
   to::int "12.34" >"${stdout}" 2>"${stderr}" || status=$?
   assert "${status}" -eq 1
+  status=0
   to::int "" >"${stdout}" 2>"${stderr}" || status=$?
   assert "${status}" -eq 1
 }
@@ -432,6 +434,7 @@ source "${PATH_FIXTURES}/fmt.sh"
 @test "to: float invalid" {
   to::float "abc" >"${stdout}" 2>"${stderr}" || status=$?
   assert "${status}" -eq 1
+  status=0
   to::float "" >"${stdout}" 2>"${stderr}" || status=$?
   assert "${status}" -eq 1
 }
