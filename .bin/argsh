@@ -3,8 +3,8 @@
 set -euo pipefail
 
 : "${PATH_BASE:="$(git rev-parse --show-toplevel)"}"
+: "${ARGSH_SOURCE:="argsh"}"; export ARGSH_SOURCE
 : "${MIN_COVERAGE:="70"}"
-:
 
 source "${PATH_BASE}/libraries/args.sh"
 source "${PATH_BASE}/libraries/args.utils.sh"
@@ -490,7 +490,10 @@ _coverage() {
 ###
 argsh::main() {
   local tty=""
-  argsh::docker &>/dev/null
+  argsh::docker &>/dev/null || {
+    echo "Docker build failed. Run 'argsh docker' to see errors." >&2
+    return 1
+  }
 
   [[ ! -t 1 ]] || tty="-it"
   # shellcheck disable=SC2046

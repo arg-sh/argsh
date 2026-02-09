@@ -44,7 +44,7 @@ argsh::minify() {
     done
   done
   local -a iVars=()
-  if (( ${#ignore_variable[@]} )); then
+  if ! is::uninitialized ignore_variable && (( ${#ignore_variable[@]} )); then
     # shellcheck disable=
     iVars=(-I "$(array::join "," "${ignore_variable[@]}")")
   fi
