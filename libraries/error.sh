@@ -24,20 +24,18 @@ error::stacktrace() {
 }
 
 :args::_error() {
-  declare -p field &>/dev/null || local field="???"
-  echo ":args error [${field}] ➜ ${1}" >&2
+  echo -e "Error: ${1}" >&2
   exit 2
 }
 
 :args::error() {
-  declare -p field &>/dev/null || local field="???"
-  echo -e "[ ${field/[:|]*} ] invalid argument\n➜ ${1}\n" >&2
+  echo -e "Error: ${1}\n" >&2
+  echo "  Run \"${0##*/} -h\" for more information." >&2
   exit 2
 }
 
 :args::error_usage() {
-  declare -p field &>/dev/null || local field="???"
-  echo -e "[ ${field/[:|]*} ] invalid usage\n➜ ${1}\n" >&2
-  echo -e "Use \"${0##*/} -h\" for more information" >&2
+  echo -e "Error: ${1}\n" >&2
+  echo "  Run \"${0##*/} -h\" for more information." >&2
   exit 2
 }

@@ -1,4 +1,3 @@
-[ pos1 ] invalid usage
-➜ missing required argument: pos1
+Error: missing required argument: pos1
 
-Use "bats-exec-test -h" for more information
+  Run "bats-exec-test -h" for more information.

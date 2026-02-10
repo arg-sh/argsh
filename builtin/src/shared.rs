@@ -15,19 +15,19 @@ pub const HELP_EXIT: i32 = -1;
 
 /// Print a usage error and return exit code 2.
 /// Does NOT call std::process::exit() -- returns the code for the caller to propagate.
-pub fn error_usage(field: &str, msg: &str) -> i32 {
-    let field_display = field.split(['|', ':']).next().unwrap_or(field);
+pub fn error_usage(_field: &str, msg: &str) -> i32 {
     let script = shell::get_script_name();
-    eprint!("[ {} ] invalid usage\n\u{279c} {}\n\n", field_display, msg);
-    eprintln!("Use \"{} -h\" for more information", script);
+    eprintln!("Error: {}\n", msg);
+    eprintln!("  Run \"{} -h\" for more information.", script);
     EXIT_USAGE
 }
 
 /// Print an argument error and return exit code 2.
 /// Does NOT call std::process::exit() -- returns the code for the caller to propagate.
-pub fn error_args(field: &str, msg: &str) -> i32 {
-    let field_display = field.split(['|', ':']).next().unwrap_or(field);
-    eprint!("[ {} ] invalid argument\n\u{279c} {}\n\n", field_display, msg);
+pub fn error_args(_field: &str, msg: &str) -> i32 {
+    let script = shell::get_script_name();
+    eprintln!("Error: {}\n", msg);
+    eprintln!("  Run \"{} -h\" for more information.", script);
     EXIT_USAGE
 }
 

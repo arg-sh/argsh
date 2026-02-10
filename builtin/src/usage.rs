@@ -56,8 +56,7 @@ extern "C" fn usage_builtin_fn(word_list: *const WordList) -> c_int {
 /// Returns exit code (0 = success, 2 = usage error).
 pub fn usage_main(args: &[String]) -> i32 {
     if args.is_empty() {
-        shell::write_stderr(":usage error [???] \u{27a4} :usage requires a title argument");
-        return shared::EXIT_USAGE;
+        return shared::error_usage("", ":usage requires a title argument");
     }
 
     let title = &args[0];
@@ -70,8 +69,7 @@ pub fn usage_main(args: &[String]) -> i32 {
     // Validate usage array is pairs (REVIEW finding 4: use % for Rust <1.87 compat)
     #[allow(clippy::manual_is_multiple_of)]
     if usage_arr.len() % 2 != 0 {
-        shell::write_stderr(":usage error [???] \u{27a4} usage must be an associative array");
-        return shared::EXIT_USAGE;
+        return shared::error_usage("", "usage array must have an even number of elements");
     }
 
     // Handle empty args, -h, --help

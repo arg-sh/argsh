@@ -56,8 +56,7 @@ extern "C" fn args_builtin_fn(word_list: *const WordList) -> c_int {
 /// Returns exit code (0 = success, 2 = usage error).
 pub fn args_main(args: &[String]) -> i32 {
     if args.is_empty() {
-        shell::write_stderr(":args error [???] \u{27a4} :args requires a title argument");
-        return shared::EXIT_USAGE;
+        return shared::error_usage("", ":args requires a title argument");
     }
 
     let title = &args[0];
@@ -69,8 +68,7 @@ pub fn args_main(args: &[String]) -> i32 {
     // Validate args array is pairs (REVIEW finding 4: use % for Rust <1.87 compat)
     #[allow(clippy::manual_is_multiple_of)]
     if args_arr.len() % 2 != 0 {
-        shell::write_stderr(":args error [???] \u{27a4} args must be an associative array");
-        return shared::EXIT_USAGE;
+        return shared::error_usage("", "args array must have an even number of elements");
     }
 
     // Handle -h, --help
@@ -95,7 +93,7 @@ pub fn args_main(args: &[String]) -> i32 {
             let pos_idx = match field::field_positional(positional_index, &args_arr) {
                 Some(i) => i,
                 None => {
-                    return shared::error_usage("???", &format!("too many arguments: {}", cli[idx]));
+                    return shared::error_usage("", &format!("too many arguments: {}", cli[idx]));
                 }
             };
 
@@ -135,7 +133,7 @@ pub fn args_main(args: &[String]) -> i32 {
                 // idx stays same since parse_flag_at modifies cli
             }
             Ok(false) => {
-                return shared::error_usage("???", &format!("unknown flag: {}", cli[idx]));
+                return shared::error_usage("", &format!("unknown flag: {}", cli[idx]));
             }
             Err(code) => return code,
         }
@@ -158,7 +156,7 @@ pub fn args_main(args: &[String]) -> i32 {
 
     // Error on remaining args
     if !cli.is_empty() {
-        return shared::error_usage("???", &format!("too many arguments: {}", cli.join(" ")));
+        return shared::error_usage("", &format!("too many arguments: {}", cli.join(" ")));
     }
 
     0 // EXECUTION_SUCCESS
