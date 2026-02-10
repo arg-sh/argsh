@@ -15,9 +15,15 @@ on:
       - 'minifier/**'
       - '.envrc'
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
+
 defaults:
   run:
     shell: bash -euo pipefail {0}
+
+permissions: read-all
 
 jobs:
   test:
@@ -39,6 +45,9 @@ jobs:
             minifier/target
             ~/.cargo/registry
           key: ${{ runner.os }}-cargo-all-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-all-
+            ${{ runner.os }}-cargo-
       - name: Lint
         run: argsh lint
       - name: Test
@@ -58,7 +67,7 @@ jobs:
         with:
           name: minifier-bin
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 7
           path: minifier/target/release/minifier
 
   coverage:
@@ -78,6 +87,9 @@ jobs:
             builtin/target
             ~/.cargo/registry
           key: ${{ runner.os }}-cargo-cov-${{ hashFiles('builtin/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-cov-
+            ${{ runner.os }}-cargo-
       - name: Build with coverage
         working-directory: builtin
         run: |
@@ -193,6 +205,9 @@ jobs:
             minifier/target
             ~/.cargo/registry
           key: ${{ runner.os }}-cargo-mincov-${{ hashFiles('minifier/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-mincov-
+            ${{ runner.os }}-cargo-
       - name: Build tests with coverage
         working-directory: minifier
         run: |
@@ -336,6 +351,8 @@ jobs:
             builtin/target
             ~/.cargo/registry
           key: ${{ runner.os }}-cargo-${{ hashFiles('builtin/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
       - name: Build builtin
         working-directory: builtin
         run: cargo build --release
@@ -399,6 +416,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [minify]
     permissions:
+      contents: read
       packages: write
     steps:
       - name: Clone repository

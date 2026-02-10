@@ -761,3 +761,35 @@ source "${PATH_FIXTURES}/fmt.sh"
   assert "${status}" -eq 0
   is_empty stderr
 }
+
+# -----------------------------------------------------------------------------
+# is::uninitialized Bash 5.x compatibility (Finding 16)
+
+@test "is: uninitialized empty declared array (bash 5.x compat)" {
+  # On Bash 5.x, declare -p for empty array outputs "declare -a var=()"
+  # This test validates the regex fix handles both formats
+  local -a empty_arr=()
+  is::uninitialized empty_arr
+}
+
+@test "is: uninitialized multi-arg helper (Finding 7)" {
+  # Test that the helper correctly checks ALL arguments, not just the last
+  local initialized="hello"
+  local uninitialized
+  # initialized first, uninitialized second -- should FAIL (not all uninitialized)
+  is::uninitialized initialized uninitialized && status=0 || status=$?
+  assert "${status}" -eq 1
+}
+
+# -----------------------------------------------------------------------------
+# args::field_name edge cases
+
+@test "args::field_name positional only" {
+  result="$(args::field_name "myarg")"
+  assert "${result}" = "myarg"
+}
+
+@test "args::field_name with modifiers" {
+  result="$(args::field_name "val:~float!")"
+  assert "${result}" = "val"
+}

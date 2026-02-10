@@ -152,7 +152,8 @@ if ! (( ARGSH_BUILTIN )); then
 
   local func
   for (( i=0; i < ${#usage[@]}; i+=2 )); do
-    for alias in $(echo "${usage[i]/:*}" | tr '|' "\n"); do
+    IFS='|' read -ra _aliases <<< "${usage[i]/:*}"
+    for alias in "${_aliases[@]}"; do
       alias="${alias#\#}"
       [[ "${cmd}" == "${alias}" ]] || continue
       field="${usage[i]#\#}"
@@ -636,7 +637,7 @@ args::field_name() {
   # shellcheck disable=SC2178
   local -n ref="${attrs[0]}"
   local -a flags
-  mapfile -t flags < <(echo "${field/[:]*}" | tr '|' '\n')
+  IFS='|' read -ra flags <<< "${field/[:]*}"
   [[ ${#flags[@]} -eq 1 ]] || {
     attrs[1]="${flags[1]}"
   }

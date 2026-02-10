@@ -45,6 +45,27 @@ static RE_EQUALS_VAL: LazyLock<Regex> =
 static RE_VAR_NAME: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[a-z][a-z0-9_]*$").unwrap());
 
+/// Split a line on semicolons, but only those outside single and double quotes.
+fn split_outside_quotes(line: &str) -> Vec<&str> {
+    let mut segments = Vec::new();
+    let mut start = 0;
+    let mut in_single = false;
+    let mut in_double = false;
+    for (i, ch) in line.char_indices() {
+        match ch {
+            '\'' if !in_double => in_single = !in_single,
+            '"' if !in_single => in_double = !in_double,
+            ';' if !in_single && !in_double => {
+                segments.push(&line[start..i]);
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    segments.push(&line[start..]);
+    segments
+}
+
 /// Discover all local variable names from bash source.
 ///
 /// Follows the same logic as the Perl `parse_vars_from_file`:
@@ -75,8 +96,8 @@ pub fn discover_variables(source: &str, ignore_patterns: &[Regex]) -> Vec<String
             continue;
         }
 
-        // Split on semicolons for multi-statement lines
-        for segment in line.split(';') {
+        // Split on semicolons for multi-statement lines (respecting quotes)
+        for segment in split_outside_quotes(line) {
             let segment = segment.trim();
             if segment.is_empty() {
                 continue;
@@ -300,5 +321,27 @@ mod tests {
         // local with declare on same line should be skipped
         let vars = discover_variables("declare local foo\n", &[]);
         assert!(!vars.contains(&"foo".to_string()));
+    }
+
+    #[test]
+    fn semicolon_inside_quotes_not_split() {
+        // `local msg="hello; world"; x=1` — semicolon inside quotes should not split
+        let vars = discover_variables("local msg=\"hello; world\"\nx=1\n", &[]);
+        assert!(vars.contains(&"msg".to_string()), "msg should be discovered");
+        assert!(vars.contains(&"x".to_string()), "x should be discovered");
+        // Should NOT discover "world" as a variable (from malformed split)
+        assert!(!vars.contains(&"world".to_string()), "world should NOT be discovered");
+    }
+
+    #[test]
+    fn split_outside_quotes_basic() {
+        let result = split_outside_quotes("a=1; b=2");
+        assert_eq!(result, vec!["a=1", " b=2"]);
+    }
+
+    #[test]
+    fn split_outside_quotes_with_quoted_semicolons() {
+        let result = split_outside_quotes(r#"msg="hello; world"; x=1"#);
+        assert_eq!(result, vec![r#"msg="hello; world""#, " x=1"]);
     }
 }

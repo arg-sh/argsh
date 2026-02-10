@@ -17,6 +17,7 @@ mod args;
 mod field;
 mod import;
 mod is;
+mod shared;
 mod shell;
 mod to;
 mod usage;

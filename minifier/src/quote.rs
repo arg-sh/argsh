@@ -15,14 +15,27 @@ impl QuoteTracker {
         let chars: Vec<char> = line.chars().collect();
 
         for (i, &ch) in chars.iter().enumerate() {
-            let prev = if i > 0 { chars[i - 1] } else { '\0' };
+            // Count consecutive preceding backslashes. Odd = escaped, even = not.
+            // Inside single quotes backslash is literal, so skip escape check.
+            let is_escaped = if !in_single {
+                let mut backslashes = 0;
+                let mut j = i;
+                while j > 0 && chars[j - 1] == '\\' {
+                    backslashes += 1;
+                    j -= 1;
+                }
+                backslashes % 2 == 1
+            } else {
+                false
+            };
+
             match ch {
                 // Inside single quotes backslash is literal, so always toggle.
-                // Outside single quotes, skip escaped quotes (prev == '\\').
-                '\'' if !in_double && (in_single || prev != '\\') => {
+                // Outside single quotes, skip escaped quotes.
+                '\'' if !in_double && (in_single || !is_escaped) => {
                     in_single = !in_single;
                 }
-                '"' if !in_single && prev != '\\' => {
+                '"' if !in_single && !is_escaped => {
                     in_double = !in_double;
                 }
                 _ => {}
@@ -78,6 +91,32 @@ mod tests {
         // Outside quotes, \' is an escaped quote — NOT a string delimiter.
         let (s, d) = QuoteTracker::line_has_open_quote(r"echo \'hello");
         assert!(!s, "escaped single quote should not open a string");
+        assert!(!d);
+    }
+
+    #[test]
+    fn double_backslash_before_double_quote() {
+        // `echo "test\\\\"` — the \\\\ is two escaped backslashes (literal \\),
+        // so the final `"` is a real closing quote. The string is balanced.
+        let (s, d) = QuoteTracker::line_has_open_quote(r#"echo "test\\""#);
+        assert!(!s);
+        assert!(!d, "even number of backslashes means quote is real");
+    }
+
+    #[test]
+    fn triple_backslash_before_double_quote() {
+        // `echo "test\\\"` — three backslashes: \\\\ = literal \, then \" = escaped quote.
+        // The quote is escaped, so the string is still open.
+        let (s, d) = QuoteTracker::line_has_open_quote(r#"echo "test\\\""#);
+        assert!(!s);
+        assert!(d, "odd number of backslashes means quote is escaped, string is open");
+    }
+
+    #[test]
+    fn double_backslash_before_single_quote() {
+        // Outside single quotes, `\\` is an escaped backslash, so `'` after it is real.
+        let (s, d) = QuoteTracker::line_has_open_quote(r"echo \\'hello'");
+        assert!(!s, "even backslashes, both single quotes are real — balanced");
         assert!(!d);
     }
 }

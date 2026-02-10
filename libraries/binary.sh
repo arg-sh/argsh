@@ -32,7 +32,6 @@ binary::exists() {
 #   binary::github "./bin/gh" "cli/cli" "${latest}/gh_${latest:1}_$(uname -s)_$(uname -m).tar.gz" "gh_${latest:-1}_$(uname -s)_$(uname -m)/bin/gh"
 binary::github() {
   local path="${1}"
-  local -r binary="$(basename "${path}")"
   local repo="${2}"
   local file="${3}"
   local tar="${4:-}"

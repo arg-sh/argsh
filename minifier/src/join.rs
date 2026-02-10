@@ -39,6 +39,29 @@ static RE_THEN_DO_ELSE: LazyLock<Regex> =
 static RE_TRAILING_WS_NL: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?:\s|\t)*$").unwrap());
 
+/// Find a heredoc delimiter (`<<DELIM`) outside of quoted strings.
+fn heredoc_outside_quotes(line: &str) -> Option<String> {
+    let mut in_single = false;
+    let mut in_double = false;
+    let chars: Vec<char> = line.chars().collect();
+    let len = chars.len();
+
+    for i in 0..len.saturating_sub(1) {
+        match chars[i] {
+            '\'' if !in_double => in_single = !in_single,
+            '"' if !in_single => in_double = !in_double,
+            '<' if !in_single && !in_double && chars[i + 1] == '<' => {
+                let byte_pos = line.char_indices().nth(i).map(|(p, _)| p).unwrap_or(0);
+                if let Some(cap) = RE_HEREDOC.captures(&line[byte_pos..]) {
+                    return Some(cap[1].to_string());
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
 /// Aggressively join newlines in bash source, producing single-line output.
 ///
 /// Preserves only heredocs (content between `<< DELIM` ... `DELIM`).
@@ -56,8 +79,7 @@ pub fn join_newlines(input: &str) -> String {
         let line = raw_line.trim_start().to_string();
 
         // Heredoc? Must preserve content verbatim
-        if let Some(cap) = RE_HEREDOC.captures(&line) {
-            let delim = cap[1].to_string();
+        if let Some(delim) = heredoc_outside_quotes(&line) {
             output.push_str(&RE_TRAILING_WS_NL.replace(&line, ""));
             output.push('\n');
             for inner in lines.by_ref() {
@@ -226,10 +248,12 @@ fn join_terminate(output: &mut String) {
     output.push(';');
 }
 
+static RE_KEYWORD_SEMI: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\b(then|do|else);").unwrap());
+
 /// Fix `then;` → `then `, `do;` → `do `, `else;` → `else `.
 fn fix_keyword_semicolons(input: &str) -> String {
-    let re = Regex::new(r"\b(then|do|else);").unwrap();
-    re.replace_all(input, "$1 ").to_string()
+    RE_KEYWORD_SEMI.replace_all(input, "$1 ").to_string()
 }
 
 #[cfg(test)]

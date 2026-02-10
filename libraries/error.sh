@@ -15,7 +15,7 @@ error::stacktrace() {
   local -r code="${1:-${?}}"
   if (( code )); then
     echo -e "\n\033[38;5;196m■■ Stacktrace(${code}): \e[1m${BASH_COMMAND}\e[22m"
-    for i in $(seq 1 $((${#FUNCNAME[@]} - 2))); do
+    for (( i = 1; i <= ${#FUNCNAME[@]} - 2; i++ )); do
       echo -e "${i}. ${BASH_SOURCE[i]}:${BASH_LINENO[i-1]} ➜ ${FUNCNAME[i]}()"
     done
     echo -e "\033[0m"

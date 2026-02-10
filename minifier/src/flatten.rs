@@ -24,13 +24,25 @@ fn strip_eol_comment(line: &str) -> String {
 
     for i in 0..len {
         let ch = chars[i];
-        let prev = if i > 0 { chars[i - 1] } else { '\0' };
+        // Count consecutive preceding backslashes. Odd = escaped, even = not.
+        // Inside single quotes backslash is literal, so skip escape check.
+        let is_escaped = if !in_single {
+            let mut backslashes = 0;
+            let mut j = i;
+            while j > 0 && chars[j - 1] == '\\' {
+                backslashes += 1;
+                j -= 1;
+            }
+            backslashes % 2 == 1
+        } else {
+            false
+        };
 
         match ch {
             // Inside single quotes backslash is literal, so always toggle.
-            // Outside single quotes, skip escaped quotes (prev == '\\').
-            '\'' if !in_double && (in_single || prev != '\\') => in_single = !in_single,
-            '"' if !in_single && prev != '\\' => in_double = !in_double,
+            // Outside single quotes, skip escaped quotes.
+            '\'' if !in_double && (in_single || !is_escaped) => in_single = !in_single,
+            '"' if !in_single && !is_escaped => in_double = !in_double,
             '#' if !in_single && !in_double => {
                 // Must be preceded by whitespace and followed by whitespace (` # ...`)
                 if i > 0
@@ -45,6 +57,29 @@ fn strip_eol_comment(line: &str) -> String {
         }
     }
     line.to_string()
+}
+
+/// Find a heredoc delimiter (`<<DELIM`) outside of quoted strings.
+fn heredoc_outside_quotes(line: &str) -> Option<String> {
+    let mut in_single = false;
+    let mut in_double = false;
+    let chars: Vec<char> = line.chars().collect();
+    let len = chars.len();
+
+    for i in 0..len.saturating_sub(1) {
+        match chars[i] {
+            '\'' if !in_double => in_single = !in_single,
+            '"' if !in_single => in_double = !in_double,
+            '<' if !in_single && !in_double && chars[i + 1] == '<' => {
+                let byte_pos = line.char_indices().nth(i).map(|(p, _)| p).unwrap_or(0);
+                if let Some(cap) = RE_HEREDOC.captures(&line[byte_pos..]) {
+                    return Some(cap[1].to_string());
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 /// Flatten a single line:
@@ -71,8 +106,8 @@ pub fn flatten_lines(lines: &[String]) -> Vec<String> {
             }
             continue;
         }
-        if let Some(cap) = RE_HEREDOC.captures(line) {
-            heredoc_delim = Some(cap[1].to_string());
+        if let Some(delim) = heredoc_outside_quotes(line) {
+            heredoc_delim = Some(delim);
         }
         result.push(flatten_line(line));
     }
@@ -147,6 +182,16 @@ mod tests {
         assert_eq!(
             flatten_line(r"echo 'hello\' # comment"),
             r"echo 'hello\' "
+        );
+    }
+
+    #[test]
+    fn double_backslash_before_quote_is_not_escape() {
+        // `echo "test\\\\" # comment` — the \\\\ is two escaped backslashes,
+        // so the `"` after them is a real closing quote. Comment should be stripped.
+        assert_eq!(
+            flatten_line(r#"echo "test\\" # comment"#),
+            r#"echo "test\\" "#,
         );
     }
 

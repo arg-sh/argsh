@@ -45,6 +45,33 @@ pub fn should_strip(line: &str) -> bool {
         || RE_SET_PIPEFAIL.is_match(line)
 }
 
+/// Find a heredoc delimiter (`<<DELIM`) outside of quoted strings.
+///
+/// Returns the delimiter name if found, or `None` if the `<<` only
+/// appears inside quotes (e.g. `echo "not a <<EOF"`).
+fn heredoc_outside_quotes(line: &str) -> Option<String> {
+    let mut in_single = false;
+    let mut in_double = false;
+    let chars: Vec<char> = line.chars().collect();
+    let len = chars.len();
+
+    for i in 0..len.saturating_sub(1) {
+        match chars[i] {
+            '\'' if !in_double => in_single = !in_single,
+            '"' if !in_single => in_double = !in_double,
+            '<' if !in_single && !in_double && chars[i + 1] == '<' => {
+                // Found << outside quotes — apply regex from this position
+                let byte_pos = line.char_indices().nth(i).map(|(p, _)| p).unwrap_or(0);
+                if let Some(cap) = RE_HEREDOC.captures(&line[byte_pos..]) {
+                    return Some(cap[1].to_string());
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
 /// Strip lines from input, returning only lines that survive.
 ///
 /// Pre-processes input to split mid-line shebangs caused by file
@@ -65,9 +92,9 @@ pub fn strip_lines(input: &str) -> Vec<String> {
             }
             continue;
         }
-        // Check for heredoc start BEFORE stripping
-        if let Some(cap) = RE_HEREDOC.captures(line) {
-            heredoc_delim = Some(cap[1].to_string());
+        // Check for heredoc start BEFORE stripping — only if << is outside quotes
+        if let Some(delim) = heredoc_outside_quotes(line) {
+            heredoc_delim = Some(delim);
         }
         if !should_strip(line) {
             result.push(line.to_string());
@@ -173,6 +200,44 @@ mod tests {
         assert_eq!(
             result,
             vec!["cat <<'MARKER'", "# comment", "MARKER", "echo done"]
+        );
+    }
+
+    #[test]
+    fn heredoc_inside_double_quotes_not_detected() {
+        // `echo "not a <<EOF"` — the <<EOF is inside double quotes, not a real heredoc.
+        let input = "echo \"not a <<EOF\"\n# this is a comment\necho after";
+        let result = strip_lines(input);
+        // The comment should be stripped (not preserved as heredoc content)
+        assert_eq!(
+            result,
+            vec!["echo \"not a <<EOF\"", "echo after"]
+        );
+    }
+
+    #[test]
+    fn heredoc_inside_single_quotes_not_detected() {
+        let input = "echo 'not a <<EOF'\n# this is a comment\necho after";
+        let result = strip_lines(input);
+        assert_eq!(
+            result,
+            vec!["echo 'not a <<EOF'", "echo after"]
+        );
+    }
+
+    #[test]
+    fn heredoc_outside_quotes_still_works() {
+        // Real heredoc after a quoted string on the same line
+        let input = "echo \"hello\" && cat <<EOF\n# heredoc content\nEOF\necho after";
+        let result = strip_lines(input);
+        assert_eq!(
+            result,
+            vec![
+                "echo \"hello\" && cat <<EOF",
+                "# heredoc content",
+                "EOF",
+                "echo after",
+            ]
         );
     }
 }

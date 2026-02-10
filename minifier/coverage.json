@@ -8,17 +8,10 @@
       "excluded_lines": "0"
     },
     {
-      "file": "minifier/src/strip.rs",
-      "percent_covered": "100.00",
-      "covered_lines": "96",
-      "total_lines": "96",
-      "excluded_lines": "0"
-    },
-    {
       "file": "minifier/src/quote.rs",
       "percent_covered": "100.00",
-      "covered_lines": "46",
-      "total_lines": "46",
+      "covered_lines": "69",
+      "total_lines": "69",
       "excluded_lines": "0"
     },
     {
@@ -30,30 +23,30 @@
     },
     {
       "file": "minifier/src/join.rs",
-      "percent_covered": "99.63",
-      "covered_lines": "268",
-      "total_lines": "269",
+      "percent_covered": "99.30",
+      "covered_lines": "283",
+      "total_lines": "285",
       "excluded_lines": "0"
     },
     {
-      "file": "minifier/src/flatten.rs",
-      "percent_covered": "99.01",
-      "covered_lines": "100",
-      "total_lines": "101",
+      "file": "minifier/src/strip.rs",
+      "percent_covered": "99.25",
+      "covered_lines": "133",
+      "total_lines": "134",
       "excluded_lines": "0"
     },
     {
       "file": "minifier/src/discover.rs",
-      "percent_covered": "98.95",
-      "covered_lines": "188",
-      "total_lines": "190",
+      "percent_covered": "98.19",
+      "covered_lines": "217",
+      "total_lines": "221",
       "excluded_lines": "0"
     },
     {
-      "file": "minifier/src/bundle.rs",
-      "percent_covered": "98.09",
-      "covered_lines": "308",
-      "total_lines": "314",
+      "file": "minifier/src/flatten.rs",
+      "percent_covered": "97.69",
+      "covered_lines": "127",
+      "total_lines": "130",
       "excluded_lines": "0"
     },
     {
@@ -62,14 +55,21 @@
       "covered_lines": "80",
       "total_lines": "82",
       "excluded_lines": "0"
+    },
+    {
+      "file": "minifier/src/bundle.rs",
+      "percent_covered": "97.39",
+      "covered_lines": "336",
+      "total_lines": "345",
+      "excluded_lines": "0"
     }
   ],
-  "percent_covered": "99.25",
-  "covered_lines": 1592,
-  "total_lines": 1604,
+  "percent_covered": "98.81",
+  "covered_lines": 1751,
+  "total_lines": 1772,
   "excluded_lines": 0,
   "percent_low": 25,
   "percent_high": 75,
   "command": "cargo-test+llvm-cov",
-  "date": "2026-02-10 00:42:36"
+  "date": "2026-02-10 08:34:40"
 }

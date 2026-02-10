@@ -35,8 +35,11 @@ lint::docs() {
 }
 
 lint::vale() {
+  local alert_level
+  local -a args=(
+    'alert_level' "Alert level for vale (error, warning, suggestion)"
+  )
   :args "Run vale for the documentation" "${@}"
-  local alert_level="${vale?"need to specify alert level"}"
   binary::exists docker || exit 1
   docker run --rm $(docker::user) jdkato/vale:latest sh -c "
     cd /workspace/www/vale

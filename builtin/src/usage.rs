@@ -1,14 +1,15 @@
-//! :usage builtin — subcommand dispatch with prefix resolution.
+//! :usage builtin -- subcommand dispatch with prefix resolution.
 //!
 //! Mirrors: libraries/args.sh (:usage function)
 
 use crate::{word_list_to_vec, BashBuiltin, SyncPtr, WordList, BUILTIN_ENABLED};
 use crate::field;
+use crate::shared;
 use crate::shell;
 use std::ffi::{c_char, c_int};
 use std::io::Write;
 
-// ── Builtin registration ─────────────────────────────────────────
+// -- Builtin registration ---------------------------------------------------
 
 static USAGE_LONG_DOC: [SyncPtr; 2] = [
     SyncPtr(c"Parse subcommands from the usage array and dispatch.".as_ptr()),
@@ -34,21 +35,29 @@ pub extern "C" fn usage_builtin_load(_name: *const c_char) -> c_int {
 pub extern "C" fn usage_builtin_unload(_name: *const c_char) {} // coverage:off - bash internal callback, never called during tests
 
 extern "C" fn usage_builtin_fn(word_list: *const WordList) -> c_int {
-    std::panic::catch_unwind(|| {
+    let code = std::panic::catch_unwind(|| {
         let args = word_list_to_vec(word_list);
         usage_main(&args)
     })
-    .unwrap_or(1)
+    .unwrap_or(1);
+
+    // Match bash's `exit` behavior: help and errors terminate the script.
+    // Only success (0) returns to the caller so the script can continue.
+    match code {
+        0 => 0,
+        shared::HELP_EXIT => std::process::exit(0),
+        n => std::process::exit(n),
+    }
 }
 
-// ── Implementation ───────────────────────────────────────────────
+// -- Implementation ---------------------------------------------------------
 
 /// Main entry point for :usage builtin.
 /// Returns exit code (0 = success, 2 = usage error).
 pub fn usage_main(args: &[String]) -> i32 {
     if args.is_empty() {
-        shell::write_stderr(":usage error [???] ➜ :usage requires a title argument"); // coverage:off - exit(2) prevents coverage flush in forked subshell
-        return 2; // coverage:off - exit(2) prevents coverage flush in forked subshell
+        shell::write_stderr(":usage error [???] \u{27a4} :usage requires a title argument");
+        return shared::EXIT_USAGE;
     }
 
     let title = &args[0];
@@ -58,10 +67,11 @@ pub fn usage_main(args: &[String]) -> i32 {
     let usage_arr = shell::read_array("usage");
     let args_arr = shell::read_array("args");
 
-    // Validate usage array is pairs
-    if !usage_arr.len().is_multiple_of(2) {
-        shell::write_stderr(":usage error [???] ➜ usage must be an associative array"); // coverage:off - exit(2) prevents coverage flush in forked subshell
-        std::process::exit(2); // coverage:off - exit(2) prevents coverage flush in forked subshell
+    // Validate usage array is pairs (REVIEW finding 4: use % for Rust <1.87 compat)
+    #[allow(clippy::manual_is_multiple_of)]
+    if usage_arr.len() % 2 != 0 {
+        shell::write_stderr(":usage error [???] \u{27a4} usage must be an associative array");
+        return shared::EXIT_USAGE;
     }
 
     // Handle empty args, -h, --help
@@ -70,16 +80,16 @@ pub fn usage_main(args: &[String]) -> i32 {
         || cli_args[0] == "--help"
     {
         usage_help_text(title, &usage_arr, &args_arr);
-        std::process::exit(0);
+        return shared::HELP_EXIT;
     }
 
     // Handle --argsh
     let commandname = shell::get_commandname();
-    if commandname.is_empty() && cli_args.first().map(|s| s.as_str()) == Some("--argsh") { // coverage:off - exit(2) prevents coverage flush in forked subshell
-        let sha = shell::get_scalar("ARGSH_COMMIT_SHA").unwrap_or_default(); // coverage:off - exit(0) prevents coverage flush in forked subshell
-        let ver = shell::get_scalar("ARGSH_VERSION").unwrap_or_default(); // coverage:off - exit(0) prevents coverage flush in forked subshell
-        println!("https://arg.sh {} {}", sha, ver); // coverage:off - exit(0) prevents coverage flush in forked subshell
-        std::process::exit(0); // coverage:off - exit(0) prevents coverage flush in forked subshell
+    if commandname.is_empty() && cli_args.first().map(|s| s.as_str()) == Some("--argsh") {
+        let sha = shell::get_scalar("ARGSH_COMMIT_SHA").unwrap_or_default();
+        let ver = shell::get_scalar("ARGSH_VERSION").unwrap_or_default();
+        println!("https://arg.sh {} {}", sha, ver);
+        return shared::HELP_EXIT;
     }
 
     // Parse flags and find command
@@ -100,26 +110,31 @@ pub fn usage_main(args: &[String]) -> i32 {
             continue;
         }
 
-        // Try parsing as flag
-        if let Some(result) = parse_flag_at(&mut cli, idx, &args_arr, &mut matched) {
-            if !result {
+        // Try parsing as flag -- set_bool for :usage uses set_or_increment
+        match shared::parse_flag_at(&mut cli, idx, &args_arr, &mut matched, set_or_increment) {
+            Ok(true) => {
+                // idx stays the same since parse_flag_at modifies cli
+            }
+            Ok(false) => {
                 break; // Unknown flag, leave for subcommand
             }
-            // idx stays the same since parse_flag_at modifies cli
-        } else {
-            break;
+            Err(_) => {
+                break;
+            }
         }
     }
 
     // Check required flags
-    check_required_flags(&args_arr, &matched);
+    let ret = shared::check_required_flags(&args_arr, &matched);
+    if ret != 0 {
+        return ret;
+    }
 
     let cmd = match cmd {
         Some(c) => c,
         None => {
             let display = commandname.last().cloned().unwrap_or_default();
-            error_usage(&display, "Missing command"); // coverage:off - exit(2) prevents coverage flush in forked subshell
-            unreachable!() // coverage:off - exit(2) prevents coverage flush in forked subshell
+            return shared::error_usage(&display, "Missing command");
         }
     };
 
@@ -153,8 +168,7 @@ pub fn usage_main(args: &[String]) -> i32 {
     }
 
     if func.is_empty() {
-        error_usage(&cmd, &format!("Invalid command: {}", cmd)); // coverage:off - exit(2) prevents coverage flush in forked subshell
-        unreachable!() // coverage:off - exit(2) prevents coverage flush in forked subshell
+        return shared::error_usage(&cmd, &format!("Invalid command: {}", cmd));
     }
 
     // Resolve function with prefix fallback
@@ -162,8 +176,7 @@ pub fn usage_main(args: &[String]) -> i32 {
 
     if explicit {
         if !shell::function_exists(&func) {
-            error_usage(&cmd, &format!("Invalid command: {}", cmd)); // coverage:off - exit(2) prevents coverage flush in forked subshell
-            unreachable!() // coverage:off - exit(2) prevents coverage flush in forked subshell
+            return shared::error_usage(&cmd, &format!("Invalid command: {}", cmd));
         }
     } else {
         // Resolution order:
@@ -191,8 +204,7 @@ pub fn usage_main(args: &[String]) -> i32 {
         }
 
         if !resolved && !shell::function_exists(&func) {
-            error_usage(&cmd, &format!("Invalid command: {}", cmd)); // coverage:off - exit(2) prevents coverage flush in forked subshell
-            unreachable!() // coverage:off - exit(2) prevents coverage flush in forked subshell
+            return shared::error_usage(&cmd, &format!("Invalid command: {}", cmd));
         }
     }
 
@@ -208,153 +220,11 @@ pub fn usage_main(args: &[String]) -> i32 {
     0 // EXECUTION_SUCCESS
 }
 
-/// Parse a flag at position `idx` in the cli args.
-/// Returns Some(true) if parsed, Some(false) if not a known flag, None on error.
-fn parse_flag_at(
-    cli: &mut Vec<String>,
-    idx: usize,
-    args_arr: &[String],
-    matched: &mut Vec<String>,
-) -> Option<bool> {
-    if idx >= cli.len() {
-        return None;
-    }
-
-    let arg = cli[idx].clone();
-    let flag_part = arg.split('=').next().unwrap_or(&arg);
-
-    let (lookup_name, is_long) = if let Some(stripped) = flag_part.strip_prefix("--") {
-        (stripped.to_string(), true)
-    } else if flag_part.starts_with('-') && flag_part.len() >= 2 {
-        (flag_part[1..2].to_string(), false)
-    } else {
-        return Some(false);
-    };
-
-    // Find field in args array
-    let field_idx = match field::field_lookup(&lookup_name, args_arr) {
-        Some(i) => i,
-        None => return Some(false),
-    };
-
-    let field_str = &args_arr[field_idx];
-    matched.push(field_str.clone());
-    let def = field::parse_field(field_str);
-
-    // Boolean flag (no value)
-    if def.is_boolean {
-        // Set variable
-        if def.is_multiple {
-            shell::array_append(&def.name, "1");
-        } else {
-            set_or_increment(&def.name);
-        }
-
-        if is_long {
-            cli.remove(idx);
-        } else {
-            // Short flag: strip this char, keep rest
-            let remaining = format!("-{}", &cli[idx][2..]);
-            if remaining == "-" {
-                cli.remove(idx);
-            } else {
-                cli[idx] = remaining;
-            }
-        }
-        return Some(true);
-    }
-
-    // Value flag
-    let value = if is_long {
-        // Check for --flag=value
-        if arg.contains('=') {
-            let val = arg.split_once('=').map(|x| x.1).unwrap_or("").to_string();
-            cli.remove(idx);
-            val
-        } else {
-            // Value is next arg
-            cli.remove(idx);
-            if idx >= cli.len() {
-                error_args(&def.name, &format!("missing value for flag: {}", def.name)); // coverage:off - exit(2) prevents coverage flush in forked subshell
-                unreachable!() // coverage:off - exit(2) prevents coverage flush in forked subshell
-            }
-            let val = cli[idx].clone();
-            cli.remove(idx);
-            val
-        }
-    } else {
-        // Short flag: -fvalue or -f value
-        let inline_val = &cli[idx][2..];
-        if inline_val.is_empty() {
-            // Value is next arg
-            cli.remove(idx);
-            if idx >= cli.len() {
-                error_args(&def.name, &format!("missing value for flag: {}", def.name)); // coverage:off - exit(2) prevents coverage flush in forked subshell
-                unreachable!() // coverage:off - exit(2) prevents coverage flush in forked subshell
-            }
-            let val = cli[idx].clone();
-            cli.remove(idx);
-            val
-        } else {
-            // Check for =value
-            let val = if let Some(stripped) = inline_val.strip_prefix('=') {
-                stripped.to_string()
-            } else {
-                inline_val.to_string()
-            };
-            cli.remove(idx);
-            val
-        }
-    };
-
-    // Type convert
-    let converted = match field::convert_type(&def.type_name, &value, &def.name) {
-        Ok(v) => v,
-        Err(msg) => {
-            error_usage(field_str, &msg); // coverage:off - exit(2) prevents coverage flush in forked subshell
-            unreachable!() // coverage:off - exit(2) prevents coverage flush in forked subshell
-        }
-    };
-
-    // Set variable
-    if def.is_multiple {
-        shell::array_append(&def.name, &converted);
-    } else {
-        shell::set_scalar(&def.name, &converted);
-    }
-
-    Some(true)
-}
-
 fn set_or_increment(name: &str) {
     if shell::is_array(name) {
         shell::array_append(name, "1");
     } else {
         shell::set_scalar(name, "1");
-    }
-}
-
-/// Check required flags and set boolean defaults.
-fn check_required_flags(args_arr: &[String], matched: &[String]) {
-    for i in (0..args_arr.len()).step_by(2) {
-        let field_str = &args_arr[i];
-        if field_str == "-" {
-            continue;
-        }
-        let def = field::parse_field(field_str);
-
-        // Set boolean to false if not matched and no default
-        if def.is_boolean && !def.has_default
-            && !matched.contains(field_str) {
-                // For arrays: sets arr[0]=0. For scalars: sets var=0.
-                shell::set_scalar(&def.name, "0");
-            }
-
-        // Check required
-        if def.required && !matched.contains(field_str) {
-            let display = field_str.split('|').next().unwrap_or(field_str);
-            error_usage(field_str, &format!("missing required flag: {}", display)); // coverage:off - exit(2) prevents coverage flush in forked subshell
-        }
     }
 }
 
@@ -466,19 +336,4 @@ pub fn print_flags_section<W: Write>(out: &mut W, args_arr: &[String], _fw: usiz
         // Description (indented 11 spaces)
         let _ = writeln!(out, "           {}", desc);
     }
-}
-
-/// Print error and exit with code 2.
-fn error_usage(field: &str, msg: &str) { // coverage:off - exit(2) prevents coverage flush in forked subshell
-    let field_display = field.split(['|', ':']).next().unwrap_or(field); // coverage:off - exit(2) prevents coverage flush in forked subshell
-    let script = shell::get_script_name(); // coverage:off - exit(2) prevents coverage flush in forked subshell
-    eprint!("[ {} ] invalid usage\n\u{279c} {}\n\n", field_display, msg); // coverage:off - exit(2) prevents coverage flush in forked subshell
-    eprintln!("Use \"{} -h\" for more information", script); // coverage:off - exit(2) prevents coverage flush in forked subshell
-    std::process::exit(2); // coverage:off - exit(2) prevents coverage flush in forked subshell
-}
-
-fn error_args(field: &str, msg: &str) { // coverage:off - exit(2) prevents coverage flush in forked subshell
-    let field_display = field.split(['|', ':']).next().unwrap_or(field); // coverage:off - exit(2) prevents coverage flush in forked subshell
-    eprint!("[ {} ] invalid argument\n\u{279c} {}\n\n", field_display, msg); // coverage:off - exit(2) prevents coverage flush in forked subshell
-    std::process::exit(2); // coverage:off - exit(2) prevents coverage flush in forked subshell
 }

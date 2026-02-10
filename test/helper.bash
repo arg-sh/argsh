@@ -94,9 +94,9 @@ is::uninitialized() {
   local var
   for var in "${@}"; do
     if is::array "${var}"; then
-      [[ $(declare -p "${var}") == "declare -a ${var}" ]]
+      [[ $(declare -p "${var}") == "declare -a ${var}" ]] || return 1
     else
-      [[ ! ${!var+x} ]]
+      [[ ! ${!var+x} ]] || return 1
     fi
   done
 }

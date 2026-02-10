@@ -72,6 +72,10 @@ fn strip_import_prefix(target: &str) -> &str {
 /// For each candidate directory, tries: as-is, `.sh`, `.bash`.
 fn resolve_path(target: &str, current_dir: &Path, config: &BundleConfig) -> Option<PathBuf> {
     let stripped = strip_import_prefix(target);
+    // Reject path traversal and absolute paths
+    if stripped.contains("..") || stripped.starts_with('/') {
+        return None;
+    }
     let extensions = ["", ".sh", ".bash"];
 
     // Try current directory first, then each search path
@@ -106,12 +110,25 @@ fn brace_depth_delta(line: &str) -> i32 {
     while i < chars.len() {
         let ch = chars[i];
         let prev = if i > 0 { chars[i - 1] } else { '\0' };
+        // Count consecutive preceding backslashes. Odd = escaped, even = not.
+        // Inside single quotes backslash is literal, so skip escape check.
+        let is_escaped = if !in_single {
+            let mut backslashes = 0;
+            let mut j = i;
+            while j > 0 && chars[j - 1] == '\\' {
+                backslashes += 1;
+                j -= 1;
+            }
+            backslashes % 2 == 1
+        } else {
+            false
+        };
 
         match ch {
-            '\'' if !in_double && prev != '\\' => {
+            '\'' if !in_double && (in_single || !is_escaped) => {
                 in_single = !in_single;
             }
-            '"' if !in_single && prev != '\\' => {
+            '"' if !in_single && !is_escaped => {
                 in_double = !in_double;
             }
             '{' if !in_single => {
@@ -473,6 +490,34 @@ mod tests {
         // Braces inside quotes don't count
         assert_eq!(brace_depth_delta("echo '{'"), 0);
         assert_eq!(brace_depth_delta("echo \"{\""), 0);
+    }
+
+    #[test]
+    fn path_traversal_rejected() {
+        let dir = TempDir::new().unwrap();
+        // Create a file outside the expected scope
+        fs::write(dir.path().join("secret.sh"), "echo secret\n").unwrap();
+        let subdir = dir.path().join("sub");
+        fs::create_dir(&subdir).unwrap();
+        fs::write(
+            subdir.join("main.sh"),
+            "import ../secret\necho main\n",
+        )
+        .unwrap();
+
+        let source = fs::read_to_string(subdir.join("main.sh")).unwrap();
+        let result = bundle(&source, &subdir.join("main.sh"), &make_config(vec![])).unwrap();
+        // The traversal import should NOT be resolved
+        assert!(!result.contains("echo secret"), "Path traversal should be rejected, got: {result}");
+        assert!(result.contains("import ../secret"), "Unresolved import should remain, got: {result}");
+    }
+
+    #[test]
+    fn absolute_path_rejected() {
+        let dir = TempDir::new().unwrap();
+        let source = "import /etc/passwd\necho main\n";
+        let result = bundle(source, &dir.path().join("main.sh"), &make_config(vec![])).unwrap();
+        assert!(!result.contains("root:"), "Absolute path should be rejected, got: {result}");
     }
 
     #[test]

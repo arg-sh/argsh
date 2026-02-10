@@ -63,10 +63,14 @@ pub fn is_uninitialized(name: &str) -> bool {
             if var.is_null() {
                 return true;
             }
-            // For arrays: `local -a arr` sets ATT_INVISIBLE (declared but not assigned).
-            // Array value is an ARRAY* pointer, not null, so we check the flag instead.
+            // For arrays: match bash is::uninitialized semantics where empty arrays
+            // are considered uninitialized. Bash 4.x sets ATT_INVISIBLE for `local -a arr`;
+            // Bash 5.x may not, but `declare -p` shows `declare -a var=()`.
+            // Check ATT_INVISIBLE, null value, OR empty array (no element at index 0).
             if ((*var).attributes & ATT_ARRAY) != 0 {
-                return ((*var).attributes & ATT_INVISIBLE) != 0 || (*var).value.is_null();
+                return ((*var).attributes & ATT_INVISIBLE) != 0
+                    || (*var).value.is_null()
+                    || bash_builtins::variables::array_get(name, 0).is_none();
             }
             // Scalars: value == NULL means uninitialized
             (*var).value.is_null()
@@ -90,7 +94,11 @@ pub fn read_array(name: &str) -> Vec<String> {
 }
 
 /// Clear a bash array and set it to new values.
+/// (REVIEW finding 1: validates name before use)
 pub fn write_array(name: &str, values: &[String]) {
+    if !is_valid_bash_variable(name) {
+        return;
+    }
     if let Ok(cname) = CString::new(name) {
         unsafe {
             unbind_variable(cname.as_ptr());
@@ -105,7 +113,7 @@ pub fn write_array(name: &str, values: &[String]) {
 /// Append a value to a bash indexed array.
 /// Uses bash's native +=() syntax which handles sparse arrays correctly.
 pub fn array_append(name: &str, value: &str) {
-    if !is_valid_bash_name(name) {
+    if !is_valid_bash_variable(name) {
         return;
     }
     let ev = shell_escape_dquote(value);
@@ -175,7 +183,11 @@ pub fn get_var_display(name: &str) -> Option<String> {
 
 /// Execute a bash command string and capture a variable result.
 /// Used for custom type conversion (to::custom etc.).
+/// (REVIEW finding 1: validates result_var to prevent command injection)
 pub fn exec_capture(cmd: &str, result_var: &str) -> Option<String> {
+    if !is_valid_bash_variable(result_var) {
+        return None;
+    }
     let full_cmd = format!("{}=\"$({})\"", result_var, cmd);
     if let Ok(cstr) = CString::new(full_cmd) {
         let from = CString::new("argsh").unwrap(); // coverage:off - malloc/exec failure impossible to trigger from tests
@@ -273,8 +285,20 @@ pub fn source_bash_file(path: &str) -> c_int {
     run_bash(&format!(". \"{}\"", ep))
 }
 
-/// Returns true if `name` is a valid bash function/variable name (letters, digits,
-/// underscores, colons — must not start with a digit).
+/// Returns true if `name` is a valid bash variable name (letters, digits,
+/// underscores -- must not start with a digit). No colons allowed.
+/// (REVIEW finding 6: split variable vs function name validation)
+fn is_valid_bash_variable(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_')
+        && !name.starts_with(|c: char| c.is_ascii_digit())
+}
+
+/// Returns true if `name` is a valid bash function name (letters, digits,
+/// underscores, colons -- must not start with a digit).
+/// Colons are allowed for function names (e.g., `is::array`) but not variables.
 fn is_valid_bash_name(name: &str) -> bool {
     !name.is_empty()
         && name
@@ -309,7 +333,7 @@ pub fn create_function_alias(old_name: &str, new_name: &str) {
 
 /// Get a value from a bash associative array.
 pub fn assoc_get(array_name: &str, key: &str) -> Option<String> {
-    if !is_valid_bash_name(array_name) {
+    if !is_valid_bash_variable(array_name) {
         return None;
     }
     let tmp = "__argsh_import_tmp";
@@ -325,7 +349,7 @@ pub fn assoc_get(array_name: &str, key: &str) -> Option<String> {
 
 /// Set a value in a bash associative array.
 pub fn assoc_set(array_name: &str, key: &str, value: &str) {
-    if !is_valid_bash_name(array_name) {
+    if !is_valid_bash_variable(array_name) {
         return;
     }
     let ek = shell_escape_dquote(key);
@@ -334,8 +358,11 @@ pub fn assoc_set(array_name: &str, key: &str, value: &str) {
 }
 
 /// Get all keys from a bash associative array.
+/// NOTE (REVIEW finding 5): split_whitespace cannot distinguish spaces inside keys
+/// from spaces between keys. This is acceptable because argsh's arg definitions
+/// never use spaces in keys. Document as known limitation.
 pub fn get_assoc_keys(array_name: &str) -> Vec<String> {
-    if !is_valid_bash_name(array_name) {
+    if !is_valid_bash_variable(array_name) {
         return Vec::new();
     }
     let tmp = "__argsh_import_tmp";

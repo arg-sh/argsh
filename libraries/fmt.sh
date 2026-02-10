@@ -1,4 +1,4 @@
-#!/usr/bin/bash
+#!/usr/bin/env bash
 # @file fmt
 # @brief Functions for formatting text
 # @tags core
