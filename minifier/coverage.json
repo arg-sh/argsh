@@ -24,15 +24,15 @@
     {
       "file": "minifier/src/obfuscate.rs",
       "percent_covered": "100.00",
-      "covered_lines": "310",
-      "total_lines": "310",
+      "covered_lines": "328",
+      "total_lines": "328",
       "excluded_lines": "0"
     },
     {
       "file": "minifier/src/main.rs",
       "percent_covered": "100.00",
-      "covered_lines": "81",
-      "total_lines": "81",
+      "covered_lines": "87",
+      "total_lines": "87",
       "excluded_lines": "1"
     },
     {
@@ -52,8 +52,8 @@
     {
       "file": "minifier/src/discover.rs",
       "percent_covered": "100.00",
-      "covered_lines": "234",
-      "total_lines": "234",
+      "covered_lines": "238",
+      "total_lines": "238",
       "excluded_lines": "0"
     },
     {
@@ -65,11 +65,11 @@
     }
   ],
   "percent_covered": "100.00",
-  "covered_lines": 1999,
-  "total_lines": 1999,
+  "covered_lines": 2027,
+  "total_lines": 2027,
   "excluded_lines": 5,
   "percent_low": 25,
   "percent_high": 75,
   "command": "cargo-test+llvm-cov",
-  "date": "2026-02-11 19:50:12"
+  "date": "2026-02-11 22:29:04"
 }

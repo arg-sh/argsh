@@ -223,20 +223,16 @@ coverage::builtin() {
   mkdir -p "${cov_dir}"
 
   echo "Running tests..."
-  argsh::docker &>/dev/null || {
-    echo "Docker build failed. Run 'argsh docker' to see errors." >&2
+  binary::exists bats || {
+    echo "bats required. Install: https://github.com/bats-core/bats-core"
     return 1
-  }
-  local tty=""
-  [[ ! -t 1 ]] || tty="-it"
-  # shellcheck disable=SC2046
-  docker run --rm ${tty} $(docker::user) -w /workspace \
-    -e "ARGSH_BUILTIN_TEST=1" \
-    -e "ARGSH_SOURCE=argsh" \
-    -e "ARGSH_BUILTIN_PATH=/workspace/builtin/target/release/libargsh.so" \
-    -e "LLVM_PROFILE_FILE=/workspace/builtin/target/coverage/coverage-%p.profraw" \
-    ghcr.io/arg-sh/argsh:latest \
-    test libraries/args.bats libraries/import.bats
+  } >&2
+  ARGSH_BUILTIN_TEST=1 \
+  ARGSH_SOURCE=argsh \
+  ARGSH_BUILTIN_PATH="${so_path}" \
+  LLVM_PROFILE_FILE="${cov_dir}/coverage-%p.profraw" \
+    bats "${PATH_BASE}/libraries/args.bats" \
+         "${PATH_BASE}/libraries/import.bats"
 
   # Merge profile data and clean up raw profiles
   "${llvm_tools}/llvm-profdata" merge -sparse \
