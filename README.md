@@ -104,12 +104,6 @@ Argument parsing (`cmd --flag1 v1 ... --flagN vN`) — 50 iterations:
 |    25 |  13986 ms |    9 ms |  1554x  |
 |    50 |  29603 ms |   20 ms |  1480x  |
 
-Real-world (`:usage` + `:args` with 2 flags at every level, depth 10) — 50 iterations:
-
-| Scenario  | Pure Bash | Builtin | Speedup |
-|----------:|----------:|--------:|--------:|
-| 10 levels |    567 ms |   43 ms |    13x  |
-
 Run `bash bench/usage-depth.sh` to reproduce.
 
 &nbsp;
