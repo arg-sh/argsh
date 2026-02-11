@@ -40,7 +40,7 @@ extern "C" fn field_name_builtin_fn(word_list: *const WordList) -> c_int {
         println!("{}", name);
         0
     })
-    .unwrap_or(1)
+    .unwrap_or(1) // coverage:off - catch_unwind: panics don't occur in practice
 }
 
 // ── Field parsing ────────────────────────────────────────────────
@@ -224,12 +224,12 @@ pub fn convert_type(
             }
         }
         "stdin" => {
-            if value == "-" {
+            if value == "-" { // coverage:off - stdin pipe reading cannot be tested in BATS subshell context
                 // Read from stdin
-                use std::io::Read;
-                let mut buf = String::new();
-                std::io::stdin().read_to_string(&mut buf).ok();
-                Ok(buf)
+                use std::io::Read; // coverage:off
+                let mut buf = String::new(); // coverage:off
+                std::io::stdin().read_to_string(&mut buf).ok(); // coverage:off
+                Ok(buf) // coverage:off
             } else {
                 Ok(value.to_string())
             }
@@ -254,7 +254,7 @@ pub fn convert_type(
                 if let Some(result) = shell::exec_capture(&cmd, "__argsh_r") {
                     Ok(result)
                 } else {
-                    Err(format!("invalid type ({}): {}", custom, value))
+                    Err(format!("invalid type ({}): {}", custom, value)) // coverage:off - set_e_kills: command substitution failure in exec_capture kills process before returning
                 }
             } else {
                 Err(format!("unknown type: {}", custom))

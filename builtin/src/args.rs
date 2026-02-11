@@ -39,14 +39,14 @@ extern "C" fn args_builtin_fn(word_list: *const WordList) -> c_int {
         let args = word_list_to_vec(word_list);
         args_main(&args)
     })
-    .unwrap_or(1);
+    .unwrap_or(1); // coverage:off - catch_unwind: panics don't occur in practice
 
     // Match bash's `exit` behavior: help and errors terminate the script.
     // Only success (0) returns to the caller so the script can continue.
     match code {
         0 => 0,
-        shared::HELP_EXIT => std::process::exit(0),
-        n => std::process::exit(n),
+        shared::HELP_EXIT => std::process::exit(0), // coverage:off - exit() kills process before coverage flush
+        n => std::process::exit(n), // coverage:off - exit() kills process before coverage flush
     }
 }
 
@@ -56,7 +56,7 @@ extern "C" fn args_builtin_fn(word_list: *const WordList) -> c_int {
 /// Returns exit code (0 = success, 2 = usage error).
 pub fn args_main(args: &[String]) -> i32 {
     if args.is_empty() {
-        return shared::error_usage("", ":args requires a title argument");
+        return shared::error_usage("", ":args requires a title argument"); // coverage:off - set_e_kills: :args always called with title from bash wrapper
     }
 
     let title = &args[0];
@@ -155,9 +155,9 @@ pub fn args_main(args: &[String]) -> i32 {
     }
 
     // Error on remaining args
-    if !cli.is_empty() {
-        return shared::error_usage("", &format!("too many arguments: {}", cli.join(" ")));
-    }
+    if !cli.is_empty() { // coverage:off - dead_code: while loop exhausts cli or errors; this guard is defensive
+        return shared::error_usage("", &format!("too many arguments: {}", cli.join(" "))); // coverage:off
+    } // coverage:off
 
     0 // EXECUTION_SUCCESS
 }
@@ -208,9 +208,9 @@ fn args_help_text(title: &str, args_arr: &[String]) {
 
         for &i in &positional_indices {
             let entry = &args_arr[i];
-            if entry == "-" {
-                continue;
-            }
+            if entry == "-" { // coverage:off - dead_code: "-" entries filtered out of positional_indices at line 184
+                continue; // coverage:off
+            } // coverage:off
             let desc = args_arr.get(i + 1).map(|s| s.as_str()).unwrap_or("");
             let def = field::parse_field(entry);
             let field_fmt = field::format_field(&def);

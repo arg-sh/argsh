@@ -431,4 +431,42 @@ mod tests {
         let result = join_newlines(input);
         assert!(result.contains("start)echo one;echo two;;"), "Got: {result}");
     }
+
+    #[test]
+    fn heredoc_after_single_quoted_string() {
+        // Exercises the single-quote toggle (line 51) and heredoc capture (line 57)
+        // in join's heredoc_outside_quotes. The `<<EOF` comes after a single-quoted string.
+        let input = "echo 'hi' && cat <<EOF\nheredoc content\nEOF\necho after\n";
+        let result = join_newlines(input);
+        assert!(result.contains("heredoc content\n"), "Got: {result}");
+        assert!(result.contains("EOF"), "Got: {result}");
+    }
+
+    #[test]
+    fn case_without_esac_eof() {
+        // Case statement where input ends without `esac`.
+        let input = "case \"$1\" in\n  a)\n    echo a\n    ;;\n";
+        let result = join_newlines(input);
+        assert!(result.contains("a)echo a;;"), "Got: {result}");
+    }
+
+    #[test]
+    fn heredoc_double_lt_no_delimiter() {
+        // `<<` found outside quotes but no valid \w+ delimiter follows.
+        // Exercises the None path (line 57) in join's heredoc_outside_quotes.
+        let input = "echo << ;\necho after\n";
+        let result = join_newlines(input);
+        // No heredoc detected — both lines get joined normally
+        assert!(result.contains("echo <<"), "Got: {result}");
+        assert!(result.contains("echo after"), "Got: {result}");
+    }
+
+    #[test]
+    fn case_with_non_pattern_line() {
+        // A line inside case that's not esac and not a pattern (no closing `)`)
+        // exercises the else branch of the `if let Some(cap)` (line 243).
+        let input = "case \"$1\" in\n  not_a_pattern\n  a)\n    echo a\n    ;;\nesac\n";
+        let result = join_newlines(input);
+        assert!(result.contains("esac"), "Got: {result}");
+    }
 }

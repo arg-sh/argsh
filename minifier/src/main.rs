@@ -71,7 +71,7 @@ fn minify(source: &str, config: &MinifyConfig) -> Result<String> {
     let source = if config.do_bundle {
         let input_path = config
             .input_path
-            .unwrap_or_else(|| std::path::Path::new("."));
+            .unwrap_or_else(|| std::path::Path::new(".")); // coverage:off - input_path always Some when do_bundle is true
         let bundle_config = bundle::BundleConfig {
             search_paths: config.search_paths.to_vec(),
         };

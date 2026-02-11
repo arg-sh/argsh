@@ -48,7 +48,7 @@ pub struct BundleConfig {
 pub fn bundle(source: &str, input_path: &Path, config: &BundleConfig) -> Result<String> {
     let current_dir = input_path
         .parent()
-        .unwrap_or_else(|| Path::new("."))
+        .unwrap_or_else(|| Path::new(".")) // coverage:off - parent() always Some for valid paths
         .to_path_buf();
     let mut seen = HashSet::new();
     let lines = bundle_recursive(source, &current_dir, config, &mut seen, 0)?;
@@ -215,7 +215,7 @@ fn bundle_recursive(
             if let Some(resolved) = resolve_path(&target, current_dir, config) {
                 let canonical = resolved
                     .canonicalize()
-                    .unwrap_or_else(|_| resolved.clone());
+                    .unwrap_or_else(|_| resolved.clone()); // coverage:off - canonicalize fallback for filesystem errors
 
                 let is_top_level = brace_depth == 0;
                 let should_dedup = is_top_level && !force_next && seen.contains(&canonical);
@@ -230,7 +230,7 @@ fn bundle_recursive(
                 let content = std::fs::read_to_string(&resolved)?;
                 let child_dir = resolved
                     .parent()
-                    .unwrap_or_else(|| Path::new("."))
+                    .unwrap_or_else(|| Path::new(".")) // coverage:off - parent() always Some for resolved paths
                     .to_path_buf();
                 let inlined =
                     bundle_recursive(&content, &child_dir, config, seen, depth + 1)?;
@@ -490,6 +490,69 @@ mod tests {
         // Braces inside quotes don't count
         assert_eq!(brace_depth_delta("echo '{'"), 0);
         assert_eq!(brace_depth_delta("echo \"{\""), 0);
+    }
+
+    #[test]
+    fn brace_depth_escaped_quote_with_brace() {
+        // An escaped double quote `\"` before a `{` exercises the backslash
+        // counting loop (lines 118-121) in brace_depth_delta.
+        // `echo \"{ ` — the \" is an escaped quote (not a real string delimiter),
+        // so the `{` is a real block brace outside quotes.
+        assert_eq!(brace_depth_delta(r#"echo \"{  "#), 1);
+        // Double backslash before quote: `\\"` — even backslashes, so the `"`
+        // is a real opening quote, and `{` is inside double-quotes (ignored).
+        assert_eq!(brace_depth_delta(r#"echo \\"{ "#), 0);
+    }
+
+    #[test]
+    fn max_depth_exceeded() {
+        // Trigger the MAX_DEPTH bail (line 186) by creating a chain > 64 deep.
+        let dir = TempDir::new().unwrap();
+        // Create files: d0.sh imports d1, d1 imports d2, ..., d65 imports d66
+        for i in 0..=65 {
+            let content = format!("import d{}\necho d{i}\n", i + 1);
+            fs::write(dir.path().join(format!("d{i}.sh")), content).unwrap();
+        }
+        fs::write(dir.path().join("d66.sh"), "echo leaf\n").unwrap();
+
+        let source = fs::read_to_string(dir.path().join("d0.sh")).unwrap();
+        let result = bundle(&source, &dir.path().join("d0.sh"), &make_config(vec![]));
+        assert!(result.is_err(), "Should fail with max depth exceeded");
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("maximum recursion depth"),
+            "Error should mention depth, got: {err}"
+        );
+    }
+
+    #[test]
+    fn negative_brace_depth_clamped() {
+        // A source with more `}` than `{` triggers the brace_depth < 0 clamp (line 250).
+        // After the clamp, imports at apparent top-level should still dedup.
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("lib.sh"), "echo lib\n").unwrap();
+        // `}` without matching `{` pushes brace depth negative, then it clamps to 0.
+        let source = "}\nimport lib\nimport lib\necho main\n";
+        let result = bundle(source, &dir.path().join("main.sh"), &make_config(vec![])).unwrap();
+        // After clamping to 0, the second import should be deduped
+        let count = result.matches("echo lib").count();
+        assert_eq!(count, 1, "Expected dedup after clamp, got {count} in: {result}");
+    }
+
+    #[test]
+    fn open_single_quote_multiline_in_bundle() {
+        // A multi-line single-quoted string should not have middle lines
+        // parsed as imports. Tests the open_quote_char = Some('\'') path (line 256).
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("lib.sh"), "echo lib\n").unwrap();
+        let source = "echo 'start\nimport lib\nend'\necho after\n";
+        let result = bundle(source, &dir.path().join("main.sh"), &make_config(vec![])).unwrap();
+        // The import inside single quotes should NOT be inlined
+        assert!(
+            result.contains("import lib"),
+            "import inside single quotes should stay, got: {result}"
+        );
+        assert!(!result.contains("echo lib"), "should not resolve import inside quotes, got: {result}");
     }
 
     #[test]

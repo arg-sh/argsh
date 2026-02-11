@@ -230,6 +230,162 @@ fn cli_bundle_with_obfuscate() {
     assert!(!result.contains("foo"), "Got: {result}");
 }
 
+// --- End-to-end pipeline tests ---
+
+#[test]
+fn e2e_bundle_multiple_libraries() {
+    // Bundle multiple library files through the full pipeline.
+    let dir = TempDir::new().unwrap();
+    let libs = dir.path().join("libs");
+    std::fs::create_dir(&libs).unwrap();
+
+    std::fs::write(
+        libs.join("utils.sh"),
+        "#!/usr/bin/env bash\n# Utils library\nutils_helper() {\n  local val=$1\n  echo \"util: $val\"\n}\n",
+    ).unwrap();
+    std::fs::write(
+        libs.join("config.sh"),
+        "#!/usr/bin/env bash\n# Config library\nimport utils\nconfig_load() {\n  local cfg=$1\n  utils_helper \"$cfg\"\n}\n",
+    ).unwrap();
+    let main_path = dir.path().join("main.sh");
+    std::fs::write(
+        &main_path,
+        "#!/usr/bin/env bash\nset -euo pipefail\nimport config\nconfig_load \"myapp\"\n",
+    ).unwrap();
+    let outfile = NamedTempFile::new().unwrap();
+
+    cmd()
+        .args(["-i", main_path.to_str().unwrap()])
+        .args(["-o", outfile.path().to_str().unwrap()])
+        .arg("-B")
+        .args(["-S", libs.to_str().unwrap()])
+        .arg("-O")
+        .assert()
+        .success();
+
+    let result = std::fs::read_to_string(outfile.path()).unwrap();
+    // Both functions should be inlined
+    assert!(result.contains("echo"), "Should contain echo, got: {result}");
+    // Shebangs, comments, set -euo, imports should all be stripped
+    assert!(!result.contains("#!/"), "Shebangs should be stripped, got: {result}");
+    assert!(!result.contains("# Utils"), "Comments should be stripped, got: {result}");
+    assert!(!result.contains("set -euo"), "set -euo should be stripped, got: {result}");
+    // Variables should be obfuscated
+    assert!(!result.contains("val"), "val should be obfuscated, got: {result}");
+    assert!(!result.contains("cfg"), "cfg should be obfuscated, got: {result}");
+}
+
+#[test]
+fn e2e_bundle_with_multiple_search_paths() {
+    // Test -S flag with multiple search paths.
+    let dir = TempDir::new().unwrap();
+    let libs1 = dir.path().join("libs1");
+    let libs2 = dir.path().join("libs2");
+    std::fs::create_dir(&libs1).unwrap();
+    std::fs::create_dir(&libs2).unwrap();
+
+    std::fs::write(libs1.join("alpha.sh"), "echo alpha\n").unwrap();
+    std::fs::write(libs2.join("beta.sh"), "echo beta\n").unwrap();
+    let main_path = dir.path().join("main.sh");
+    std::fs::write(&main_path, "import alpha\nimport beta\necho main\n").unwrap();
+    let outfile = NamedTempFile::new().unwrap();
+
+    cmd()
+        .args(["-i", main_path.to_str().unwrap()])
+        .args(["-o", outfile.path().to_str().unwrap()])
+        .arg("-B")
+        .args(["-S", libs1.to_str().unwrap()])
+        .args(["-S", libs2.to_str().unwrap()])
+        .assert()
+        .success();
+
+    let result = std::fs::read_to_string(outfile.path()).unwrap();
+    assert!(result.contains("echo alpha"), "Got: {result}");
+    assert!(result.contains("echo beta"), "Got: {result}");
+    assert!(result.contains("echo main"), "Got: {result}");
+}
+
+#[test]
+fn e2e_complex_script_all_features() {
+    // Comprehensive script exercising heredocs, case, loops, arrays, quoting.
+    let input = r#"#!/usr/bin/env bash
+# Complex test script
+set -euo pipefail
+
+local name="world"
+local -a items=(one two three)
+local count=0
+
+greet() {
+  local msg="Hello $name"
+  echo "$msg"
+}
+
+for item in "${items[@]}"; do
+  (( count++ ))
+  echo "$item"
+done
+
+if [[ -n "$name" ]]; then
+  greet
+else
+  echo "no name"
+fi
+
+case "$1" in
+  start)
+    echo starting
+    ;;
+  stop)
+    echo stopping
+    ;;
+  *)
+    echo "unknown: $1"
+    ;;
+esac
+
+cat <<EOF
+Hello $name
+This is a heredoc
+EOF
+
+echo "count=$count items=${#items[@]}"
+"#;
+    let result = minify_obfuscated(input);
+    // Heredoc content must be preserved literally
+    assert!(result.contains("This is a heredoc\n"), "Heredoc should be preserved, got: {result}");
+    // Keywords must have spaces, not semicolons
+    assert!(!result.contains("then;"), "Got: {result}");
+    assert!(!result.contains("do;"), "Got: {result}");
+    assert!(!result.contains("else;"), "Got: {result}");
+    // Variable names in assignment/reference contexts should be obfuscated.
+    // Note: literal strings like "no name" are preserved, so check specific patterns.
+    assert!(!result.contains("count="), "count= should be obfuscated, got: {result}");
+    assert!(!result.contains("$name"), "$name should be obfuscated, got: {result}");
+}
+
+#[test]
+fn e2e_cli_missing_required_flags() {
+    // -i and -o are required
+    cmd()
+        .assert()
+        .failure();
+}
+
+#[test]
+fn e2e_cli_write_failure() {
+    // Output to a path that cannot be written (directory doesn't exist)
+    let mut infile = NamedTempFile::new().unwrap();
+    infile.write_all(b"echo hello\n").unwrap();
+
+    cmd()
+        .args(["-i", infile.path().to_str().unwrap()])
+        .args(["-o", "/tmp/nonexistent_dir_xyz/output.sh"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Failed to write"));
+}
+
 #[test]
 fn cli_no_bundle_flag_leaves_imports() {
     let dir = TempDir::new().unwrap();

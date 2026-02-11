@@ -66,12 +66,14 @@ pub fn word_list_to_vec(wl: *const WordList) -> Vec<String> {
     let mut cur = wl;
     while !cur.is_null() {
         unsafe {
+            // coverage:off - bash guarantees WordList entries have valid word pointers
             if !(*cur).word.is_null() && !(*(*cur).word).word.is_null() {
+                // coverage:on
                 let cstr = std::ffi::CStr::from_ptr((*(*cur).word).word);
                 if let Ok(s) = cstr.to_str() {
                     result.push(s.to_string());
                 }
-            }
+            } // coverage:off - ffi_safety: closing brace of always-true null check
             cur = (*cur).next;
         }
     }

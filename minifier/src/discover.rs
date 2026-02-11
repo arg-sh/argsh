@@ -344,4 +344,26 @@ mod tests {
         let result = split_outside_quotes(r#"msg="hello; world"; x=1"#);
         assert_eq!(result, vec![r#"msg="hello; world""#, " x=1"]);
     }
+
+    #[test]
+    fn split_outside_quotes_single_quoted_semicolons() {
+        // Exercises the single-quote toggle (line 55-56) in split_outside_quotes
+        let result = split_outside_quotes("msg='hello; world'; x=1");
+        assert_eq!(result, vec!["msg='hello; world'", " x=1"]);
+    }
+
+    #[test]
+    fn discovers_with_blank_lines() {
+        // Blank lines between declarations should be skipped (line 96)
+        let vars = discover_variables("foo=1\n\n\nbar=2\n", &[]);
+        assert!(vars.contains(&"foo".to_string()));
+        assert!(vars.contains(&"bar".to_string()));
+    }
+
+    #[test]
+    fn trailing_semicolon_empty_segment() {
+        // `a=1;` produces an empty trailing segment after splitting (line 103)
+        let vars = discover_variables("foo=1;\n", &[]);
+        assert!(vars.contains(&"foo".to_string()));
+    }
 }

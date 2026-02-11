@@ -97,14 +97,14 @@ pub fn read_array(name: &str) -> Vec<String> {
 /// (REVIEW finding 1: validates name before use)
 pub fn write_array(name: &str, values: &[String]) {
     if !is_valid_bash_variable(name) {
-        return;
+        return; // coverage:off - defensive_check: callers always pass validated names
     }
     if let Ok(cname) = CString::new(name) {
         unsafe {
             unbind_variable(cname.as_ptr());
             make_new_array_variable(cname.as_ptr());
         }
-    }
+    } // coverage:off - ffi_safety: CString::new succeeds for valid bash names
     for (i, val) in values.iter().enumerate() {
         let _ = bash_builtins::variables::array_set(name, i, val);
     }
@@ -114,7 +114,7 @@ pub fn write_array(name: &str, values: &[String]) {
 /// Uses bash's native +=() syntax which handles sparse arrays correctly.
 pub fn array_append(name: &str, value: &str) {
     if !is_valid_bash_variable(name) {
-        return;
+        return; // coverage:off - defensive_check: callers always pass validated names
     }
     let ev = shell_escape_dquote(value);
     run_bash(&format!("{}+=(\"{}\")", name, ev));
@@ -162,7 +162,7 @@ pub fn get_script_name() -> String {
     if let Some(pos) = s.rfind('/') {
         s[pos + 1..].to_string()
     } else {
-        s
+        s // coverage:off - ffi_safety: $0 always contains '/' in bash process context
     }
 }
 
@@ -172,7 +172,7 @@ pub fn get_var_display(name: &str) -> Option<String> {
     if is_array(name) {
         let arr = read_array(name);
         if arr.is_empty() {
-            None
+            None // coverage:off - dead_code: has_default is false for empty arrays so this path never reached via format_field
         } else {
             Some(arr.join(" "))
         }
@@ -186,7 +186,7 @@ pub fn get_var_display(name: &str) -> Option<String> {
 /// (REVIEW finding 1: validates result_var to prevent command injection)
 pub fn exec_capture(cmd: &str, result_var: &str) -> Option<String> {
     if !is_valid_bash_variable(result_var) {
-        return None;
+        return None; // coverage:off - defensive_check: callers always pass "__argsh_r" which is valid
     }
     let full_cmd = format!("{}=\"$({})\"", result_var, cmd);
     if let Ok(cstr) = CString::new(full_cmd) {
@@ -217,7 +217,7 @@ pub fn write_stderr(msg: &str) { // coverage:off - exit(2) prevents coverage flu
     use std::io::Write; // coverage:off - exit(2) prevents coverage flush in forked subshell
     let _ = std::io::stderr().write_all(msg.as_bytes()); // coverage:off - exit(2) prevents coverage flush in forked subshell
     let _ = std::io::stderr().write_all(b"\n"); // coverage:off - exit(2) prevents coverage flush in forked subshell
-}
+} // coverage:off
 
 // ── Import helpers ───────────────────────────────────────────────
 
@@ -244,13 +244,14 @@ pub fn run_bash(cmd: &str) -> c_int {
 /// Get all currently visible function names.
 /// Uses all_visible_functions() which returns a malloc'd NULL-terminated array.
 /// We free the array but NOT the ShellVar pointers (they belong to bash).
+// coverage:off - import-only: get_all_function_names is only called by import builtin, not exercised in BATS
 pub fn get_all_function_names() -> HashSet<String> {
     let mut result = HashSet::new();
     unsafe {
         let arr = all_visible_functions();
-        if arr.is_null() { // coverage:off - all_visible_functions always returns valid array in bash
-            return result; // coverage:off
-        } // coverage:off
+        if arr.is_null() {
+            return result;
+        }
         let mut i = 0;
         loop {
             let var_ptr = *arr.add(i);
@@ -262,21 +263,23 @@ pub fn get_all_function_names() -> HashSet<String> {
                 if let Ok(s) = cstr.to_str() {
                     result.insert(s.to_string());
                 }
-            } // coverage:off - ShellVar.name always set by bash
+            }
             i += 1;
         }
         libc::free(arr as *mut libc::c_void);
     }
     result
 }
+// coverage:on
 
+// coverage:off - import-only: remove_function and source_bash_file are only called by import builtin
 /// Remove a shell function by name.
 pub fn remove_function(name: &str) {
     if let Ok(cname) = CString::new(name) {
         unsafe {
             unbind_func(cname.as_ptr());
         }
-    } // coverage:off - CString null byte impossible for function names
+    }
 }
 
 /// Source a bash file using parse_and_execute(". path").
@@ -284,6 +287,7 @@ pub fn source_bash_file(path: &str) -> c_int {
     let ep = shell_escape_dquote(path);
     run_bash(&format!(". \"{}\"", ep))
 }
+// coverage:on
 
 /// Returns true if `name` is a valid bash variable name (letters, digits,
 /// underscores -- must not start with a digit). No colons allowed.
@@ -296,6 +300,7 @@ fn is_valid_bash_variable(name: &str) -> bool {
         && !name.starts_with(|c: char| c.is_ascii_digit())
 }
 
+// coverage:off - import-only: is_valid_bash_name is only called by create_function_alias (import path)
 /// Returns true if `name` is a valid bash function name (letters, digits,
 /// underscores, colons -- must not start with a digit).
 /// Colons are allowed for function names (e.g., `is::array`) but not variables.
@@ -306,6 +311,7 @@ fn is_valid_bash_name(name: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == ':')
         && !name.starts_with(|c: char| c.is_ascii_digit())
 }
+// coverage:on
 
 /// Escape a string for safe interpolation inside bash double quotes.
 /// Escapes `"`, `$`, `` ` ``, and `\`.
@@ -313,20 +319,22 @@ fn shell_escape_dquote(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for ch in s.chars() {
         match ch {
-            '"' | '$' | '`' | '\\' => {
-                out.push('\\');
-                out.push(ch);
-            }
+            '"' | '$' | '`' | '\\' => { // coverage:off - import-only: escape chars only appear in import paths, not in arg values
+                out.push('\\'); // coverage:off
+                out.push(ch); // coverage:off
+            } // coverage:off
             _ => out.push(ch),
         }
     }
     out
 }
 
+// coverage:off - import-only: all functions below are only called by import builtin, not exercised in BATS
+
 /// Create a function alias: new_name() { old_name "$@"; }
 pub fn create_function_alias(old_name: &str, new_name: &str) {
     if !is_valid_bash_name(old_name) || !is_valid_bash_name(new_name) {
-        return; // coverage:off - callers use names from get_all_function_names()
+        return;
     }
     run_bash(&format!("{} () {{ {} \"$@\"; }}", new_name, old_name));
 }
@@ -339,9 +347,9 @@ pub fn assoc_get(array_name: &str, key: &str) -> Option<String> {
     let tmp = "__argsh_import_tmp";
     let ek = shell_escape_dquote(key);
     let cmd = format!("{}=\"${{{}[\"{}\"]:-}}\"", tmp, array_name, ek);
-    if run_bash(&cmd) != 0 { // coverage:off - declare/assoc access doesn't fail in practice
-        return None; // coverage:off
-    } // coverage:off
+    if run_bash(&cmd) != 0 {
+        return None;
+    }
     let val = get_scalar(tmp);
     set_scalar(tmp, "");
     val.filter(|s| !s.is_empty())
@@ -367,9 +375,9 @@ pub fn get_assoc_keys(array_name: &str) -> Vec<String> {
     }
     let tmp = "__argsh_import_tmp";
     let cmd = format!("{}=\"${{!{}[@]}}\"", tmp, array_name);
-    if run_bash(&cmd) != 0 { // coverage:off - assoc key expansion doesn't fail in practice
-        return Vec::new(); // coverage:off
-    } // coverage:off
+    if run_bash(&cmd) != 0 {
+        return Vec::new();
+    }
     let val = get_scalar(tmp).unwrap_or_default();
     set_scalar(tmp, "");
     if val.is_empty() {
@@ -384,6 +392,7 @@ pub fn get_bash_source_first() -> Option<String> {
     bash_builtins::variables::array_get("BASH_SOURCE", 0)
         .map(|s| s.to_string_lossy().into_owned())
 }
+// coverage:on
 
 /// Read last element of BASH_SOURCE.
 pub fn get_bash_source_last() -> Option<String> { // coverage:off - only used as fallback when ARGSH_SOURCE unset

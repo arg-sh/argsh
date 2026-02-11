@@ -240,4 +240,31 @@ mod tests {
             ]
         );
     }
+
+    #[test]
+    fn heredoc_double_lt_no_delimiter() {
+        // `<<` found outside quotes but no valid \w+ delimiter follows.
+        // Exercises the None path (line 67) in strip's heredoc_outside_quotes.
+        let input = "echo << ;\n# this is a comment\necho after";
+        let result = strip_lines(input);
+        // No heredoc detected, so the comment line IS stripped normally
+        assert_eq!(result, vec!["echo << ;", "echo after"]);
+    }
+
+    #[test]
+    fn heredoc_after_single_quoted_string() {
+        // Exercises the single-quote toggle and heredoc capture (line 67)
+        // in strip's heredoc_outside_quotes.
+        let input = "echo 'hi' && cat <<EOF\n# heredoc content\nEOF\necho after";
+        let result = strip_lines(input);
+        assert_eq!(
+            result,
+            vec![
+                "echo 'hi' && cat <<EOF",
+                "# heredoc content",
+                "EOF",
+                "echo after",
+            ]
+        );
+    }
 }
