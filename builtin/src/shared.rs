@@ -159,7 +159,9 @@ pub fn check_required_flags(args_arr: &[String], matched: &[String]) -> i32 {
         }
         let def = match field::parse_field(field_str) {
             Ok(d) => d,
-            Err(_) => continue, // Skip malformed fields during required check
+            Err(e) => {
+                return error_usage(field_str, &format!("invalid flag spec '{}': {}", field_str, e));
+            }
         };
         if def.is_positional {
             continue;

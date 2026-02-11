@@ -392,7 +392,10 @@ pub fn print_flags_section<W: Write>(out: &mut W, args_arr: &[String], _fw: usiz
         // Field format
         let def = match field::parse_field(entry) {
             Ok(d) => d,
-            Err(_) => continue, // Skip malformed fields in help display
+            Err(e) => {
+                eprintln!("warning: invalid flag definition '{}': {}", entry, e);
+                continue;
+            }
         };
         let field_fmt = field::format_field(&def);
         let _ = writeln!(out, "{}", field_fmt);

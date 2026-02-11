@@ -217,7 +217,10 @@ fn args_help_text(title: &str, args_arr: &[String]) {
             let desc = args_arr.get(i + 1).map(|s| s.as_str()).unwrap_or("");
             let def = match field::parse_field(entry) {
                 Ok(d) => d,
-                Err(_) => continue, // Skip malformed fields in help display
+                Err(e) => {
+                    eprintln!("warning: invalid field definition '{}': {}", entry, e);
+                    continue;
+                }
             };
             let field_fmt = field::format_field(&def);
 
