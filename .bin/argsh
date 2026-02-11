@@ -222,17 +222,12 @@ coverage::builtin() {
   rm -rf "${cov_dir}"
   mkdir -p "${cov_dir}"
 
-  echo "Running tests..."
-  binary::exists bats || {
-    echo "bats required. Install: https://github.com/bats-core/bats-core"
-    return 1
-  } >&2
+  echo "Running tests (via Docker)..."
   ARGSH_BUILTIN_TEST=1 \
   ARGSH_SOURCE=argsh \
-  ARGSH_BUILTIN_PATH="${so_path}" \
-  LLVM_PROFILE_FILE="${cov_dir}/coverage-%p.profraw" \
-    bats "${PATH_BASE}/libraries/args.bats" \
-         "${PATH_BASE}/libraries/import.bats"
+  ARGSH_BUILTIN_PATH="/workspace/builtin/target/release/libargsh.so" \
+  LLVM_PROFILE_FILE="/workspace/builtin/target/coverage/coverage-%p.profraw" \
+    argsh::main bats libraries/args.bats libraries/import.bats
 
   # Merge profile data and clean up raw profiles
   "${llvm_tools}/llvm-profdata" merge -sparse \
@@ -567,6 +562,8 @@ argsh::main() {
     -e "BATS_LOAD" \
     -e "ARGSH_SOURCE" \
     -e "ARGSH_BUILTIN_TEST" \
+    -e "ARGSH_BUILTIN_PATH" \
+    -e "LLVM_PROFILE_FILE" \
     -e "GIT_COMMIT_SHA=$(git rev-parse HEAD 2>/dev/null || :)" \
     -e "GIT_VERSION=$(git describe --tags --dirty 2>/dev/null || :)" \
     ghcr.io/arg-sh/argsh:latest "${@}" 
