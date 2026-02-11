@@ -143,6 +143,7 @@ if ! (( ARGSH_BUILTIN )); then
   local best="" best_dist=999
 
   local i alias_str a dist
+  local -a _sug_aliases=()
   for (( i=0; i < ${#entries[@]}; i+=2 )); do
     alias_str="${entries[i]/:*}"
     alias_str="${alias_str#\#}"
