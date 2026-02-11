@@ -533,6 +533,25 @@ _coverage() {
 }
 
 ###
+### all (minify + lint + coverage + commit)
+###
+_all() {
+  local message="regenerate files"
+  local -a args=(
+    'message|m' "Commit message"
+  )
+  :args "Minify, lint, coverage, then commit regenerated files" "${@}"
+
+  minify::argsh
+  _lint
+  _lint -m
+  _coverage
+
+  git -C "${PATH_BASE}" add -A
+  git -C "${PATH_BASE}" commit -m "${message}" --no-gpg-sign
+}
+
+###
 ### main
 ###
 argsh::main() {
@@ -569,6 +588,7 @@ _main() {
   local -a usage
   usage=(
     -                           "Commands"
+    'all:-_all'                 "Minify, lint, coverage, commit regenerated files"
     'build:-_build'             "Build release binaries [all|builtin|minifier]"
     'lint:-_lint'               "Run linters [all|argsh|builtin|minifier]"
     'test:-_test'               "Run tests [all|argsh|builtin|minifier]"
