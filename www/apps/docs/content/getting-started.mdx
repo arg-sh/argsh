@@ -31,7 +31,7 @@ This gives you the ability to use the following options to help you to write nic
 :::note
 If you use `argsh` as executer (shebang) you have to include `${ARGSH_SOURCE}` in the call check.
 ```bash
-[[ "${0}" != "${BASH_SOURCE[0]}" && -z "${ARGSH_SOURCE}" ]] || main "${@}"
+[[ "${0}" != "${BASH_SOURCE[0]}" && -z "${ARGSH_SOURCE:-}" ]] || main "${@}"
 ```
 :::
 

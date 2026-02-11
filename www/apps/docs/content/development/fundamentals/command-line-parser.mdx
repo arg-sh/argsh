@@ -130,7 +130,7 @@ main() {
   "${usage[@]}"
 }
 
-[[ "${BASH_SOURCE[0]}" != "${0}" ]] || main "${@}"
+[[ "${0}" != "${BASH_SOURCE[0]}" && -z "${ARGSH_SOURCE:-}" ]] || main "${@}"
 ```
 
 In this example, `subcommand1` is called with `script command1 subcommand1`.
@@ -168,10 +168,9 @@ subcommand1() {
 
 command1() {
   local subflag
-  # if you know that command1 will always be called with `args` in its scope, you can leave this out
-  declare -p args || local -a args
-  args+=(
+  local -a args=(
     'subflag|f' "Description of subflag"
+    "${args[@]}"
   )
   local -a usage=(
     'subcommand1' "Description of subcommand1"
@@ -191,7 +190,7 @@ main() {
   "${usage[@]}"
 }
 
-[[ "${BASH_SOURCE[0]}" != "${0}" ]] || main "${@}"
+[[ "${0}" != "${BASH_SOURCE[0]}" && -z "${ARGSH_SOURCE:-}" ]] || main "${@}"
 ```
 
 :::note
