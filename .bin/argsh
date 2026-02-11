@@ -227,7 +227,7 @@ coverage::builtin() {
   ARGSH_SOURCE=argsh \
   ARGSH_BUILTIN_PATH="/workspace/builtin/target/release/libargsh.so" \
   LLVM_PROFILE_FILE="/workspace/builtin/target/coverage/coverage-%p.profraw" \
-    argsh::main bats libraries/args.bats libraries/import.bats
+    argsh::main test libraries/args.bats libraries/import.bats
 
   # Merge profile data and clean up raw profiles
   "${llvm_tools}/llvm-profdata" merge -sparse \
