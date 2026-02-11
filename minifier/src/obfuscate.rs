@@ -157,6 +157,16 @@ impl VarPatterns {
             true,
         );
 
+        // 14d. Bare array subscript: `arr[j]=`, `(( arr[j] + 1 ))`, `arr[j-1]`
+        // Matches variable inside [...] when preceded by a word char (array name).
+        // Rule 14 handles `${arr[j]}` (expansion context); this covers non-expansion.
+        // \b prevents renaming `_j` when `j` is the discovered variable.
+        add(
+            &format!(r"(\w\[[^\]]*?)\b{v}\b([^\]]*\])"),
+            format!("${{1}}{r}${{2}}"),
+            true,
+        );
+
         // 15. General $var (not inside single quotes)
         // Note: `$$` in replacement = literal `$`
         add(
@@ -748,6 +758,40 @@ mod tests {
         // but 14b/14c must NOT touch them either (they start with non-word chars).
         assert_eq!(ob.obfuscate_line("${var:=i}"), "${var:=i}");
         assert_eq!(ob.obfuscate_line("${var:?i}"), "${var:?i}");
+    }
+
+    #[test]
+    fn bare_array_subscript_renamed() {
+        // Rule 14d: bare array subscripts `arr[j]=`, `(( arr[j] ))`, `arr[j-1]`
+        let ob = make_obfuscator(&["j"], "a");
+        // Array write subscript
+        assert_eq!(ob.obfuscate_line("arr[j]=\"val\""), "arr[a0]=\"val\"");
+        // Array write subscript with arithmetic
+        assert_eq!(ob.obfuscate_line("arr[j-1]=\"val\""), "arr[a0-1]=\"val\"");
+        // Arithmetic context
+        assert_eq!(ob.obfuscate_line("(( arr[j] + 1 ))"), "(( arr[a0] + 1 ))");
+        assert_eq!(ob.obfuscate_line("(( arr[j-1] + 1 ))"), "(( arr[a0-1] + 1 ))");
+        // Multiple on one line
+        assert_eq!(
+            ob.obfuscate_line("arr[j]=\"${j}\"; (( arr[j-1] + 1 ))"),
+            "arr[a0]=\"${a0}\"; (( arr[a0-1] + 1 ))",
+        );
+    }
+
+    #[test]
+    fn bare_array_subscript_underscore_safe() {
+        // Rule 14d with \b must not rename `_j` when `j` is discovered.
+        let ob = make_obfuscator(&["j"], "a");
+        assert_eq!(ob.obfuscate_line("arr[_j]=\"val\""), "arr[_j]=\"val\"");
+        assert_eq!(ob.obfuscate_line("arr[j]=\"val\""), "arr[a0]=\"val\"");
+    }
+
+    #[test]
+    fn bare_array_subscript_not_test_brackets() {
+        // Rule 14d must not match `[[ ... ]]` test brackets (no \w before `[[`).
+        let ob = make_obfuscator(&["j"], "a");
+        // `[[ $j ]]` — space before `[[`, no `\w\[` match. $j renamed by rule 15.
+        assert_eq!(ob.obfuscate_line("[[ $j ]]"), "[[ $a0 ]]");
     }
 
     #[test]

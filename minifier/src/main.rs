@@ -231,6 +231,18 @@ mod tests {
     }
 
     #[test]
+    fn pipeline_bare_array_subscript_renamed() {
+        // End-to-end: bare array subscript `prev[j]=` and `(( prev[j] ))` must rename `j`
+        let input = "local -a prev\nlocal j=0\nfor (( j=0; j <= n; j++ )); do prev[j]=\"${j}\"; done\necho $(( prev[j-1] + 1 ))\n";
+        let result = minify(input, &cfg(true, "a", "usage,args")).unwrap();
+        // `j` must not appear as bare subscript in array brackets
+        assert!(
+            !regex::Regex::new(r"\w\[j[\]\-+]").unwrap().is_match(&result),
+            "j not renamed in bare array subscript: {result}"
+        );
+    }
+
+    #[test]
     fn pipeline_read_ra_flag_not_corrupted() {
         // End-to-end: `read -ra` combined flag must not be corrupted by obfuscation
         let input = "local a flags\nIFS='|' read -ra flags <<< \"$a\"\n";
