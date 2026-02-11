@@ -90,10 +90,12 @@ impl VarPatterns {
         );
 
         // 8. Array write: `var[...]=`
+        // No ^ anchor — array writes can appear mid-line (e.g. `do prev[j]=`).
+        // \b prevents matching inside longer names (e.g. `_path[0]=`).
         add(
-            &format!(r"^([ \t]*){v}(\[.+\]=)"),
+            &format!(r"([ \t]*)\b{v}(\[.+?\]=)"),
             format!("${{1}}{r}${{2}}"),
-            false,
+            true,
         );
 
         // 9. Array read: `${var[`
@@ -134,6 +136,23 @@ impl VarPatterns {
         // 14. Array index arithmetic: `${arr[i+1]}`, `${arr[i]}`, `${arr[i-1]}`
         add(
             &format!(r"(\$\{{[^}}]+[\[+\-]){v}([\]+\-][^}}]*\}})"),
+            format!("${{1}}{r}${{2}}"),
+            true,
+        );
+
+        // 14b. Substring offset: variable at start `${var:i-1:1}`
+        // After the first `:`, the variable name starts immediately.
+        // Modifiers (`:- :+ := :?`) start with a non-word char, so this won't match them.
+        add(
+            &format!(r"(\$\{{[^}}:]+:){v}\b([^}}]*\}})"),
+            format!("${{1}}{r}${{2}}"),
+            true,
+        );
+
+        // 14c. Substring offset/length: variable in middle `${var:0:i}`, `${var:i+j:1}`
+        // `\w` after `:` ensures it's a substring context (not a modifier like `:-`).
+        add(
+            &format!(r"(\$\{{[^}}:]+:\w[^}}]*?)\b{v}\b([^}}]*\}})"),
             format!("${{1}}{r}${{2}}"),
             true,
         );
@@ -578,6 +597,33 @@ mod tests {
     }
 
     #[test]
+    fn array_write_midline() {
+        // Rule 8: `var[i]=` must be renamed even when mid-line (e.g. after `do`).
+        let ob = make_obfuscator(&["prev"], "a");
+        // Standalone line — always worked
+        assert_eq!(ob.obfuscate_line("prev[0]=val"), "a0[0]=val");
+        // Mid-line after `do` — was broken (^-anchored rule missed it)
+        assert_eq!(
+            ob.obfuscate_line("for (( j=0; j <= n; j++ )); do prev[j]=\"${j}\"; done"),
+            "for (( j=0; j <= n; j++ )); do a0[j]=\"${j}\"; done",
+            "mid-line array write must be renamed"
+        );
+        // Multiple array writes on one line
+        assert_eq!(
+            ob.obfuscate_line("prev[0]=1; prev[1]=2"),
+            "a0[0]=1; a0[1]=2",
+        );
+    }
+
+    #[test]
+    fn array_write_midline_underscore_safe() {
+        // Rule 8 with \b must not rename _prev[j]= when `prev` is discovered.
+        let ob = make_obfuscator(&["prev"], "a");
+        assert_eq!(ob.obfuscate_line("do _prev[j]=\"${j}\""), "do _prev[j]=\"${j}\"");
+        assert_eq!(ob.obfuscate_line("do prev[j]=\"${j}\""), "do a0[j]=\"${j}\"");
+    }
+
+    #[test]
     fn underscore_prefix_not_corrupted_dollar_var() {
         // Rule 15/16: `$_path` must NOT be renamed when `path` is discovered.
         let ob = make_obfuscator(&["path"], "a");
@@ -667,6 +713,51 @@ mod tests {
         let ob = make_obfuscator(&["path"], "a");
         assert_eq!(ob.obfuscate_line("[[ ${#_path[@]} -gt 0 ]]"), "[[ ${#_path[@]} -gt 0 ]]");
         assert_eq!(ob.obfuscate_line("[[ ${#path[@]} -gt 0 ]]"), "[[ ${#a0[@]} -gt 0 ]]");
+    }
+
+    #[test]
+    fn substring_offset_renamed() {
+        // Rule 14b: bare variables in `${var:offset}` and `${var:offset:length}` must be renamed.
+        let ob = make_obfuscator(&["i"], "a");
+        // Offset position: `${str:i-1:1}` → `${str:a0-1:1}`
+        assert_eq!(ob.obfuscate_line("${str:i-1:1}"), "${str:a0-1:1}");
+        // Length position: `${str:0:i}` → `${str:0:a0}`
+        assert_eq!(ob.obfuscate_line("${str:0:i}"), "${str:0:a0}");
+        // Both positions: `${str:i:i}` → `${str:a0:a0}`
+        assert_eq!(ob.obfuscate_line("${str:i:i}"), "${str:a0:a0}");
+        // Embedded in expression: `${arr:i+1:j-i}`
+        let ob2 = make_obfuscator(&["j", "i"], "a");
+        // j=a0, i=a1 (sorted by length, then alpha — both len 1, j before i alphabetically? No, j > i)
+        // Actually sorted descending by length, then alpha: j and i both len 1; sorted: ["i", "j"] or ["j", "i"]
+        // Let's just check the output
+        let result = ob2.obfuscate_line("${arr:i+1:j-i}");
+        assert!(!result.contains(":i"), "i not renamed in offset: {result}");
+        assert!(!result.contains(":j"), "j not renamed in length: {result}");
+    }
+
+    #[test]
+    fn substring_offset_not_param_expansion() {
+        // Rules 14b/14c must NOT match parameter expansion modifiers: `${var:-i}`, `${var:+i}`
+        // Modifiers start with non-word chars (`-`,`+`,`=`,`?`) so \w-based rules skip them.
+        let ob = make_obfuscator(&["i"], "a");
+        // `:-` modifier: `i` here is renamed by rule 13 (param expansion), not 14b
+        assert_eq!(ob.obfuscate_line("${var:-i}"), "${var:-a0}");
+        // `:+` modifier: same
+        assert_eq!(ob.obfuscate_line("${var:+i}"), "${var:+a0}");
+        // `:=` and `:?` modifiers: rule 13 doesn't cover `=`/`?` (pre-existing),
+        // but 14b/14c must NOT touch them either (they start with non-word chars).
+        assert_eq!(ob.obfuscate_line("${var:=i}"), "${var:=i}");
+        assert_eq!(ob.obfuscate_line("${var:?i}"), "${var:?i}");
+    }
+
+    #[test]
+    fn substring_offset_underscore_safe() {
+        // Rule 14b with \b must not rename `_i` when `i` is the discovered variable.
+        let ob = make_obfuscator(&["i"], "a");
+        assert_eq!(ob.obfuscate_line("${str:_i-1:1}"), "${str:_i-1:1}");
+        assert_eq!(ob.obfuscate_line("${str:0:_i}"), "${str:0:_i}");
+        // But bare `i` must still be renamed
+        assert_eq!(ob.obfuscate_line("${str:i-1:1}"), "${str:a0-1:1}");
     }
 
     #[test]

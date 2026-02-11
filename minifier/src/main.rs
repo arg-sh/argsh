@@ -208,6 +208,29 @@ mod tests {
     }
 
     #[test]
+    fn pipeline_midline_array_write() {
+        // End-to-end: `prev[j]=` mid-line must be renamed (shellcheck lint regression)
+        let input = "local -a prev\nlocal j=0\nfor (( j=0; j <= n; j++ )); do prev[j]=\"${j}\"; done\necho \"${prev[@]}\"\n";
+        let result = minify(input, &cfg(true, "a", "usage,args")).unwrap();
+        assert!(
+            !regex::Regex::new(r"\bprev\b").unwrap().is_match(&result),
+            "prev not fully renamed (mid-line array write missed): {result}"
+        );
+    }
+
+    #[test]
+    fn pipeline_substring_offset_renamed() {
+        // End-to-end: bare variable in `${var:i-1:1}` must be renamed
+        let input = "local i=0\nlocal str=\"hello\"\necho \"${str:i-1:1}\"\necho \"${str:0:i}\"\n";
+        let result = minify(input, &cfg(true, "a", "usage,args")).unwrap();
+        // `i` must not appear as bare variable in substring offsets
+        assert!(
+            !regex::Regex::new(r"\$\{[^}]+:[^}]*\bi\b").unwrap().is_match(&result),
+            "i not renamed in substring offset: {result}"
+        );
+    }
+
+    #[test]
     fn pipeline_read_ra_flag_not_corrupted() {
         // End-to-end: `read -ra` combined flag must not be corrupted by obfuscation
         let input = "local a flags\nIFS='|' read -ra flags <<< \"$a\"\n";
