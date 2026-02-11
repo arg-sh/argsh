@@ -467,6 +467,48 @@ coverage::minifier() {
 }
 
 ###
+### build
+###
+build::builtin() {
+  :args "Build native builtins (.so)" "${@}"
+  _require_rust
+  cargo build --release \
+    --manifest-path "${PATH_BASE}/builtin/Cargo.toml"
+  rm -f "${PATH_BIN}/argsh.so" && cp "${PATH_BASE}/builtin/target/release/libargsh.so" "${PATH_BIN}/argsh.so"
+  echo "Built: ${PATH_BIN}/argsh.so"
+}
+
+build::minifier() {
+  :args "Build minifier binary" "${@}"
+  _require_rust
+  cargo build --release \
+    --manifest-path "${PATH_BASE}/minifier/Cargo.toml"
+  rm -f "${PATH_BIN}/minifier" && cp "${PATH_BASE}/minifier/target/release/minifier" "${PATH_BIN}/minifier"
+  echo "Built: ${PATH_BIN}/minifier"
+}
+
+_build() {
+  local target="all"
+  local -a args=(
+    'target' "Build target (all, builtin, minifier)"
+  )
+  :args "Build release binaries" "${@}"
+
+  case "${target}" in
+    all)
+      build::builtin
+      build::minifier
+      ;;
+    builtin)  build::builtin ;;
+    minifier) build::minifier ;;
+    *)
+      echo "Unknown target: ${target}. Use: all, builtin, minifier" >&2
+      return 1
+      ;;
+  esac
+}
+
+###
 ### coverage dispatcher
 ###
 _coverage() {
@@ -527,6 +569,7 @@ _main() {
   local -a usage
   usage=(
     -                           "Commands"
+    'build:-_build'             "Build release binaries [all|builtin|minifier]"
     'lint:-_lint'               "Run linters [all|argsh|builtin|minifier]"
     'test:-_test'               "Run tests [all|argsh|builtin|minifier]"
     'coverage:-_coverage'       "Generate coverage [all|builtin|minifier]"
