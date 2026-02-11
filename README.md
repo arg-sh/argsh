@@ -62,7 +62,8 @@ argsh ships with optional **Bash loadable builtins** compiled from Rust. When th
 | Builtin | Purpose |
 |---|---|
 | `:args` | CLI argument parser with type checking |
-| `:usage` | Subcommand router with help generation |
+| `:usage` | Subcommand router with intelligent suggestions |
+| `:usage::help` | Deferred help display (runs after setup code) |
 | `is::array`, `is::uninitialized`, `is::set`, `is::tty` | Variable introspection |
 | `to::int`, `to::float`, `to::boolean`, `to::file`, `to::string` | Type converters |
 | `args::field_name` | Field name extraction |
@@ -103,12 +104,6 @@ Argument parsing (`cmd --flag1 v1 ... --flagN vN`) — 50 iterations:
 |    25 |  13986 ms |    9 ms |  1554x  |
 |    50 |  29603 ms |   20 ms |  1480x  |
 
-Real-world (`:usage` + `:args` with 2 flags at every level, depth 10) — 50 iterations:
-
-| Scenario  | Pure Bash | Builtin | Speedup |
-|----------:|----------:|--------:|--------:|
-| 10 levels |    567 ms |   43 ms |    13x  |
-
 Run `bash bench/usage-depth.sh` to reproduce.
 
 &nbsp;
@@ -136,7 +131,7 @@ That beeing said, most of it is quite rough. But it's a start. The best time tha
 - [ ] VSCode extension for the language server
 - [ ] Easy bootstrap, minimal dependencies, easy to implement
 - [ ] Convert [shdoc](https://github.com/reconquest/shdoc) to rust
-- [ ] Convert [obfus](./bin/obfus) to rust or rewrite it in rust/shfmt, at least make it more robust (remove sed)
+- [x] Convert [obfus](./bin/obfus) to rust or rewrite it in rust/shfmt, at least make it more robust (remove sed)
 
 &nbsp;
 

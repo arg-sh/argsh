@@ -41,13 +41,65 @@ extern "C" fn usage_builtin_fn(word_list: *const WordList) -> c_int {
     })
     .unwrap_or(1); // coverage:off - catch_unwind: panics don't occur in practice
 
-    // Match bash's `exit` behavior: help and errors terminate the script.
-    // Only success (0) returns to the caller so the script can continue.
+    // Errors terminate the script. Success (0) returns to the caller.
+    // HELP_EXIT is only used by --argsh now (help is deferred via usage array).
     match code {
         0 => 0,
         shared::HELP_EXIT => std::process::exit(0), // coverage:off - exit() kills process before coverage flush
         n => std::process::exit(n), // coverage:off - exit() kills process before coverage flush
     }
+}
+
+// -- :usage::help builtin registration --------------------------------------
+
+static USAGE_HELP_LONG_DOC: [SyncPtr; 2] = [
+    SyncPtr(c"Display deferred usage help text (called via ${usage[@]}).".as_ptr()),
+    SyncPtr(std::ptr::null()),
+];
+
+#[export_name = ":usage::help_struct"]
+pub static mut USAGE_HELP_STRUCT: BashBuiltin = BashBuiltin {
+    name: c":usage::help".as_ptr(),
+    function: usage_help_builtin_fn,
+    flags: BUILTIN_ENABLED,
+    short_doc: c":usage::help <title> [usage_pairs...]".as_ptr(),
+    long_doc: USAGE_HELP_LONG_DOC.as_ptr().cast(),
+    handle: std::ptr::null(),
+};
+
+#[export_name = ":usage::help_builtin_load"]
+pub extern "C" fn usage_help_builtin_load(_name: *const c_char) -> c_int {
+    1 // success
+}
+
+#[export_name = ":usage::help_builtin_unload"]
+pub extern "C" fn usage_help_builtin_unload(_name: *const c_char) {} // coverage:off - bash internal callback, never called during tests
+
+extern "C" fn usage_help_builtin_fn(word_list: *const WordList) -> c_int {
+    let code = std::panic::catch_unwind(|| {
+        let args = word_list_to_vec(word_list);
+        usage_help_main(&args)
+    })
+    .unwrap_or(1); // coverage:off - catch_unwind: panics don't occur in practice
+
+    // Help always exits the script after display
+    std::process::exit(code) // coverage:off - exit() kills process before coverage flush
+}
+
+/// Main entry point for :usage::help builtin.
+/// Called via "${usage[@]}" after caller's setup code has run.
+/// Args: title [original_usage_pairs...]
+pub fn usage_help_main(args: &[String]) -> i32 {
+    if args.is_empty() {
+        return shared::error_usage("", ":usage::help requires a title argument");
+    }
+
+    let title = &args[0];
+    let usage_pairs: Vec<String> = args[1..].to_vec();
+    let args_arr = shell::read_array("args");
+
+    usage_help_text(title, &usage_pairs, &args_arr);
+    0
 }
 
 // -- Implementation ---------------------------------------------------------
@@ -72,13 +124,17 @@ pub fn usage_main(args: &[String]) -> i32 {
         return shared::error_usage("", "usage array must have an even number of elements");
     }
 
-    // Handle empty args, -h, --help
+    // Handle empty args, -h, --help — defer to "${usage[@]}" dispatch
     if cli_args.is_empty()
         || cli_args[0] == "-h"
         || cli_args[0] == "--help"
     {
-        usage_help_text(title, &usage_arr, &args_arr);
-        return shared::HELP_EXIT;
+        // Set usage = (":usage::help" title original_usage_pairs...)
+        // so help is generated at "${usage[@]}" time (after setup code runs).
+        let mut new_usage = vec![":usage::help".to_string(), title.clone()];
+        new_usage.extend_from_slice(&usage_arr);
+        shell::write_array("usage", &new_usage);
+        return 0;
     }
 
     // Handle --argsh
@@ -116,8 +172,8 @@ pub fn usage_main(args: &[String]) -> i32 {
             Ok(false) => {
                 break; // Unknown flag, leave for subcommand
             }
-            Err(_) => {
-                break;
+            Err(code) => {
+                return code;
             }
         }
     }
@@ -131,8 +187,11 @@ pub fn usage_main(args: &[String]) -> i32 {
     let cmd = match cmd {
         Some(c) => c,
         None => {
-            let display = commandname.last().cloned().unwrap_or_default();
-            return shared::error_usage(&display, "Missing command");
+            // No command given (e.g. flags only, or flags + --help) → defer to help
+            let mut new_usage = vec![":usage::help".to_string(), title.clone()];
+            new_usage.extend_from_slice(&usage_arr);
+            shell::write_array("usage", &new_usage);
+            return 0;
         }
     };
 
@@ -166,7 +225,11 @@ pub fn usage_main(args: &[String]) -> i32 {
     }
 
     if func.is_empty() {
-        return shared::error_usage(&cmd, &format!("Invalid command: {}", cmd));
+        let msg = match shared::suggest_command(&cmd, &usage_arr) {
+            Some(suggestion) => format!("Invalid command: {}. Did you mean '{}'?", cmd, suggestion),
+            None => format!("Invalid command: {}", cmd),
+        };
+        return shared::error_usage(&cmd, &msg);
     }
 
     // Resolve function with prefix fallback
@@ -327,7 +390,13 @@ pub fn print_flags_section<W: Write>(out: &mut W, args_arr: &[String], _fw: usiz
         }
 
         // Field format
-        let def = field::parse_field(entry);
+        let def = match field::parse_field(entry) {
+            Ok(d) => d,
+            Err(e) => {
+                eprintln!("warning: invalid flag definition '{}': {}", entry, e);
+                continue;
+            }
+        };
         let field_fmt = field::format_field(&def);
         let _ = writeln!(out, "{}", field_fmt);
 

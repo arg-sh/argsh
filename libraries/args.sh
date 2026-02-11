@@ -19,7 +19,7 @@ import() { declare -A _i; (( ${_i[${1}]:-} )) || { _i[${1}]=1; . "${BASH_SOURCE[
 # Falls back to pure bash if unavailable.
 # Shared builtins list — also used by argsh::builtin::try() in main.sh.
 # obfus ignore variable
-declare -ga __ARGSH_BUILTINS=(:usage :args
+declare -ga __ARGSH_BUILTINS=(:usage :usage::help :args
   is::array is::uninitialized is::set is::tty
   args::field_name to::int to::float to::boolean to::file to::string
   import import::clear)
@@ -83,6 +83,22 @@ if (( ARGSH_BUILTIN )); then
           to::int to::float to::boolean to::file to::string 2>/dev/null || true
 fi
 
+# Deferred help — called via "${usage[@]}" so callers can run setup code
+# (env vars, defaults, etc.) between :usage and "${usage[@]}".
+# Reads `args` from caller scope (dynamic scoping) for flags/defaults.
+# When builtins are loaded, :usage::help is provided by the .so.
+# @arg $1 string Title
+# @arg $2+ string Original usage pairs
+# @internal
+if ! (( ARGSH_BUILTIN )); then
+:usage::help() {
+  local title="${1}"; shift
+  local -a usage=("${@}")
+  :usage::text "${title}"
+  exit 0
+}
+fi
+
 # When builtins are loaded, :usage/:args are provided by the .so.
 # Skip the pure-bash function definitions below.
 if ! (( ARGSH_BUILTIN )); then
@@ -116,6 +132,78 @@ if ! (( ARGSH_BUILTIN )); then
 #     "${usage[@]}"
 #   }
 #   main::up() { echo "up"; }
+# Suggest closest command from usage array (Levenshtein distance ≤ 2).
+# @arg $1 string User input
+# @arg $2+ string Usage array entries (pairs: name desc name desc ...)
+# @stdout Suggested command name, or empty
+# @internal
+:usage::suggest() {
+  local input="${1}"; shift
+  local -a entries=("${@}")
+  local best="" best_dist=999
+
+  local i alias_str a dist
+  local -a _sug_aliases=()
+  for (( i=0; i < ${#entries[@]}; i+=2 )); do
+    alias_str="${entries[i]/:*}"
+    alias_str="${alias_str#\#}"
+    IFS='|' read -ra _sug_aliases <<< "${alias_str}"
+    for a in "${_sug_aliases[@]}"; do
+      dist="$(:usage::levenshtein "${input}" "${a}")"
+      if (( dist < best_dist )); then
+        best_dist="${dist}"
+        best="${a}"
+      fi
+    done
+  done
+
+  # Threshold: distance ≤ 2 AND ≤ 40% of the longer string
+  if (( best_dist > 0 && best_dist <= 2 )); then
+    local max_len=${#input}
+    (( ${#best} > max_len )) && max_len=${#best}
+    if (( best_dist * 100 <= max_len * 40 )); then
+      echo "${best}"
+    fi
+  fi
+}
+
+# Levenshtein edit distance between two strings.
+# @arg $1 string First string
+# @arg $2 string Second string
+# @stdout The edit distance
+# @internal
+:usage::levenshtein() {
+  local a="${1}" b="${2}"
+  local a_len=${#a} b_len=${#b}
+
+  if (( a_len == 0 )); then echo "${b_len}"; return; fi
+  if (( b_len == 0 )); then echo "${a_len}"; return; fi
+
+  # Single-row DP
+  local -a prev
+  local j
+  for (( j=0; j <= b_len; j++ )); do prev[j]="${j}"; done
+
+  local i corner cost new_val
+  for (( i=1; i <= a_len; i++ )); do
+    corner="${prev[0]}"
+    prev[0]="${i}"
+    for (( j=1; j <= b_len; j++ )); do
+      if [[ "${a:i-1:1}" == "${b:j-1:1}" ]]; then
+        cost=0
+      else
+        cost=1
+      fi
+      new_val=$(( corner + cost ))
+      (( prev[j] + 1 < new_val )) && new_val=$(( prev[j] + 1 ))
+      (( prev[j-1] + 1 < new_val )) && new_val=$(( prev[j-1] + 1 ))
+      corner="${prev[j]}"
+      prev[j]="${new_val}"
+    done
+  done
+  echo "${prev[b_len]}"
+}
+
 :usage() {
   local title="${1}"; shift
   declare -p usage &>/dev/null || local -a usage=()
@@ -124,8 +212,8 @@ if ! (( ARGSH_BUILTIN )); then
     :args::_error "usage must be an associative array"
 
   if [[ -z ${1:-} || ${1} == "-h" || ${1} == "--help" ]]; then
-    :usage::text "${title}"
-    exit 0
+    usage=(":usage::help" "${title}" "${usage[@]}")
+    return 0
   fi
   if ! (( ${#COMMANDNAME[@]} )) && [[ ${1:-} == "--argsh" ]]; then
     echo "https://arg.sh ${ARGSH_COMMIT_SHA:-} ${ARGSH_VERSION:-}"
@@ -167,8 +255,20 @@ if ! (( ARGSH_BUILTIN )); then
     done
   done
 
-  [[ -n "${func:-}" ]] ||
-    :args::error_usage "Invalid command: ${cmd}"
+  if [[ -z "${func:-}" ]]; then
+    if [[ -z "${cmd:-}" ]]; then
+      # No command given (e.g. flags only, or flags + --help) → defer to help
+      usage=(":usage::help" "${title}" "${usage[@]}")
+      return 0
+    fi
+    local _sug
+    _sug="$(:usage::suggest "${cmd}" "${usage[@]}")"
+    if [[ -n "${_sug}" ]]; then
+      :args::error_usage "Invalid command: ${cmd}. Did you mean '${_sug}'?"
+    else
+      :args::error_usage "Invalid command: ${cmd}"
+    fi
+  fi
 
   # Enforce function-only execution and apply namespace fallbacks.
   # When an explicit mapping is given via ":-", func is already fully qualified.
@@ -181,8 +281,15 @@ if ! (( ARGSH_BUILTIN )); then
   [[ "${field}" != *":-"* ]] || explicit=1
 
   if (( explicit )); then
-    declare -F -- "${func}" >/dev/null 2>&1 ||
-      :args::error_usage "Invalid command: ${cmd}"
+    declare -F -- "${func}" >/dev/null 2>&1 || {
+      local _sug
+      _sug="$(:usage::suggest "${cmd}" "${usage[@]}")"
+      if [[ -n "${_sug}" ]]; then
+        :args::error_usage "Invalid command: ${cmd}. Did you mean '${_sug}'?"
+      else
+        :args::error_usage "Invalid command: ${cmd}"
+      fi
+    }
   else
     local caller="${FUNCNAME[1]:-}"
     if [[ -n "${caller}" ]] && declare -F -- "${caller}::${func}" >/dev/null 2>&1; then
@@ -192,7 +299,13 @@ if ! (( ARGSH_BUILTIN )); then
     elif declare -F -- "${func}" >/dev/null 2>&1; then
       :
     else
-      :args::error_usage "Invalid command: ${cmd}"
+      local _sug
+      _sug="$(:usage::suggest "${cmd}" "${usage[@]}")"
+      if [[ -n "${_sug}" ]]; then
+        :args::error_usage "Invalid command: ${cmd}. Did you mean '${_sug}'?"
+      else
+        :args::error_usage "Invalid command: ${cmd}"
+      fi
     fi
   fi
 

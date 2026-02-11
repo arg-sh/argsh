@@ -173,4 +173,84 @@ mod tests {
         let result = minify(input, &cfg(true, "a", "foo")).unwrap();
         assert!(result.contains("foo"), "foo should be kept, got: {result}");
     }
+
+    #[test]
+    fn pipeline_underscore_prefix_not_corrupted() {
+        // End-to-end: `_path` must not be partially renamed when `path` is a discovered variable
+        let input = "local path=\"${1}\"\nlocal _force=0 _path=\"\"\n_path=\"${1}\"\necho \"${_path}\"\necho \"${path}\"\n";
+        let result = minify(input, &cfg(true, "a", "usage,args")).unwrap();
+        // `_path` must appear unchanged; `path` must be renamed to `a0`
+        assert!(
+            !result.contains("_a0"),
+            "_path was partially renamed: {result}"
+        );
+        assert!(
+            result.contains("${_path}"),
+            "${{_path}} must stay intact: {result}"
+        );
+    }
+
+    #[test]
+    fn pipeline_long_underscore_prefix_not_corrupted() {
+        // End-to-end: `_argsh_builtin_path` must not be renamed when `path` is discovered.
+        // This mirrors the real argsh code where `path` (from binary.sh) is discovered,
+        // and `_argsh_builtin_path` (from main.sh) must stay intact.
+        let input = "local path=\"${1}\"\nlocal _argsh_builtin_path=\"\"\n_argsh_builtin_path=\"${1}\"\necho \"${_argsh_builtin_path}\"\necho \"${path}\"\n";
+        let result = minify(input, &cfg(true, "a", "usage,args")).unwrap();
+        assert!(
+            result.contains("_argsh_builtin_path"),
+            "_argsh_builtin_path was corrupted: {result}"
+        );
+        assert!(
+            !result.contains("_argsh_builtin_a0"),
+            "_argsh_builtin_path partially renamed: {result}"
+        );
+    }
+
+    #[test]
+    fn pipeline_midline_array_write() {
+        // End-to-end: `prev[j]=` mid-line must be renamed (shellcheck lint regression)
+        let input = "local -a prev\nlocal j=0\nfor (( j=0; j <= n; j++ )); do prev[j]=\"${j}\"; done\necho \"${prev[@]}\"\n";
+        let result = minify(input, &cfg(true, "a", "usage,args")).unwrap();
+        assert!(
+            !regex::Regex::new(r"\bprev\b").unwrap().is_match(&result),
+            "prev not fully renamed (mid-line array write missed): {result}"
+        );
+    }
+
+    #[test]
+    fn pipeline_substring_offset_renamed() {
+        // End-to-end: bare variable in `${var:i-1:1}` must be renamed
+        let input = "local i=0\nlocal str=\"hello\"\necho \"${str:i-1:1}\"\necho \"${str:0:i}\"\n";
+        let result = minify(input, &cfg(true, "a", "usage,args")).unwrap();
+        // `i` must not appear as bare variable in substring offsets
+        assert!(
+            !regex::Regex::new(r"\$\{[^}]+:[^}]*\bi\b").unwrap().is_match(&result),
+            "i not renamed in substring offset: {result}"
+        );
+    }
+
+    #[test]
+    fn pipeline_bare_array_subscript_renamed() {
+        // End-to-end: bare array subscript `prev[j]=` and `(( prev[j] ))` must rename `j`
+        let input = "local -a prev\nlocal j=0\nfor (( j=0; j <= n; j++ )); do prev[j]=\"${j}\"; done\necho $(( prev[j-1] + 1 ))\n";
+        let result = minify(input, &cfg(true, "a", "usage,args")).unwrap();
+        // `j` must not appear as bare subscript in array brackets
+        assert!(
+            !regex::Regex::new(r"\w\[j[\]\-+]").unwrap().is_match(&result),
+            "j not renamed in bare array subscript: {result}"
+        );
+    }
+
+    #[test]
+    fn pipeline_read_ra_flag_not_corrupted() {
+        // End-to-end: `read -ra` combined flag must not be corrupted by obfuscation
+        let input = "local a flags\nIFS='|' read -ra flags <<< \"$a\"\n";
+        let result = minify(input, &cfg(true, "a", "usage,args")).unwrap();
+        // The `-ra` flag must remain intact — no `read -ra<digit>` corruption
+        assert!(
+            !regex::Regex::new(r"read -ra\d").unwrap().is_match(&result),
+            "read -ra flag corrupted: {result}"
+        );
+    }
 }

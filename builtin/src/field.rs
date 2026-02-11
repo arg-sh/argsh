@@ -83,7 +83,8 @@ pub fn field_name(field: &str, asref: bool) -> String {
 }
 
 /// Parse a field definition string into a FieldDef.
-pub fn parse_field(field: &str) -> FieldDef {
+/// Returns Err(msg) for invalid modifier combinations (matching bash :args::field_attrs behavior).
+pub fn parse_field(field: &str) -> Result<FieldDef, String> {
     let raw = field.to_string();
     let name = field_name(field, true);
     let display_name = field_name(field, false);
@@ -114,10 +115,19 @@ pub fn parse_field(field: &str) -> FieldDef {
         while let Some(&c) = chars.peek() {
             match c {
                 '+' => {
+                    if !type_name.is_empty() {
+                        return Err(format!(
+                            "cannot have multiple types: {} and boolean",
+                            type_name
+                        ));
+                    }
                     is_boolean = true;
                     chars.next();
                 }
                 '~' => {
+                    if is_boolean {
+                        return Err("already flagged as boolean".to_string());
+                    }
                     chars.next();
                     // Collect type name until next modifier
                     let mut tname = String::new();
@@ -131,11 +141,14 @@ pub fn parse_field(field: &str) -> FieldDef {
                     type_name = tname;
                 }
                 '!' => {
+                    if required {
+                        return Err("field already flagged as required".to_string());
+                    }
                     required = true;
                     chars.next();
                 }
                 _ => {
-                    chars.next();
+                    return Err(format!("unknown modifier: {}", c));
                 }
             }
         }
@@ -159,7 +172,7 @@ pub fn parse_field(field: &str) -> FieldDef {
         !is_uninit
     };
 
-    FieldDef {
+    Ok(FieldDef {
         name,
         display_name,
         short,
@@ -172,7 +185,7 @@ pub fn parse_field(field: &str) -> FieldDef {
         has_default,
         is_multiple,
         raw,
-    }
+    })
 }
 
 /// Convert a value to the expected type. Returns the converted value or an error message.

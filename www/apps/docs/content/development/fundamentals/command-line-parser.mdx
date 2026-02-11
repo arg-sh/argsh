@@ -14,14 +14,14 @@ The implementation of the command line parser in argsh is inspired by the [cobra
 - [x] Fully POSIX-compliant flags (including short & long versions)
 - [x] Nested subcommands
 - [x] Global, local and cascading flags
-- [ ] Intelligent suggestions (app srver... did you mean app server?)
+- [x] Intelligent suggestions (app srver... did you mean app server?)
 - [x] Automatic help generation for commands and flags
 - [x] Grouping help for subcommands
 - [x] Automatic help flag recognition of -h, --help, etc.
 - [ ] Automatically generated shell autocomplete for your application (bash, zsh, fish, powershell)
 - [ ] Automatically generated man pages for your application
 - [x] Command aliases so you can change things without breaking them
-- [ ] The flexibility to define your own help, usage, etc.
+- [x] The flexibility to define your own help, usage, etc.
 
 ## Usage
 
@@ -359,6 +359,56 @@ local -a args=(
   '-'     "Group 2"
   'flag4' "Description of flag4"
 )
+```
+
+## Custom help
+
+When `:usage` or `:args` encounters `--help`, it doesn't exit immediately. The actual help is displayed when you call `"${usage[@]}"`. This gives you two ways to customize help output.
+
+### Override `:usage::help`
+
+The simplest approach — define your own `:usage::help` function. Since bash functions take priority over builtins, it will be called automatically:
+
+```bash
+:usage::help() {
+  local title="${1}"; shift
+  echo "=== ${title} ==="
+  echo "Available commands:"
+  while (( $# >= 2 )); do
+    printf "  %-20s %s\n" "${1}" "${2}"
+    shift 2
+  done
+  exit 0
+}
+
+main() {
+  local -a usage=(
+    'command1' "Description of command1"
+    'command2' "Description of command2"
+  )
+  :usage "My tool" "${@}"
+  "${usage[@]}"
+}
+```
+
+### Intercept the usage array
+
+For more control, inspect the `usage` array between `:usage` and `"${usage[@]}"` to conditionally replace the handler:
+
+```bash
+main() {
+  local -a usage=(
+    'command1' "Description of command1"
+    'command2' "Description of command2"
+  )
+  :usage "My tool" "${@}"
+
+  if [[ "${usage[0]}" == ":usage::help" ]]; then
+    usage=(my_custom_help "${usage[@]:1}")
+  fi
+
+  "${usage[@]}"
+}
 ```
 
 ## Custom types
