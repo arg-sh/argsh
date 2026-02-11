@@ -52,6 +52,9 @@ jobs:
         run: argsh lint
       - name: Test
         run: argsh test
+      - name: Build builtin release
+        working-directory: builtin
+        run: cargo build --release
       - name: Build minifier release
         working-directory: minifier
         run: cargo build --release
@@ -340,22 +343,11 @@ jobs:
     runs-on: ubuntu-latest
     needs: [minify]
     steps:
-      - name: Clone repository
-        uses: actions/checkout@v4
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-      - name: Cache cargo
-        uses: actions/cache@v4
+      - name: Download builtin library
+        uses: actions/download-artifact@v4
         with:
-          path: |
-            builtin/target
-            ~/.cargo/registry
-          key: ${{ runner.os }}-cargo-${{ hashFiles('builtin/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
-      - name: Build builtin
-        working-directory: builtin
-        run: cargo build --release
+          name: argsh-builtin-so
+          path: builtin/target/release
       - name: Download argsh artifact
         uses: actions/download-artifact@v4
         with:
@@ -483,7 +475,7 @@ jobs:
         run: |
           cp argsh.min.sh argsh
           cp argsh-so.min.sh argsh-so
-          cp builtin/target/release/libargsh.so argsh.so
+          cp libargsh.so argsh.so
           sha256sum argsh argsh-so argsh.so > sha256sum.txt
           gh release create "${TAG_NAME}" --draft --title "argsh ${TAG_NAME}" --generate-notes
           gh release upload "${TAG_NAME}" --clobber argsh argsh-so argsh.so sha256sum.txt
