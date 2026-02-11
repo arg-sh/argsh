@@ -79,6 +79,8 @@ jobs:
     steps:
       - name: Clone repository
         uses: actions/checkout@v4
+      - name: Direnv
+        uses: HatsuneMiku3939/direnv-action@v1
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -93,98 +95,8 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-cov-
             ${{ runner.os }}-cargo-
-      - name: Build with coverage
-        working-directory: builtin
-        run: |
-          RUSTFLAGS="-C instrument-coverage" \
-          CARGO_PROFILE_RELEASE_STRIP="none" \
-          CARGO_PROFILE_RELEASE_LTO="false" \
-          CARGO_PROFILE_RELEASE_PANIC="unwind" \
-            cargo build --release
-      - name: Install bats
-        run: |
-          git clone --depth 1 https://github.com/bats-core/bats-core.git /tmp/bats
-          sudo /tmp/bats/install.sh /usr/local
-          rm -rf /tmp/bats
-      - name: Run tests with coverage
-        env:
-          ARGSH_SOURCE: argsh
-          ARGSH_BUILTIN_TEST: "1"
-          LLVM_PROFILE_FILE: builtin/target/coverage/coverage-%p.profraw
-        run: |
-          mkdir -p builtin/target/coverage
-          bats libraries/args.bats
-          bats libraries/import.bats
-      - name: Generate coverage report
-        run: |
-          LLVM_TOOLS="$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | awk '/host:/{print $2}')/bin"
-
-          "${LLVM_TOOLS}/llvm-profdata" merge -sparse \
-            builtin/target/coverage/coverage-*.profraw \
-            -o builtin/target/coverage/coverage.profdata
-
-          "${LLVM_TOOLS}/llvm-cov" report \
-            --instr-profile=builtin/target/coverage/coverage.profdata \
-            builtin/target/release/libargsh.so \
-            --ignore-filename-regex='\.cargo/registry' \
-            --ignore-filename-regex='\.rustup/toolchains' \
-            --ignore-filename-regex='^/rustc/'
-
-          COV_TMP="$(mktemp)"
-          "${LLVM_TOOLS}/llvm-cov" export \
-            --instr-profile=builtin/target/coverage/coverage.profdata \
-            builtin/target/release/libargsh.so \
-            --ignore-filename-regex='\.cargo/registry' \
-            --ignore-filename-regex='\.rustup/toolchains' \
-            --ignore-filename-regex='^/rustc/' \
-            --summary-only > "$COV_TMP"
-
-          # Count // coverage:off lines per source file → JSON map
-          EXCL="{"
-          FIRST=true
-          while IFS= read -r f; do
-            n=$(grep -c '// coverage:off' "$f" 2>/dev/null) || n=0
-            $FIRST || EXCL+=","
-            EXCL+="$(printf '"%s":%d' "$f" "$n")"
-            FIRST=false
-          done < <(jq -r '.data[0].files[].filename' "$COV_TMP")
-          EXCL+="}"
-
-          # Generate coverage.json with jq (excludes annotated lines from totals)
-          jq --argjson excl "$EXCL" --arg date "$(date -u '+%Y-%m-%d %H:%M:%S')" --arg prefix "${GITHUB_WORKSPACE}/" '
-            def fmt2: (. * 100 | round) / 100 | tostring |
-              if test("[.]") then (if test("[.][0-9]$") then . + "0" else . end)
-              else . + ".00" end;
-            .data[0] as $d |
-            ($excl | to_entries | map(.value) | add // 0) as $total_excl |
-            {
-              files: ([
-                $d.files[] |
-                .summary.lines as $s |
-                ($excl[.filename] // 0) as $ex |
-                ($s.count - $ex) as $adj |
-                {
-                  file: (.filename | ltrimstr($prefix)),
-                  percent_covered: (if $adj > 0 then ($s.covered / $adj * 100 | fmt2) else "100.00" end),
-                  covered_lines: ($s.covered | tostring),
-                  total_lines: ($adj | tostring),
-                  excluded_lines: ($ex | tostring)
-                }
-              ] | sort_by(.percent_covered | tonumber) | reverse),
-              percent_covered: (
-                ($d.totals.lines.count - $total_excl) as $adj |
-                if $adj > 0 then ($d.totals.lines.covered / $adj * 100 | fmt2) else "100.00" end
-              ),
-              covered_lines: $d.totals.lines.covered,
-              total_lines: ($d.totals.lines.count - $total_excl),
-              excluded_lines: $total_excl,
-              percent_low: 25,
-              percent_high: 75,
-              command: "bats+llvm-cov",
-              date: $date
-            }
-          ' "$COV_TMP" > builtin/coverage.json
-          rm -f "$COV_TMP"
+      - name: Coverage
+        run: argsh coverage builtin
       - name: Is insync
         run: |
           git diff --exit-code \
@@ -197,6 +109,8 @@ jobs:
     steps:
       - name: Clone repository
         uses: actions/checkout@v4
+      - name: Direnv
+        uses: HatsuneMiku3939/direnv-action@v1
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -211,95 +125,8 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-mincov-
             ${{ runner.os }}-cargo-
-      - name: Build tests with coverage
-        working-directory: minifier
-        run: |
-          RUSTFLAGS="-C instrument-coverage" \
-            cargo test --no-run --message-format=json 2>/dev/null |
-            jq -r 'select(.executable) | .executable' > /tmp/test-bins.txt
-      - name: Run tests with coverage
-        working-directory: minifier
-        env:
-          LLVM_PROFILE_FILE: target/coverage/coverage-%p-%m.profraw
-        run: |
-          mkdir -p target/coverage
-          RUSTFLAGS="-C instrument-coverage" cargo test
-      - name: Generate coverage report
-        run: |
-          LLVM_TOOLS="$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | awk '/host:/{print $2}')/bin"
-
-          "${LLVM_TOOLS}/llvm-profdata" merge -sparse \
-            minifier/target/coverage/coverage-*.profraw \
-            -o minifier/target/coverage/coverage.profdata
-
-          OBJ_ARGS=""
-          while IFS= read -r bin; do
-            OBJ_ARGS+=" --object ${bin}"
-          done < /tmp/test-bins.txt
-
-          # shellcheck disable=SC2086
-          "${LLVM_TOOLS}/llvm-cov" report \
-            --instr-profile=minifier/target/coverage/coverage.profdata \
-            ${OBJ_ARGS} \
-            --ignore-filename-regex='\.cargo/registry' \
-            --ignore-filename-regex='\.rustup/toolchains' \
-            --ignore-filename-regex='^/rustc/'
-
-          COV_TMP="$(mktemp)"
-          # shellcheck disable=SC2086
-          "${LLVM_TOOLS}/llvm-cov" export \
-            --instr-profile=minifier/target/coverage/coverage.profdata \
-            ${OBJ_ARGS} \
-            --ignore-filename-regex='\.cargo/registry' \
-            --ignore-filename-regex='\.rustup/toolchains' \
-            --ignore-filename-regex='^/rustc/' \
-            --summary-only > "$COV_TMP"
-
-          # Count // coverage:off lines per source file → JSON map
-          EXCL="{"
-          FIRST=true
-          while IFS= read -r f; do
-            n=$(grep -c '// coverage:off' "$f" 2>/dev/null) || n=0
-            $FIRST || EXCL+=","
-            EXCL+="$(printf '"%s":%d' "$f" "$n")"
-            FIRST=false
-          done < <(jq -r '.data[0].files[].filename' "$COV_TMP")
-          EXCL+="}"
-
-          jq --argjson excl "$EXCL" --arg date "$(date -u '+%Y-%m-%d %H:%M:%S')" --arg prefix "${GITHUB_WORKSPACE}/" '
-            def fmt2: (. * 100 | round) / 100 | tostring |
-              if test("[.]") then (if test("[.][0-9]$") then . + "0" else . end)
-              else . + ".00" end;
-            .data[0] as $d |
-            ($excl | to_entries | map(.value) | add // 0) as $total_excl |
-            {
-              files: ([
-                $d.files[] |
-                .summary.lines as $s |
-                ($excl[.filename] // 0) as $ex |
-                ($s.count - $ex) as $adj |
-                {
-                  file: (.filename | ltrimstr($prefix)),
-                  percent_covered: (if $adj > 0 then ($s.covered / $adj * 100 | fmt2) else "100.00" end),
-                  covered_lines: ($s.covered | tostring),
-                  total_lines: ($adj | tostring),
-                  excluded_lines: ($ex | tostring)
-                }
-              ] | sort_by(.percent_covered | tonumber) | reverse),
-              percent_covered: (
-                ($d.totals.lines.count - $total_excl) as $adj |
-                if $adj > 0 then ($d.totals.lines.covered / $adj * 100 | fmt2) else "100.00" end
-              ),
-              covered_lines: $d.totals.lines.covered,
-              total_lines: ($d.totals.lines.count - $total_excl),
-              excluded_lines: $total_excl,
-              percent_low: 25,
-              percent_high: 75,
-              command: "cargo-test+llvm-cov",
-              date: $date
-            }
-          ' "$COV_TMP" > minifier/coverage.json
-          rm -f "$COV_TMP"
+      - name: Coverage
+        run: argsh coverage minifier
       - name: Is insync
         run: |
           git diff --exit-code \

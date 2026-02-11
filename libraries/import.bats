@@ -42,9 +42,9 @@ fi
   ) >"${stdout}" 2>"${stderr}" 3>&- || status="${?}"
 
   if [[ "${BATS_LOAD}" == "argsh.min.sh" ]]; then
-    # argsh.min.sh: stripped bundle can't find separate library files.
-    assert "${status}" -ne 0
-    is_empty stdout
+    # argsh.min.sh: functions already inlined, import warns but succeeds
+    assert "${status}" -eq 0
+    not_empty stdout
     contains "Library not found" stderr
   else
     # Both pure-bash and builtin resolve relative imports via __ARGSH_LIB_DIR
