@@ -1169,18 +1169,18 @@ source "${PATH_FIXTURES}/fmt.sh"
   is_empty stdout
 }
 
-@test "usage: unknown flag before command causes missing command error" {
+@test "usage: unknown flag before command defers to help" {
   # In :usage, unknown flags break out of the flag loop. If no command was found
-  # before the break, it's a "Missing command" error.
+  # before the break, it defers to help via "${usage[@]}".
   [[ "${ARGSH_BUILTIN_TEST:-}" == "1" ]] || return 0
   (
     :test::usage --unknownflag cmd2
   ) >"${stdout}" 2>"${stderr}" || status=$?
 
-  # Unknown flag breaks before cmd2 is seen -> Missing command
-  assert "${status}" -eq 2
-  is_empty stdout
-  contains "Missing command" stderr
+  # Unknown flag breaks before cmd2 is seen -> deferred help
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains "Usage:" stdout
 }
 
 @test "args::field_name asref=0 preserves dashes" {
@@ -1335,8 +1335,8 @@ source "${PATH_FIXTURES}/fmt.sh"
   contains "mybool=1" stdout
 }
 
-@test "attrs: unknown modifier character in field spec" {
-  # Covers field.rs lines 137-138 (unknown char in modifier parsing)
+@test "attrs: unknown modifier character in field spec errors" {
+  # Covers field.rs modifier validation (unknown modifier returns Err)
   [[ "${ARGSH_BUILTIN_TEST:-}" == "1" ]] || return 0
   (
     local myfield
@@ -1344,12 +1344,11 @@ source "${PATH_FIXTURES}/fmt.sh"
       'myfield|m:X' "A field with unknown modifier"
     )
     :args "Unknown mod test" --myfield val
-    echo "myfield=${myfield}"
   ) >"${stdout}" 2>"${stderr}" || status=$?
 
-  assert "${status}" -eq 0
-  is_empty stderr
-  contains "myfield=val" stdout
+  assert "${status}" -eq 2
+  is_empty stdout
+  contains "unknown modifier" stderr
 }
 
 @test "attrs: odd-length args array causes error" {

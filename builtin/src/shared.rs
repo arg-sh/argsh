@@ -192,10 +192,7 @@ pub fn levenshtein(a: &str, b: &str) -> usize {
     }
 
     // Single-row DP (O(min(m,n)) space)
-    let mut prev = vec![0usize; b_len + 1];
-    for j in 0..=b_len {
-        prev[j] = j;
-    }
+    let mut prev: Vec<usize> = (0..=b_len).collect();
 
     let a_bytes = a.as_bytes();
     let b_bytes = b.as_bytes();

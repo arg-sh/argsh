@@ -172,8 +172,8 @@ pub fn usage_main(args: &[String]) -> i32 {
             Ok(false) => {
                 break; // Unknown flag, leave for subcommand
             }
-            Err(_) => {
-                break;
+            Err(code) => {
+                return code;
             }
         }
     }

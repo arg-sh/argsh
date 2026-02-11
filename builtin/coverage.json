@@ -3,9 +3,9 @@
     {
       "file": "builtin/src/usage.rs",
       "percent_covered": "100.00",
-      "covered_lines": "194",
-      "total_lines": "194",
-      "excluded_lines": "10"
+      "covered_lines": "223",
+      "total_lines": "223",
+      "excluded_lines": "13"
     },
     {
       "file": "builtin/src/to.rs",
@@ -13,13 +13,6 @@
       "covered_lines": "87",
       "total_lines": "87",
       "excluded_lines": "5"
-    },
-    {
-      "file": "builtin/src/shared.rs",
-      "percent_covered": "100.00",
-      "covered_lines": "111",
-      "total_lines": "111",
-      "excluded_lines": "4"
     },
     {
       "file": "builtin/src/lib.rs",
@@ -45,15 +38,15 @@
     {
       "file": "builtin/src/field.rs",
       "percent_covered": "100.00",
-      "covered_lines": "204",
-      "total_lines": "204",
+      "covered_lines": "210",
+      "total_lines": "210",
       "excluded_lines": "8"
     },
     {
       "file": "builtin/src/args.rs",
       "percent_covered": "100.00",
-      "covered_lines": "123",
-      "total_lines": "123",
+      "covered_lines": "127",
+      "total_lines": "127",
       "excluded_lines": "11"
     },
     {
@@ -62,14 +55,21 @@
       "covered_lines": "215",
       "total_lines": "216",
       "excluded_lines": "36"
+    },
+    {
+      "file": "builtin/src/shared.rs",
+      "percent_covered": "98.80",
+      "covered_lines": "165",
+      "total_lines": "167",
+      "excluded_lines": "4"
     }
   ],
   "percent_covered": "100.00",
-  "covered_lines": 1133,
-  "total_lines": 1133,
-  "excluded_lines": 90,
+  "covered_lines": 1228,
+  "total_lines": 1228,
+  "excluded_lines": 93,
   "percent_low": 25,
   "percent_high": 75,
   "command": "bats+llvm-cov",
-  "date": "2026-02-11 19:50:02"
+  "date": "2026-02-11 21:25:34"
 }
