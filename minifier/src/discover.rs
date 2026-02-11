@@ -19,7 +19,7 @@ static RE_LOCAL: LazyLock<Regex> = LazyLock::new(|| {
 static RE_LOCAL_HAS_DECLARE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?:^|[ \t]+)declare\s").unwrap());
 static RE_READ: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"read\s+(?:-\w\s+)*([a-z][a-z0-9_]*)").unwrap());
+    LazyLock::new(|| Regex::new(r"read\s+(?:-\w+\s+)*([a-z][a-z0-9_]*)").unwrap());
 static RE_FOR: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[ \t]*for\s+([a-z][a-z0-9_]*)\s").unwrap());
 static RE_ARRAY: LazyLock<Regex> =
@@ -256,6 +256,13 @@ mod tests {
     fn discovers_read_with_flags() {
         let vars = discover_variables("read -s -r passwd\n", &[]);
         assert!(vars.contains(&"passwd".to_string()));
+    }
+
+    #[test]
+    fn discovers_read_combined_flags() {
+        // `read -ra` = `-r` (raw) + `-a` (array) combined into one flag group
+        let vars = discover_variables("IFS='|' read -ra aliases <<< \"$str\"\n", &[]);
+        assert!(vars.contains(&"aliases".to_string()), "read -ra should discover array variable");
     }
 
     #[test]

@@ -66,8 +66,9 @@ impl VarPatterns {
         );
 
         // 5. read statement
+        // \b prevents matching var name inside combined flags (e.g. `read -ra var`)
         add(
-            &format!(r#"^(.*read\s.*){v}([ ;}}'"\n])"#),
+            &format!(r#"^(.*read\s.*)\b{v}([ ;}}'"\n])"#),
             format!("${{1}}{r}${{2}}"),
             true,
         );
@@ -326,6 +327,47 @@ mod tests {
         let ob = make_obfuscator(&["line"], "a");
         let result = ob.obfuscate_line("read -r line ");
         assert!(result.contains("a0"), "Got: {result}");
+    }
+
+    #[test]
+    fn read_ra_does_not_corrupt_flag() {
+        // `read -ra varname` — the `a` in `-ra` is a flag, not a variable.
+        // Variable `a` being renamed must NOT match inside the flag string.
+        let ob = make_obfuscator(&["varname", "a"], "a");
+        // varname=a0, a=a1
+        assert_eq!(
+            ob.obfuscate_line("read -ra varname "),
+            "read -ra a0 ",
+            "flag -ra must stay intact"
+        );
+    }
+
+    #[test]
+    fn read_ra_combined_flag_preserved() {
+        // Multiple variables with `read -ra` — flag must never be corrupted
+        let ob = make_obfuscator(&["aliases", "a"], "a");
+        // aliases=a0, a=a1
+        assert_eq!(
+            ob.obfuscate_line("IFS='|' read -ra aliases "),
+            "IFS='|' read -ra a0 ",
+            "-ra flag must not become -ra1"
+        );
+    }
+
+    #[test]
+    fn read_ra_with_herestring() {
+        // Real-world pattern from args.sh: `IFS='|' read -ra var <<< "$str"`
+        let ob = make_obfuscator(&["flags", "a"], "a");
+        // flags=a0, a=a1
+        let result = ob.obfuscate_line(r#"IFS='|' read -ra flags <<< "${field}""#);
+        assert!(
+            result.contains("read -ra a0"),
+            "flag -ra must stay intact, got: {result}"
+        );
+        assert!(
+            !result.contains("read -ra1"),
+            "flag must not be corrupted, got: {result}"
+        );
     }
 
     #[test]

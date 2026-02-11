@@ -173,4 +173,16 @@ mod tests {
         let result = minify(input, &cfg(true, "a", "foo")).unwrap();
         assert!(result.contains("foo"), "foo should be kept, got: {result}");
     }
+
+    #[test]
+    fn pipeline_read_ra_flag_not_corrupted() {
+        // End-to-end: `read -ra` combined flag must not be corrupted by obfuscation
+        let input = "local a flags\nIFS='|' read -ra flags <<< \"$a\"\n";
+        let result = minify(input, &cfg(true, "a", "usage,args")).unwrap();
+        // The `-ra` flag must remain intact — no `read -ra<digit>` corruption
+        assert!(
+            !regex::Regex::new(r"read -ra\d").unwrap().is_match(&result),
+            "read -ra flag corrupted: {result}"
+        );
+    }
 }
