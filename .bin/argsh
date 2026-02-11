@@ -233,6 +233,7 @@ coverage::builtin() {
   docker run --rm ${tty} $(docker::user) -w /workspace \
     -e "ARGSH_BUILTIN_TEST=1" \
     -e "ARGSH_SOURCE=argsh" \
+    -e "ARGSH_BUILTIN_PATH=/workspace/builtin/target/release/libargsh.so" \
     -e "LLVM_PROFILE_FILE=/workspace/builtin/target/coverage/coverage-%p.profraw" \
     ghcr.io/arg-sh/argsh:latest \
     test libraries/args.bats libraries/import.bats
