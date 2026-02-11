@@ -63,7 +63,10 @@ pub fn parse_flag_at(
 
     let field_str = &args_arr[field_idx];
     matched.push(field_str.clone());
-    let def = field::parse_field(field_str);
+    let def = match field::parse_field(field_str) {
+        Ok(d) => d,
+        Err(msg) => return Err(error_usage(field_str, &msg)),
+    };
 
     // Boolean flag (no value)
     if def.is_boolean {
@@ -154,7 +157,10 @@ pub fn check_required_flags(args_arr: &[String], matched: &[String]) -> i32 {
         if field_str == "-" {
             continue;
         }
-        let def = field::parse_field(field_str);
+        let def = match field::parse_field(field_str) {
+            Ok(d) => d,
+            Err(_) => continue, // Skip malformed fields during required check
+        };
         if def.is_positional {
             continue;
         }
@@ -172,6 +178,78 @@ pub fn check_required_flags(args_arr: &[String], matched: &[String]) -> i32 {
         }
     }
     0
+}
+
+/// Compute Levenshtein edit distance between two strings.
+pub fn levenshtein(a: &str, b: &str) -> usize {
+    let a_len = a.len();
+    let b_len = b.len();
+    if a_len == 0 {
+        return b_len;
+    }
+    if b_len == 0 {
+        return a_len;
+    }
+
+    // Single-row DP (O(min(m,n)) space)
+    let mut prev = vec![0usize; b_len + 1];
+    for j in 0..=b_len {
+        prev[j] = j;
+    }
+
+    let a_bytes = a.as_bytes();
+    let b_bytes = b.as_bytes();
+
+    for i in 1..=a_len {
+        let mut corner = prev[0];
+        prev[0] = i;
+        for j in 1..=b_len {
+            let cost = if a_bytes[i - 1] == b_bytes[j - 1] {
+                0
+            } else {
+                1
+            };
+            let new_val = (corner + cost)
+                .min(prev[j] + 1)
+                .min(prev[j - 1] + 1);
+            corner = prev[j];
+            prev[j] = new_val;
+        }
+    }
+    prev[b_len]
+}
+
+/// Find the closest matching command from usage array pairs.
+/// Returns Some(name) if a suggestion is close enough (distance ≤ 2 and ≤ 40% of longer string).
+pub fn suggest_command(input: &str, usage_arr: &[String]) -> Option<String> {
+    let mut best: Option<(String, usize)> = None;
+
+    for i in (0..usage_arr.len()).step_by(2) {
+        let entry = &usage_arr[i];
+        // Strip hidden prefix
+        let entry_cmd_part = entry.split(':').next().unwrap_or(entry);
+        let entry_clean = entry_cmd_part.strip_prefix('#').unwrap_or(entry_cmd_part);
+
+        for alias in entry_clean.split('|') {
+            let dist = levenshtein(input, alias);
+            if let Some((_, best_dist)) = &best {
+                if dist < *best_dist {
+                    best = Some((alias.to_string(), dist));
+                }
+            } else {
+                best = Some((alias.to_string(), dist));
+            }
+        }
+    }
+
+    if let Some((name, dist)) = best {
+        let max_len = input.len().max(name.len());
+        // Threshold: distance ≤ 2 AND ≤ 40% of the longer string length
+        if dist > 0 && dist <= 2 && (dist * 100) <= (max_len * 40) {
+            return Some(name);
+        }
+    }
+    None
 }
 
 // NOTE: Unit tests cannot run via `cargo test` because this crate is a cdylib

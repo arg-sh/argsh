@@ -99,7 +99,10 @@ pub fn args_main(args: &[String]) -> i32 {
 
             let field_str = &args_arr[pos_idx];
             let name = field::field_name(field_str, true);
-            let def = field::parse_field(field_str);
+            let def = match field::parse_field(field_str) {
+                Ok(d) => d,
+                Err(msg) => return shared::error_usage(field_str, &msg),
+            };
 
             // Type convert
             let value = match field::convert_type(&def.type_name, &cli[idx], &name) {
@@ -212,7 +215,10 @@ fn args_help_text(title: &str, args_arr: &[String]) {
                 continue; // coverage:off
             } // coverage:off
             let desc = args_arr.get(i + 1).map(|s| s.as_str()).unwrap_or("");
-            let def = field::parse_field(entry);
+            let def = match field::parse_field(entry) {
+                Ok(d) => d,
+                Err(_) => continue, // Skip malformed fields in help display
+            };
             let field_fmt = field::format_field(&def);
 
             let _ = writeln!(out, "   {:width$}{}", field_fmt, desc, width = fw);
