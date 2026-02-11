@@ -175,6 +175,39 @@ mod tests {
     }
 
     #[test]
+    fn pipeline_underscore_prefix_not_corrupted() {
+        // End-to-end: `_path` must not be partially renamed when `path` is a discovered variable
+        let input = "local path=\"${1}\"\nlocal _force=0 _path=\"\"\n_path=\"${1}\"\necho \"${_path}\"\necho \"${path}\"\n";
+        let result = minify(input, &cfg(true, "a", "usage,args")).unwrap();
+        // `_path` must appear unchanged; `path` must be renamed to `a0`
+        assert!(
+            !result.contains("_a0"),
+            "_path was partially renamed: {result}"
+        );
+        assert!(
+            result.contains("${_path}"),
+            "${{_path}} must stay intact: {result}"
+        );
+    }
+
+    #[test]
+    fn pipeline_long_underscore_prefix_not_corrupted() {
+        // End-to-end: `_argsh_builtin_path` must not be renamed when `path` is discovered.
+        // This mirrors the real argsh code where `path` (from binary.sh) is discovered,
+        // and `_argsh_builtin_path` (from main.sh) must stay intact.
+        let input = "local path=\"${1}\"\nlocal _argsh_builtin_path=\"\"\n_argsh_builtin_path=\"${1}\"\necho \"${_argsh_builtin_path}\"\necho \"${path}\"\n";
+        let result = minify(input, &cfg(true, "a", "usage,args")).unwrap();
+        assert!(
+            result.contains("_argsh_builtin_path"),
+            "_argsh_builtin_path was corrupted: {result}"
+        );
+        assert!(
+            !result.contains("_argsh_builtin_a0"),
+            "_argsh_builtin_path partially renamed: {result}"
+        );
+    }
+
+    #[test]
     fn pipeline_read_ra_flag_not_corrupted() {
         // End-to-end: `read -ra` combined flag must not be corrupted by obfuscation
         let input = "local a flags\nIFS='|' read -ra flags <<< \"$a\"\n";

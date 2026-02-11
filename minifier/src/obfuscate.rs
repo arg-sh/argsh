@@ -38,8 +38,9 @@ impl VarPatterns {
         };
 
         // 1. Assignment: `var=`
+        // \b prevents matching var name as suffix of longer name (e.g. `_path=` when var is `path`)
         add(
-            &format!(r"([ \t]*){v}="),
+            &format!(r"([ \t]*)\b{v}="),
             format!("${{1}}{r}="),
             true,
         );
@@ -52,8 +53,9 @@ impl VarPatterns {
         );
 
         // 3. Assignment in non-quote context
+        // \b prevents matching var name as suffix of longer name (e.g. `_path=` when var is `path`)
         add(
-            &format!(r#"^([^']*(?:(?:'[^']*')*(?:"[^"]*")*)*"[^"]*|[^'"]*){}([+\-]?=)"#, v),
+            &format!(r#"^([^']*(?:(?:'[^']*')*(?:"[^"]*")*)*"[^"]*|[^'"]*)\b{}([+\-]?=)"#, v),
             format!("${{1}}{r}${{2}}"),
             true,
         );
@@ -520,6 +522,151 @@ mod tests {
                 "'{var}' should be renamed in: {dollar_line}"
             );
         }
+    }
+
+    #[test]
+    fn underscore_prefix_not_corrupted_assignment() {
+        // `_path=` must NOT be renamed when `path` is a discovered variable.
+        // Rule 1 (assignment) and rule 3 (non-quote assignment) must respect word boundaries.
+        let ob = make_obfuscator(&["path"], "a");
+        // `path` renamed to `a0`, but `_path` is a different variable — must stay intact.
+        assert_eq!(ob.obfuscate_line("_path=val"), "_path=val", "_path must not be renamed");
+        assert_eq!(ob.obfuscate_line("path=val"), "a0=val", "path must be renamed");
+    }
+
+    #[test]
+    fn underscore_prefix_not_corrupted_local() {
+        // `local _path=""` — the `path` inside `_path` must not be renamed.
+        let ob = make_obfuscator(&["path"], "a");
+        assert_eq!(
+            ob.obfuscate_line("local _force=0 _path=\"\""),
+            "local _force=0 _path=\"\"",
+            "_path in local declaration must not be renamed"
+        );
+        assert_eq!(
+            ob.obfuscate_line("local path=\"\""),
+            "local a0=\"\"",
+            "path in local declaration must be renamed"
+        );
+    }
+
+    #[test]
+    fn underscore_prefix_not_corrupted_brace_ref() {
+        // `${_path}` must not be renamed when `path` is discovered.
+        let ob = make_obfuscator(&["path"], "a");
+        assert_eq!(ob.obfuscate_line("echo ${_path}"), "echo ${_path}");
+        assert_eq!(ob.obfuscate_line("echo ${path}"), "echo ${a0}");
+    }
+
+    #[test]
+    fn underscore_prefix_consistency() {
+        // End-to-end: _path must stay _path everywhere — no partial rename.
+        let ob = make_obfuscator(&["path"], "a");
+        let lines = vec![
+            "local path=\"${1}\"".to_string(),
+            "local _force=0 _path=\"\"".to_string(),
+            "_path=\"${1}\"".to_string(),
+            "echo \"${_path}\"".to_string(),
+            "echo \"${path}\"".to_string(),
+        ];
+        let result = ob.obfuscate_lines(&lines);
+        assert_eq!(result[0], "local a0=\"${1}\"");
+        assert_eq!(result[1], "local _force=0 _path=\"\"", "_path must not be renamed");
+        assert_eq!(result[2], "_path=\"${1}\"", "_path assignment must not be renamed");
+        assert_eq!(result[3], "echo \"${_path}\"", "${{_path}} must not be renamed");
+        assert_eq!(result[4], "echo \"${a0}\"");
+    }
+
+    #[test]
+    fn underscore_prefix_not_corrupted_dollar_var() {
+        // Rule 15/16: `$_path` must NOT be renamed when `path` is discovered.
+        let ob = make_obfuscator(&["path"], "a");
+        assert_eq!(ob.obfuscate_line("echo $_path "), "echo $_path ");
+        assert_eq!(ob.obfuscate_line("echo $path "), "echo $a0 ");
+        // Inside double quotes
+        assert_eq!(ob.obfuscate_line(r#"echo "$_path ""#), r#"echo "$_path ""#);
+        assert_eq!(ob.obfuscate_line(r#"echo "$path ""#), r#"echo "$a0 ""#);
+    }
+
+    #[test]
+    fn underscore_prefix_not_corrupted_param_expansion() {
+        // Rule 13: `${var:-_path}` — `_path` as default value must stay.
+        let ob = make_obfuscator(&["path"], "a");
+        assert_eq!(
+            ob.obfuscate_line("echo ${var:-_path}"),
+            "echo ${var:-_path}",
+        );
+        assert_eq!(
+            ob.obfuscate_line("echo ${var:-path}"),
+            "echo ${var:-a0}",
+        );
+    }
+
+    #[test]
+    fn underscore_prefix_not_corrupted_array() {
+        // Rule 8/9: `_path[0]=` and `${_path[0]}` must stay intact.
+        let ob = make_obfuscator(&["path"], "a");
+        assert_eq!(ob.obfuscate_line("_path[0]=val"), "_path[0]=val");
+        assert_eq!(ob.obfuscate_line("path[0]=val"), "a0[0]=val");
+        assert_eq!(ob.obfuscate_line("echo ${_path[0]}"), "echo ${_path[0]}");
+        assert_eq!(ob.obfuscate_line("echo ${path[0]}"), "echo ${a0[0]}");
+    }
+
+    #[test]
+    fn underscore_prefix_not_corrupted_read() {
+        // Rule 5: `read _path` must NOT rename.
+        let ob = make_obfuscator(&["path"], "a");
+        assert_eq!(ob.obfuscate_line("read -r _path "), "read -r _path ");
+        assert_eq!(ob.obfuscate_line("read -r path "), "read -r a0 ");
+    }
+
+    #[test]
+    fn underscore_prefix_not_corrupted_for_loop() {
+        // Rule 7: `for _path in` must NOT rename.
+        let ob = make_obfuscator(&["path"], "a");
+        assert_eq!(ob.obfuscate_line("for _path in a b"), "for _path in a b");
+        assert_eq!(ob.obfuscate_line("for path in a b"), "for a0 in a b");
+    }
+
+    #[test]
+    fn underscore_prefix_not_corrupted_arithmetic() {
+        // Rules 11/12/20: arithmetic contexts with underscore prefix.
+        let ob = make_obfuscator(&["count"], "a");
+        assert_eq!(ob.obfuscate_line("(( ++_count ))"), "(( ++_count ))");
+        assert_eq!(ob.obfuscate_line("(( ++count ))"), "(( ++a0 ))");
+        assert_eq!(ob.obfuscate_line("(( _count++ ))"), "(( _count++ ))");
+        assert_eq!(ob.obfuscate_line("(( count++ ))"), "(( a0++ ))");
+    }
+
+    #[test]
+    fn long_underscore_prefix_not_corrupted() {
+        // Real-world pattern: `_argsh_builtin_path` contains `path` at the end.
+        let ob = make_obfuscator(&["path"], "a");
+        let lines = vec![
+            "local _argsh_builtin_path=\"\"".to_string(),
+            "_argsh_builtin_path=\"${1}\"".to_string(),
+            "echo \"${_argsh_builtin_path}\"".to_string(),
+            "echo \"$_argsh_builtin_path \"".to_string(),
+        ];
+        let result = ob.obfuscate_lines(&lines);
+        for (i, line) in result.iter().enumerate() {
+            assert!(
+                !line.contains("a0"),
+                "line {i} corrupted — path found inside _argsh_builtin_path: {line}"
+            );
+            assert!(
+                line.contains("_argsh_builtin_path"),
+                "line {i} — _argsh_builtin_path must stay intact: {line}"
+            );
+        }
+    }
+
+    #[test]
+    fn underscore_prefix_hash_length() {
+        // Rule 19: `${#_path[@]}` must not rename path inside _path.
+        let ob = make_obfuscator(&["path"], "a");
+        assert_eq!(ob.obfuscate_line("[[ ${#_path[@]} -gt 0 ]]"), "[[ ${#_path[@]} -gt 0 ]]");
+        assert_eq!(ob.obfuscate_line("[[ ${#path[@]} -gt 0 ]]"), "[[ ${#a0[@]} -gt 0 ]]");
     }
 
     #[test]
