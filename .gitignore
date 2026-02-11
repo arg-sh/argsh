@@ -15,6 +15,7 @@ packages/**/.yarn/*
 integration-tests/**/.yarn/*
 www/**/.yarn/*
 
+*.profraw
 .DS_Store
 
 .eslintcache

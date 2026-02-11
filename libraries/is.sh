@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # @file is
 # @brief Functions for checking types
+# @tags core, builtin
 # @description
 #   This file contains functions for checking types
 
@@ -24,7 +25,9 @@ is::tty() {
 #   is::array arr # succeeds (returns 0)
 #   is::array str # fails (returns 1)
 is::array() {
-  declare -p "${1}" &>/dev/null && [[ $(declare -p "${1}") == "declare -a"* ]]
+  local _decl
+  _decl="$(declare -p "${1}" 2>/dev/null)" || return 1
+  [[ "${_decl}" == "declare -a"* ]]
 }
 
 # @description Check if a variable is uninitialized
@@ -39,7 +42,7 @@ is::array() {
 is::uninitialized() {
   local var="${1}"
   if is::array "${var}"; then
-    [[ $(declare -p "${var}") == "declare -a ${var}" ]]
+    [[ $(declare -p "${var}") =~ ^declare\ -a\ ${var}(=\(\))?$ ]]
   else
     [[ ! ${!var+x} ]]
   fi

@@ -14,12 +14,78 @@ COMMANDNAME=("$(s="${ARGSH_SOURCE:-"${0}"}"; echo "${s##*/}")")
 # @internal
 # shellcheck disable=SC1090
 import() { declare -A _i; (( ${_i[${1}]:-} )) || { _i[${1}]=1; . "${BASH_SOURCE[0]%/*}/${1}.sh"; } }
+
+# ── Try loading native builtins (.so) for 100-1000x performance ────
+# Falls back to pure bash if unavailable.
+# Shared builtins list — also used by argsh::builtin::try() in main.sh.
+# obfus ignore variable
+declare -ga __ARGSH_BUILTINS=(:usage :args
+  is::array is::uninitialized is::set is::tty
+  args::field_name to::int to::float to::boolean to::file to::string
+  import import::clear)
+# Library directory for builtin import resolution (plain names like `import string`)
+# obfus ignore variable
+declare -g __ARGSH_LIB_DIR="${BASH_SOURCE[0]%/*}"
+
+# shellcheck disable=SC2120
+__argsh_try_builtin() {
+  local _so _d
+  local -r _n="argsh.so"
+  # Search order: ARGSH_BUILTIN_PATH, PATH_LIB, PATH_BIN, LD_LIBRARY_PATH, BASH_LOADABLES_PATH
+  for _so in \
+    "${ARGSH_BUILTIN_PATH:-}" \
+    "${PATH_LIB:+${PATH_LIB}/${_n}}" \
+    "${PATH_BIN:+${PATH_BIN}/${_n}}" \
+  ; do
+    [[ -n "${_so}" && -f "${_so}" ]] || continue
+    # shellcheck disable=SC2229
+    enable -f "${_so}" "${__ARGSH_BUILTINS[@]}" 2>/dev/null || continue
+    return 0
+  done
+  # Search colon-separated path variables: LD_LIBRARY_PATH, BASH_LOADABLES_PATH
+  for _d in "${LD_LIBRARY_PATH:-}" "${BASH_LOADABLES_PATH:-}"; do
+    [[ -n "${_d}" ]] || continue
+    local IFS=:
+    for _so in ${_d}; do
+      [[ -n "${_so}" && -f "${_so}/${_n}" ]] || continue
+      # shellcheck disable=SC2229
+      enable -f "${_so}/${_n}" "${__ARGSH_BUILTINS[@]}" 2>/dev/null || continue
+      return 0
+    done
+  done
+  return 1
+}
+# obfus ignore variable
+declare -gi ARGSH_BUILTIN="${ARGSH_BUILTIN:-0}"
+if __argsh_try_builtin; then
+  ARGSH_BUILTIN=1
+  unset -f import 2>/dev/null || true
+  # Rail guard: stale .so without import symbol → /usr/bin/import (hangs).
+  # Restore the bash function if the builtin didn't actually load.
+  # shellcheck disable=SC1090
+  # shellcheck disable=SC2218
+  [[ "$(type -t import 2>/dev/null)" == "builtin" ]] || import() { declare -A _i; (( ${_i[${1}]:-} )) || { _i[${1}]=1; . "${BASH_SOURCE[0]%/*}/${1}.sh"; } }
+fi
+
+# Import remaining libraries (lines starting with `import` are stripped by obfus)
 import string
 import fmt
 import is
 import to
 import error
 import array
+
+# When native builtins are loaded, all functions below are provided by the .so.
+# Remove function versions of is::/to:: so builtin versions take precedence.
+# shellcheck disable=SC2317
+if (( ARGSH_BUILTIN )); then
+  unset -f is::array is::uninitialized is::set is::tty args::field_name \
+          to::int to::float to::boolean to::file to::string 2>/dev/null || true
+fi
+
+# When builtins are loaded, :usage/:args are provided by the .so.
+# Skip the pure-bash function definitions below.
+if ! (( ARGSH_BUILTIN )); then
 
 # @description Print usage information and dispatch to subcommands.
 #
@@ -56,8 +122,6 @@ import array
   declare -p args &>/dev/null || local -a args=()
   [[ $(( ${#usage[@]} % 2 )) -eq 0 ]] ||
     :args::_error "usage must be an associative array"
-  [[ $(( ${#usage[@]} % 2 )) -eq 0 ]] ||
-    :args::_error "usage must be an associative array"
 
   if [[ -z ${1:-} || ${1} == "-h" || ${1} == "--help" ]]; then
     :usage::text "${title}"
@@ -88,7 +152,8 @@ import array
 
   local func
   for (( i=0; i < ${#usage[@]}; i+=2 )); do
-    for alias in $(echo "${usage[i]/:*}" | tr '|' "\n"); do
+    IFS='|' read -ra _aliases <<< "${usage[i]/:*}"
+    for alias in "${_aliases[@]}"; do
       alias="${alias#\#}"
       [[ "${cmd}" == "${alias}" ]] || continue
       field="${usage[i]#\#}"
@@ -431,9 +496,9 @@ import array
   [[ -n ${set_value:-} ]] || {
     cli_value="${cli[0]/${flag}}"
     if [[ ${cli_value} == "" ]]; then
-      (( ${#cli[@]} )) ||
+      (( ${#cli[@]} > 1 )) ||
         :args::error "missing value for flag: ${attrs[0]}"
-      
+
       set_value="${cli[1]}"
       cli=("${cli[@]:1}")
     else
@@ -572,7 +637,7 @@ args::field_name() {
   # shellcheck disable=SC2178
   local -n ref="${attrs[0]}"
   local -a flags
-  mapfile -t flags < <(echo "${field/[:]*}" | tr '|' '\n')
+  IFS='|' read -ra flags <<< "${field/[:]*}"
   [[ ${#flags[@]} -eq 1 ]] || {
     attrs[1]="${flags[1]}"
   }
@@ -672,3 +737,5 @@ args::field_name() {
   
   echo "${format}"
 }
+
+fi # ! ARGSH_BUILTIN

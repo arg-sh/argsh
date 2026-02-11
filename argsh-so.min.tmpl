@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2178 disable=SC2120 disable=SC1090 disable=SC2046 disable=SC2155
+set -euo pipefail; ARGSH_COMMIT_SHA="${commit_sha}"; ARGSH_VERSION="${version}"
+# ── Inline native builtins ──────────────────────────────────────────
+# obfus ignore variable
+__ARGSH_SO_B64='${so_b64}'
+# obfus ignore function
+__argsh_load_inline_so() {
+  local _t; _t="$(mktemp "${TMPDIR:-/tmp}/argsh.XXXXXX.so")"
+  # shellcheck disable=SC2064
+  trap "rm -f '${_t}'" EXIT
+  base64 -d <<< "${__ARGSH_SO_B64}" > "${_t}" || return 1
+  # shellcheck disable=SC2229
+  enable -f "${_t}" :usage :args \
+    is::array is::uninitialized is::set is::tty \
+    args::field_name to::int to::float to::boolean to::file to::string \
+    import import::clear \
+    2>/dev/null || return 1
+  rm -f "${_t}"
+  return 0
+}
+# obfus ignore variable
+declare -gi ARGSH_BUILTIN=0
+if __argsh_load_inline_so; then
+  ARGSH_BUILTIN=1
+fi
+unset -f __argsh_load_inline_so
+unset __ARGSH_SO_B64
+# ────────────────────────────────────────────────────────────────────
+${data}[[ "${BASH_SOURCE[0]}" != "${0}" ]] || argsh::shebang "${@}"

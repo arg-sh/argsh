@@ -1,0 +1,19 @@
+[package]
+name = "argsh-builtin"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "argsh"
+crate-type = ["cdylib"]
+
+[dependencies]
+bash-builtins = "0.4"
+libc = "0.2"
+
+[profile.release]
+lto = true
+opt-level = "s"
+strip = true
+panic = "unwind"
+codegen-units = 1

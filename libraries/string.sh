@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # @file string
 # @brief String manipulation functions
+# @tags core
 # @description
 #   This file contains functions for manipulating strings
 set -euo pipefail
@@ -31,7 +32,7 @@ string::random() {
   local chars="${2:-"a-zA-Z0-9"}"
   local str
 
-  until [[ "${str:-}" =~ ^[:alpha:] ]]; do
+  until [[ "${str:-}" =~ ^[[:alpha:]] ]]; do
     str=$(tr -dc "${chars}" < /dev/urandom | fold -w "${length}" | head -n 1 || :)
   done
   echo "${str}"
@@ -70,7 +71,7 @@ string::trim-left() {
   [[ ${string} != '-' ]] || string="$(cat)" 
 
   while [[ -n "${string}" ]]; do
-    [[ ${chars} == *${string:0:1}* ]] || break
+    [[ ${chars} == *"${string:0:1}"* ]] || break
     string="${string:1}"
   done
   echo "${string}"
@@ -88,7 +89,7 @@ string::trim-right() {
   [[ ${string} != '-' ]] || string="$(cat)"
 
   while [[ -n "${string}" ]]; do
-    [[ ${chars} == *${string: -1}* ]] || break
+    [[ ${chars} == *"${string: -1}"* ]] || break
     string="${string:0: -1}"
   done
   echo "${string}"

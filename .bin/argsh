@@ -3,8 +3,8 @@
 set -euo pipefail
 
 : "${PATH_BASE:="$(git rev-parse --show-toplevel)"}"
+: "${ARGSH_SOURCE:="argsh"}"; export ARGSH_SOURCE
 : "${MIN_COVERAGE:="70"}"
-:
 
 source "${PATH_BASE}/libraries/args.sh"
 source "${PATH_BASE}/libraries/args.utils.sh"
@@ -35,8 +35,11 @@ lint::docs() {
 }
 
 lint::vale() {
+  local alert_level
+  local -a args=(
+    'alert_level' "Alert level for vale (error, warning, suggestion)"
+  )
   :args "Run vale for the documentation" "${@}"
-  local alert_level="${vale?"need to specify alert level"}"
   binary::exists docker || exit 1
   docker run --rm $(docker::user) jdkato/vale:latest sh -c "
     cd /workspace/www/vale
@@ -57,11 +60,6 @@ minify::argsh() {
   argsh::main minify libraries -t argsh.min.tmpl -o argsh.min.sh
 }
 
-coverage::argsh() {
-  :args "Generate coverage report for argsh" "${@}"
-  argsh::main coverage libraries -o coverage --min "${MIN_COVERAGE}"
-}
-
 test::argsh() {
   local test_minify
   local -a args=(
@@ -73,6 +71,35 @@ test::argsh() {
     export BATS_LOAD
   }
   argsh::main test libraries .docker/test
+}
+
+_test() {
+  local target="all"
+  local test_minify
+  local -a args=(
+    'test-minify|m:+' "Run tests for argsh.min.sh"
+    'target' "Test target (all, argsh, builtin, minifier)"
+  )
+  :args "Run tests" "${@}"
+  ! (( test_minify )) || {
+    BATS_LOAD="argsh.min.sh"
+    export BATS_LOAD
+  }
+  case "${target}" in
+    all)
+      ARGSH_BUILTIN_TEST=1 argsh::main test libraries .docker/test
+      if command -v cargo &>/dev/null; then
+        test::minifier
+      fi
+      ;;
+    argsh)    argsh::main test libraries .docker/test ;;
+    builtin)  ARGSH_BUILTIN_TEST=1 argsh::main test libraries .docker/test ;;
+    minifier) test::minifier ;;
+    *)
+      echo "Unknown target: ${target}. Use: all, argsh, builtin, minifier" >&2
+      return 1
+      ;;
+  esac
 }
 
 lint::argsh() {
@@ -88,6 +115,42 @@ lint::argsh() {
   fi
 }
 
+_lint() {
+  local target="all"
+  local test_minify
+  local -a args=(
+    'test-minify|m:+' "Lint argsh.min.sh"
+    'target' "Lint target (all, argsh, builtin, minifier)"
+  )
+  :args "Run linters" "${@}"
+  case "${target}" in
+    all)
+      if (( test_minify )); then
+        argsh::main lint argsh.min.sh
+      else
+        argsh::main lint libraries
+      fi
+      if command -v cargo &>/dev/null; then
+        lint::builtin
+        lint::minifier
+      fi
+      ;;
+    argsh)
+      if (( test_minify )); then
+        argsh::main lint argsh.min.sh
+      else
+        argsh::main lint libraries
+      fi
+      ;;
+    builtin)  lint::builtin ;;
+    minifier) lint::minifier ;;
+    *)
+      echo "Unknown target: ${target}. Use: all, argsh, builtin, minifier" >&2
+      return 1
+      ;;
+  esac
+}
+
 argsh::docker() {
   local tag="latest"
   local -a args=(
@@ -98,17 +161,355 @@ argsh::docker() {
 }
 
 ###
+### builtin (Rust native builtins)
+###
+_require_rust() {
+  binary::exists cargo || {
+    echo "Rust toolchain required. Install: https://rustup.rs"
+    return 1
+  } >&2
+}
+
+lint::builtin() {
+  :args "Run clippy on native builtins" "${@}"
+  _require_rust
+  cargo clippy --release \
+    --manifest-path "${PATH_BASE}/builtin/Cargo.toml" \
+    -- -D warnings
+}
+
+test::builtin() {
+  :args "Build and test native builtins" "${@}"
+  _require_rust
+  cargo build --release \
+    --manifest-path "${PATH_BASE}/builtin/Cargo.toml"
+  rm -f "${PATH_BIN}/argsh.so" && cp "${PATH_BASE}/builtin/target/release/libargsh.so" "${PATH_BIN}/argsh.so"
+  binary::exists bats || {
+    echo "bats required. Install: https://github.com/bats-core/bats-core"
+    return 1
+  } >&2
+  ARGSH_BUILTIN_TEST=1 ARGSH_SOURCE=argsh \
+    bats "${PATH_BASE}/libraries/args.bats" \
+         "${PATH_BASE}/libraries/import.bats"
+}
+
+coverage::builtin() {
+  :args "Generate coverage for native builtins" "${@}"
+  _require_rust
+
+  local host_triple llvm_tools cov_dir so_path
+  host_triple="$(rustc -vV | awk '/host:/{print $2}')"
+  llvm_tools="$(rustc --print sysroot)/lib/rustlib/${host_triple}/bin"
+  cov_dir="${PATH_BASE}/builtin/target/coverage"
+  so_path="${PATH_BASE}/builtin/target/release/libargsh.so"
+
+  # Ensure llvm-tools
+  [[ -x "${llvm_tools}/llvm-profdata" ]] || {
+    echo "Installing llvm-tools..."
+    rustup component add llvm-tools
+  }
+
+  # Build with coverage instrumentation (override release profile settings that break coverage)
+  echo "Building with coverage instrumentation..."
+  RUSTFLAGS="-C instrument-coverage" \
+  CARGO_PROFILE_RELEASE_STRIP="none" \
+  CARGO_PROFILE_RELEASE_LTO="false" \
+  CARGO_PROFILE_RELEASE_PANIC="unwind" \
+    cargo build --release \
+      --manifest-path "${PATH_BASE}/builtin/Cargo.toml"
+
+  rm -f "${PATH_BIN}/argsh.so" && cp "${so_path}" "${PATH_BIN}/argsh.so"
+  rm -rf "${cov_dir}"
+  mkdir -p "${cov_dir}"
+
+  echo "Running tests..."
+  argsh::docker &>/dev/null || {
+    echo "Docker build failed. Run 'argsh docker' to see errors." >&2
+    return 1
+  }
+  local tty=""
+  [[ ! -t 1 ]] || tty="-it"
+  # shellcheck disable=SC2046
+  docker run --rm ${tty} $(docker::user) -w /workspace \
+    -e "ARGSH_BUILTIN_TEST=1" \
+    -e "ARGSH_SOURCE=argsh" \
+    -e "ARGSH_BUILTIN_PATH=/workspace/builtin/target/release/libargsh.so" \
+    -e "LLVM_PROFILE_FILE=/workspace/builtin/target/coverage/coverage-%p.profraw" \
+    ghcr.io/arg-sh/argsh:latest \
+    test libraries/args.bats libraries/import.bats
+
+  # Merge profile data and clean up raw profiles
+  "${llvm_tools}/llvm-profdata" merge -sparse \
+    "${cov_dir}"/coverage-*.profraw \
+    -o "${cov_dir}/coverage.profdata"
+  rm -f "${cov_dir}"/coverage-*.profraw
+
+  echo ""
+  "${llvm_tools}/llvm-cov" report \
+    --instr-profile="${cov_dir}/coverage.profdata" \
+    "${so_path}" \
+    --ignore-filename-regex='\.cargo/registry' \
+    --ignore-filename-regex='\.rustup/toolchains' \
+    --ignore-filename-regex='^/rustc/'
+
+  # Export JSON and generate builtin/coverage.json
+  local _cov_tmp; _cov_tmp="$(mktemp)"
+  "${llvm_tools}/llvm-cov" export \
+    --instr-profile="${cov_dir}/coverage.profdata" \
+    "${so_path}" \
+    --ignore-filename-regex='\.cargo/registry' \
+    --ignore-filename-regex='\.rustup/toolchains' \
+    --ignore-filename-regex='^/rustc/' \
+    --summary-only > "${_cov_tmp}"
+
+  # Count // coverage:off lines per source file → JSON map
+  local _excl="{" _first=true _f _n
+  while IFS= read -r _f; do
+    _n=$(grep -c '// coverage:off' "${_f}" 2>/dev/null) || _n=0
+    ${_first} || _excl+=","
+    _excl+="$(printf '"%s":%d' "${_f}" "${_n}")"
+    _first=false
+  done < <(jq -r '.data[0].files[].filename' "${_cov_tmp}")
+  _excl+="}"
+
+  # Generate coverage.json with jq (excludes annotated lines from totals)
+  jq --argjson excl "${_excl}" --arg date "$(date '+%Y-%m-%d %H:%M:%S')" --arg prefix "${PATH_BASE}/" '
+    def fmt2: (. * 100 | round) / 100 | tostring |
+      if test("[.]") then (if test("[.][0-9]$") then . + "0" else . end)
+      else . + ".00" end;
+    .data[0] as $d |
+    ($excl | to_entries | map(.value) | add // 0) as $total_excl |
+    {
+      files: ([
+        $d.files[] |
+        .summary.lines as $s |
+        ($excl[.filename] // 0) as $ex |
+        ($s.count - $ex) as $adj |
+        ([$s.covered, $adj] | min) as $cov |
+        {
+          file: (.filename | ltrimstr($prefix)),
+          percent_covered: (if $adj > 0 then ($cov / $adj * 100 | fmt2) else "100.00" end),
+          covered_lines: ($cov | tostring),
+          total_lines: ($adj | tostring),
+          excluded_lines: ($ex | tostring)
+        }
+      ] | sort_by(.percent_covered | tonumber) | reverse),
+      percent_covered: (
+        ($d.totals.lines.count - $total_excl) as $adj |
+        ([$d.totals.lines.covered, $adj] | min) as $cov |
+        if $adj > 0 then ($cov / $adj * 100 | fmt2) else "100.00" end
+      ),
+      covered_lines: ([$d.totals.lines.covered, ($d.totals.lines.count - $total_excl)] | min),
+      total_lines: ($d.totals.lines.count - $total_excl),
+      excluded_lines: $total_excl,
+      percent_low: 25,
+      percent_high: 75,
+      command: "bats+llvm-cov",
+      date: $date
+    }
+  ' "${_cov_tmp}" > "${PATH_BASE}/builtin/coverage.json"
+  rm -f "${_cov_tmp}"
+
+  local pct
+  pct="$(jq -r '.percent_covered' "${PATH_BASE}/builtin/coverage.json")"
+  echo ""
+  echo "Coverage: ${pct}% of required ${MIN_COVERAGE}%"
+
+  # Clean up coverage artifacts (profraw files from instrumented .so in main process)
+  rm -rf "${cov_dir}"
+  find "${PATH_BASE}" -maxdepth 2 -name '*.profraw' -delete 2>/dev/null || true
+
+  # Rebuild without instrumentation for normal use
+  echo "Rebuilding without instrumentation..."
+  cargo build --release \
+    --manifest-path "${PATH_BASE}/builtin/Cargo.toml"
+  rm -f "${PATH_BIN}/argsh.so" && cp "${so_path}" "${PATH_BIN}/argsh.so"
+}
+
+###
+### minifier (Rust bash minifier)
+###
+lint::minifier() {
+  :args "Run clippy on minifier" "${@}"
+  _require_rust
+  cargo clippy \
+    --manifest-path "${PATH_BASE}/minifier/Cargo.toml" \
+    -- -D warnings
+}
+
+test::minifier() {
+  :args "Build and test minifier" "${@}"
+  _require_rust
+  cargo test \
+    --manifest-path "${PATH_BASE}/minifier/Cargo.toml"
+}
+
+# shellcheck disable=SC2016
+coverage::minifier() {
+  :args "Generate coverage for minifier" "${@}"
+  _require_rust
+
+  local host_triple llvm_tools cov_dir
+  host_triple="$(rustc -vV | awk '/host:/{print $2}')"
+  llvm_tools="$(rustc --print sysroot)/lib/rustlib/${host_triple}/bin"
+  cov_dir="${PATH_BASE}/minifier/target/coverage"
+
+  # Ensure llvm-tools
+  [[ -x "${llvm_tools}/llvm-profdata" ]] || {
+    echo "Installing llvm-tools..."
+    rustup component add llvm-tools
+  }
+
+  # Build test binaries with coverage and capture their paths
+  echo "Building tests with coverage instrumentation..."
+  local -a bins=()
+  while IFS= read -r line; do
+    bins+=("${line}")
+  done < <(
+    RUSTFLAGS="-C instrument-coverage" \
+    cargo test --no-run --message-format=json \
+      --manifest-path "${PATH_BASE}/minifier/Cargo.toml" 2>/dev/null |
+    jq -r 'select(.executable) | .executable'
+  )
+
+  rm -rf "${cov_dir}"
+  mkdir -p "${cov_dir}"
+
+  # Run tests with coverage
+  echo "Running tests..."
+  RUSTFLAGS="-C instrument-coverage" \
+  LLVM_PROFILE_FILE="${cov_dir}/coverage-%p.profraw" \
+    cargo test --manifest-path "${PATH_BASE}/minifier/Cargo.toml"
+
+  # Merge profile data
+  "${llvm_tools}/llvm-profdata" merge -sparse \
+    "${cov_dir}"/coverage-*.profraw \
+    -o "${cov_dir}/coverage.profdata"
+  rm -f "${cov_dir}"/coverage-*.profraw
+
+  # Build --object args for llvm-cov (multiple test binaries)
+  local -a obj_args=()
+  local bin
+  for bin in "${bins[@]}"; do
+    obj_args+=("--object" "${bin}")
+  done
+
+  echo ""
+  "${llvm_tools}/llvm-cov" report \
+    --instr-profile="${cov_dir}/coverage.profdata" \
+    "${obj_args[@]}" \
+    --ignore-filename-regex='\.cargo/registry' \
+    --ignore-filename-regex='\.rustup/toolchains' \
+    --ignore-filename-regex='^/rustc/'
+
+  # Export JSON and generate minifier/coverage.json
+  local _cov_tmp; _cov_tmp="$(mktemp)"
+  "${llvm_tools}/llvm-cov" export \
+    --instr-profile="${cov_dir}/coverage.profdata" \
+    "${obj_args[@]}" \
+    --ignore-filename-regex='\.cargo/registry' \
+    --ignore-filename-regex='\.rustup/toolchains' \
+    --ignore-filename-regex='^/rustc/' \
+    --summary-only > "${_cov_tmp}"
+
+  # Count // coverage:off lines per source file → JSON map
+  local _excl="{" _first=true _f _n
+  while IFS= read -r _f; do
+    _n=$(grep -c '// coverage:off' "${_f}" 2>/dev/null) || _n=0
+    ${_first} || _excl+=","
+    _excl+="$(printf '"%s":%d' "${_f}" "${_n}")"
+    _first=false
+  done < <(jq -r '.data[0].files[].filename' "${_cov_tmp}")
+  _excl+="}"
+
+  # Generate coverage.json with jq (excludes annotated lines from totals)
+  jq --argjson excl "${_excl}" --arg date "$(date '+%Y-%m-%d %H:%M:%S')" --arg prefix "${PATH_BASE}/" '
+    def fmt2: (. * 100 | round) / 100 | tostring |
+      if test("[.]") then (if test("[.][0-9]$") then . + "0" else . end)
+      else . + ".00" end;
+    .data[0] as $d |
+    ($excl | to_entries | map(.value) | add // 0) as $total_excl |
+    {
+      files: ([
+        $d.files[] |
+        .summary.lines as $s |
+        ($excl[.filename] // 0) as $ex |
+        ($s.count - $ex) as $adj |
+        ([$s.covered, $adj] | min) as $cov |
+        {
+          file: (.filename | ltrimstr($prefix)),
+          percent_covered: (if $adj > 0 then ($cov / $adj * 100 | fmt2) else "100.00" end),
+          covered_lines: ($cov | tostring),
+          total_lines: ($adj | tostring),
+          excluded_lines: ($ex | tostring)
+        }
+      ] | sort_by(.percent_covered | tonumber) | reverse),
+      percent_covered: (
+        ($d.totals.lines.count - $total_excl) as $adj |
+        ([$d.totals.lines.covered, $adj] | min) as $cov |
+        if $adj > 0 then ($cov / $adj * 100 | fmt2) else "100.00" end
+      ),
+      covered_lines: ([$d.totals.lines.covered, ($d.totals.lines.count - $total_excl)] | min),
+      total_lines: ($d.totals.lines.count - $total_excl),
+      excluded_lines: $total_excl,
+      percent_low: 25,
+      percent_high: 75,
+      command: "cargo-test+llvm-cov",
+      date: $date
+    }
+  ' "${_cov_tmp}" > "${PATH_BASE}/minifier/coverage.json"
+  rm -f "${_cov_tmp}"
+
+  local pct
+  pct="$(jq -r '.percent_covered' "${PATH_BASE}/minifier/coverage.json")"
+  echo ""
+  echo "Coverage: ${pct}% of required ${MIN_COVERAGE}%"
+
+  # Clean up coverage artifacts
+  rm -rf "${cov_dir}"
+  find "${PATH_BASE}/minifier" -maxdepth 2 -name '*.profraw' -delete 2>/dev/null || true
+}
+
+###
+### coverage dispatcher
+###
+_coverage() {
+  local target="all"
+  local -a args=(
+    'target' "Coverage target (all, builtin, minifier)"
+  )
+  :args "Generate code coverage reports" "${@}"
+
+  case "${target}" in
+    all)
+      coverage::builtin
+      coverage::minifier
+      ;;
+    builtin)  coverage::builtin ;;
+    minifier) coverage::minifier ;;
+    *)
+      echo "Unknown target: ${target}. Use: all, builtin, minifier" >&2
+      return 1
+      ;;
+  esac
+}
+
+###
 ### main
 ###
 argsh::main() {
   local tty=""
-  argsh::docker &>/dev/null
+  argsh::docker &>/dev/null || {
+    echo "Docker build failed. Run 'argsh docker' to see errors." >&2
+    return 1
+  }
 
   [[ ! -t 1 ]] || tty="-it"
   # shellcheck disable=SC2046
   docker run --rm ${tty} $(docker::user) -w /workspace \
     -e "BATS_LOAD" \
     -e "ARGSH_SOURCE" \
+    -e "ARGSH_BUILTIN_TEST" \
     -e "GIT_COMMIT_SHA=$(git rev-parse HEAD 2>/dev/null || :)" \
     -e "GIT_VERSION=$(git describe --tags --dirty 2>/dev/null || :)" \
     ghcr.io/arg-sh/argsh:latest "${@}" 
@@ -129,16 +530,16 @@ _main() {
 
   local -a usage
   usage=(
-    -                           "Commands argsh"
-    'coverage:-coverage::argsh' "Generate coverage"
-    'lint:-lint::argsh'         "Run linters"
-    'test:-test::argsh'         "Run tests"
+    -                           "Commands"
+    'lint:-_lint'               "Run linters [all|argsh|builtin|minifier]"
+    'test:-_test'               "Run tests [all|argsh|builtin|minifier]"
+    'coverage:-_coverage'       "Generate coverage [all|builtin|minifier]"
     'minify:-minify::argsh'     "Minify argsh libraries"
-    -                           "Commands documentation"
-    'generate:-generate::docs'  "Generate argsh library documentation"
-    'docs-lint:-lint::docs'     "Run linters"
-    'docs-test:-test::docs'     "Run tests"
-    'vale:-lint::vale'          "Run vale tests"
+    -                           "Documentation"
+    'generate:-generate::docs'  "Generate library documentation"
+    'docs-lint:-lint::docs'     "Run documentation linters"
+    'docs-test:-test::docs'     "Run documentation tests"
+    'vale:-lint::vale'          "Run vale"
     -                           "Additional commands"
     'docker:-argsh::docker'     "Build docker image"
   )

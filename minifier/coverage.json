@@ -1,0 +1,75 @@
+{
+  "files": [
+    {
+      "file": "minifier/tests/integration.rs",
+      "percent_covered": "100.00",
+      "covered_lines": "318",
+      "total_lines": "318",
+      "excluded_lines": "0"
+    },
+    {
+      "file": "minifier/src/strip.rs",
+      "percent_covered": "100.00",
+      "covered_lines": "148",
+      "total_lines": "148",
+      "excluded_lines": "0"
+    },
+    {
+      "file": "minifier/src/quote.rs",
+      "percent_covered": "100.00",
+      "covered_lines": "69",
+      "total_lines": "69",
+      "excluded_lines": "0"
+    },
+    {
+      "file": "minifier/src/obfuscate.rs",
+      "percent_covered": "100.00",
+      "covered_lines": "310",
+      "total_lines": "310",
+      "excluded_lines": "0"
+    },
+    {
+      "file": "minifier/src/main.rs",
+      "percent_covered": "100.00",
+      "covered_lines": "81",
+      "total_lines": "81",
+      "excluded_lines": "1"
+    },
+    {
+      "file": "minifier/src/join.rs",
+      "percent_covered": "100.00",
+      "covered_lines": "307",
+      "total_lines": "307",
+      "excluded_lines": "0"
+    },
+    {
+      "file": "minifier/src/flatten.rs",
+      "percent_covered": "100.00",
+      "covered_lines": "155",
+      "total_lines": "155",
+      "excluded_lines": "1"
+    },
+    {
+      "file": "minifier/src/discover.rs",
+      "percent_covered": "100.00",
+      "covered_lines": "234",
+      "total_lines": "234",
+      "excluded_lines": "0"
+    },
+    {
+      "file": "minifier/src/bundle.rs",
+      "percent_covered": "100.00",
+      "covered_lines": "377",
+      "total_lines": "377",
+      "excluded_lines": "3"
+    }
+  ],
+  "percent_covered": "100.00",
+  "covered_lines": 1999,
+  "total_lines": 1999,
+  "excluded_lines": 5,
+  "percent_low": 25,
+  "percent_high": 75,
+  "command": "cargo-test+llvm-cov",
+  "date": "2026-02-11 19:50:12"
+}

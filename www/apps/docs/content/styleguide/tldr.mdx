@@ -127,8 +127,10 @@ local check=1
 
 :::note
 
-If you use assert like checks, make sure to use `||` instead of `&&` to make the script not fail if the check fails.
-`[[ <expr to be true or ...> ]] || { echo "do something else"; }`
+Prefer `||` over `&&` for assert-like checks — it reads more naturally as "condition or handle failure":
+`[[ <expr> ]] || { echo "failed"; exit 1; }`
+
+With `set -e`, the left-hand side of `&&`/`||` is exempt from errexit — only the command after the **final** `&&` or `||` can trigger an exit. In the pattern above, the `[[ ]]` failure is safe, and the `{ ...; exit 1; }` handles the error explicitly.
 
 :::
 

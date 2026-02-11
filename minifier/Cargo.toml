@@ -1,0 +1,23 @@
+[package]
+name = "minifier"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "minifier"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+regex = "1"
+anyhow = "1"
+
+[dev-dependencies]
+assert_cmd = "2"
+tempfile = "3"
+predicates = "3"
+
+[profile.release]
+lto = true
+opt-level = "s"
+strip = true
+codegen-units = 1

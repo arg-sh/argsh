@@ -61,7 +61,7 @@ argsh test
 
 ### Coverage
 
-We strive to have 100% test coverage for all libraries. When you add a new library or make changes to an existing library, make sure to add tests that cover all functionality.
+The goal is 100% test coverage for all libraries. When adding a new library or making changes to an existing one, make sure to add tests that cover all functionality.
 
 You can run the coverage report by running the following command:
 

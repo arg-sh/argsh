@@ -6,6 +6,9 @@
 set -euo pipefail
 
 declare -gA import_cache=()
+# Library directory for builtin import resolution (plain names like `import string`)
+# obfus ignore variable
+: "${__ARGSH_LIB_DIR:=${BASH_SOURCE[0]%/*}}"
 
 # @description
 #   Import a library, relative to the current script

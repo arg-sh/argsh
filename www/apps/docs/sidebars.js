@@ -204,6 +204,15 @@ module.exports = {
       className: "homepage-sidebar-item",
     },
     {
+      type: "doc",
+      id: "development/fundamentals/builtins",
+      label: "Native Builtins",
+      customProps: {
+        sidebar_icon: "bolt-solid",
+      },
+      className: "homepage-sidebar-item",
+    },
+    {
       type: "html",
       value: "Additional Resources",
       customProps: {
@@ -473,6 +482,11 @@ module.exports = {
           type: "doc",
           id: "development/fundamentals/minify",
           label: "Minify",
+        },
+        {
+          type: "doc",
+          id: "development/fundamentals/builtins",
+          label: "Native Builtins",
         },
       ],
     },

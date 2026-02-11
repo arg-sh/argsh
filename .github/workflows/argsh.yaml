@@ -11,11 +11,19 @@ on:
       - '.docker/**'
       - 'libraries/**'
       - 'test/**'
+      - 'builtin/**'
+      - 'minifier/**'
       - '.envrc'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
 
 defaults:
   run:
     shell: bash -euo pipefail {0}
+
+permissions: read-all
 
 jobs:
   test:
@@ -25,12 +33,45 @@ jobs:
         uses: actions/checkout@v4
       - name: Direnv
         uses: HatsuneMiku3939/direnv-action@v1
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            builtin/target
+            minifier/target
+            ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-all-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-all-
+            ${{ runner.os }}-cargo-
       - name: Lint
-        run: |
-          argsh lint
+        run: argsh lint
       - name: Test
-        run: |
-          argsh test
+        run: argsh test
+      - name: Build builtin release
+        working-directory: builtin
+        run: cargo build --release
+      - name: Build minifier release
+        working-directory: minifier
+        run: cargo build --release
+      - name: Upload builtin library
+        uses: actions/upload-artifact@v4
+        with:
+          name: argsh-builtin-so
+          if-no-files-found: error
+          retention-days: 7
+          path: builtin/target/release/libargsh.so
+      - name: Upload minifier binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: minifier-bin
+          if-no-files-found: error
+          retention-days: 7
+          path: minifier/target/release/minifier
 
   coverage:
     runs-on: ubuntu-latest
@@ -40,20 +81,71 @@ jobs:
         uses: actions/checkout@v4
       - name: Direnv
         uses: HatsuneMiku3939/direnv-action@v1
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            builtin/target
+            ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-cov-${{ hashFiles('builtin/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-cov-
+            ${{ runner.os }}-cargo-
       - name: Coverage
-        run: |
-          argsh coverage
+        run: argsh coverage builtin
       - name: Is insync
         run: |
           git diff --exit-code \
-            --ignore-matching-lines '^  "date":'
+            --ignore-matching-lines '^  "date":' \
+            -- builtin/coverage.json
 
-  minify:
+  minifier-coverage:
     runs-on: ubuntu-latest
-    needs: [coverage]
+    needs: [test]
     steps:
       - name: Clone repository
         uses: actions/checkout@v4
+      - name: Direnv
+        uses: HatsuneMiku3939/direnv-action@v1
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            minifier/target
+            ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-mincov-${{ hashFiles('minifier/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-mincov-
+            ${{ runner.os }}-cargo-
+      - name: Coverage
+        run: argsh coverage minifier
+      - name: Is insync
+        run: |
+          git diff --exit-code \
+            --ignore-matching-lines '^  "date":' \
+            -- minifier/coverage.json
+
+  minify:
+    runs-on: ubuntu-latest
+    needs: [test]
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v4
+      - name: Download minifier binary
+        uses: actions/download-artifact@v4
+        with:
+          name: minifier-bin
+          path: .bin
+      - name: Make minifier executable
+        run: chmod +x .bin/minifier
       - name: Direnv
         uses: HatsuneMiku3939/direnv-action@v1
       - name: Build
@@ -74,10 +166,76 @@ jobs:
           path: |
             argsh.min.sh
 
+  minify-so:
+    runs-on: ubuntu-latest
+    needs: [minify]
+    steps:
+      - name: Download builtin library
+        uses: actions/download-artifact@v4
+        with:
+          name: argsh-builtin-so
+          path: builtin/target/release
+      - name: Download argsh artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: argsh
+          path: .
+      - name: Compose argsh-so.min.sh
+        run: |
+          so_b64=$(base64 -w0 builtin/target/release/libargsh.so)
+          {
+            head -3 argsh.min.sh
+            echo '# ── Inline native builtins ──────────────────────────────────────────'
+            echo '# obfus ignore variable'
+            echo "__ARGSH_SO_B64='${so_b64}'"
+            cat << 'SOEOF'
+          # obfus ignore function
+          __argsh_load_inline_so() {
+            local _t; _t="$(mktemp "${TMPDIR:-/tmp}/argsh.XXXXXX.so")"
+            # shellcheck disable=SC2064
+            trap "rm -f '${_t}'" EXIT
+            base64 -d <<< "${__ARGSH_SO_B64}" > "${_t}" || return 1
+            # shellcheck disable=SC2229
+            enable -f "${_t}" :usage :args \
+              is::array is::uninitialized is::set is::tty \
+              args::field_name to::int to::float to::boolean to::file to::string \
+              2>/dev/null || return 1
+            rm -f "${_t}"
+            return 0
+          }
+          # obfus ignore variable
+          declare -gi ARGSH_BUILTIN=0
+          if __argsh_load_inline_so; then
+            ARGSH_BUILTIN=1
+          fi
+          unset -f __argsh_load_inline_so
+          unset __ARGSH_SO_B64
+          SOEOF
+            echo '# ────────────────────────────────────────────────────────────────────'
+            tail -n +4 argsh.min.sh
+          } > argsh-so.min.sh
+          chmod +x argsh-so.min.sh
+      - name: Smoke test
+        run: |
+          bash -c '
+            source argsh-so.min.sh
+            (( ARGSH_BUILTIN )) || { echo "Builtins not loaded"; exit 1; }
+            echo "argsh-so: builtins loaded successfully (ARGSH_BUILTIN=${ARGSH_BUILTIN})"
+          '
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: argsh-so
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            argsh-so.min.sh
+
   docker:
     runs-on: ubuntu-latest
     needs: [minify]
     permissions:
+      contents: read
       packages: write
     steps:
       - name: Clone repository
@@ -123,7 +281,7 @@ jobs:
       contents: write
       pull-requests: write
     environment: release
-    needs: [minify, docker]
+    needs: [minify, minify-so, docker]
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
       - name: Clone repository
@@ -131,21 +289,23 @@ jobs:
       - name: Download executables
         uses: actions/download-artifact@v4
         with:
-          pattern: argsh
+          pattern: argsh*
           merge-multiple: true
           path: .
       - name: Executable
         run: |
-          chmod +x argsh.min.sh
+          chmod +x argsh.min.sh argsh-so.min.sh
       - name: Upload release
         env:
           TAG_NAME: ${{ github.ref_name }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cp argsh.min.sh argsh
-          sha256sum argsh > sha256sum.txt
+          cp argsh-so.min.sh argsh-so
+          cp libargsh.so argsh.so
+          sha256sum argsh argsh-so argsh.so > sha256sum.txt
           gh release create "${TAG_NAME}" --draft --title "argsh ${TAG_NAME}" --generate-notes
-          gh release upload "${TAG_NAME}" --clobber argsh sha256sum.txt
+          gh release upload "${TAG_NAME}" --clobber argsh argsh-so argsh.so sha256sum.txt
 
           git config user.name 'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
