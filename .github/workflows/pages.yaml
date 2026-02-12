@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - gh-pages
+  workflow_dispatch:
 
 defaults:
   run:
@@ -41,6 +42,11 @@ jobs:
         env:
           NODE_OPTIONS: "--max-old-space-size=8192"
         run: yarn build:docs
+
+      - name: Add install scripts
+        run: |
+          curl -sL https://raw.githubusercontent.com/arg-sh/argsh/main/argsh.min.sh > apps/docs/build/min.sh
+          curl -sL https://raw.githubusercontent.com/arg-sh/argsh/main/bootstrap/install.sh > apps/docs/build/get.sh
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
