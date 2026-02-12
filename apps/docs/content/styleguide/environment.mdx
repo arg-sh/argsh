@@ -1,0 +1,20 @@
+
+### STDOUT vs STDERR
+
+All error messages should go to `STDERR`.
+
+This makes it easier to separate normal status from actual issues.
+
+A function to print out error messages along with other status
+information is recommended.
+
+```shell
+err() {
+  echo "[$(date +'%Y-%m-%dT%H:%M:%S%z')]: $*" >&2
+}
+
+if ! do_something; then
+  err "Unable to do_something"
+  exit 1
+fi
+```
