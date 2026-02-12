@@ -16,6 +16,36 @@ The key benefits are:
 - **Transparent fallback**: If the `.so` is not found, everything works as before with the pure-Bash implementation
 - **Identical behavior**: The builtin output is byte-for-byte identical to the Bash implementation (validated by the test suite)
 
+## Usage (Shebang)
+
+The simplest way to use native builtins is through the shebang line:
+
+```bash
+#!/usr/bin/env argsh --builtin
+```
+
+If the `.so` is not found locally, argsh automatically downloads it from the latest GitHub release.
+
+To specify an install path:
+
+```bash
+#!/usr/bin/env argsh --builtin /usr/local/lib/argsh.so
+```
+
+If the file doesn't exist at that path, argsh downloads it there. On subsequent runs the cached `.so` is loaded directly.
+
+```bash
+#!/usr/bin/env argsh --no-builtin
+#!/usr/bin/env argsh --import mylib
+```
+
+| Flag | Description |
+|---|---|
+| `--builtin [path]` | Require native builtins. Auto-downloads if not found. If path given, downloads to that path. |
+| `--no-builtin` | Skip builtin loading entirely. |
+| `-i`, `--import <lib>` | Import additional libraries (repeatable). |
+| `--version` | Print argsh version and exit. |
+
 ## Available Builtins
 
 | Builtin | Purpose |
@@ -172,23 +202,6 @@ CI produces a second artifact, `argsh-so`, that embeds the `.so` as a base64 blo
 :::note
 The inline `.so` is platform-specific (linux/amd64). The regular `argsh` script with pure-Bash fallback remains the portable default.
 :::
-
-## Shebang Parameters
-
-When using argsh as a shebang interpreter, you can pass flags before the script path:
-
-```bash
-#!/usr/bin/env argsh --builtin /path/to/argsh.so
-#!/usr/bin/env argsh --no-builtin
-#!/usr/bin/env argsh --import mylib
-```
-
-| Flag | Description |
-|---|---|
-| `--builtin [path]` | Require native builtins. If path given and not found, fail. |
-| `--no-builtin` | Skip builtin loading entirely. |
-| `-i`, `--import <lib>` | Import additional libraries (repeatable). |
-| `--version` | Print argsh version and exit. |
 
 ## Custom Types
 

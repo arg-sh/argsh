@@ -277,13 +277,14 @@ argsh::shebang() {
   case "${_argsh_builtin_mode}" in
     required)
       argsh::builtin::try "${_argsh_builtin_path}" || {
-        # If explicit path given, don't auto-download
+        # Auto-download from latest release
+        # If explicit path given, download to that directory
         if [[ -n "${_argsh_builtin_path}" ]]; then
-          echo "argsh: builtin not found: ${_argsh_builtin_path}" >&2
-          return 1
+          mkdir -p "${_argsh_builtin_path%/*}" 2>/dev/null || true
+          PATH_BIN="${_argsh_builtin_path%/*}" argsh::builtin::download || return 1
+        else
+          argsh::builtin::download || return 1
         fi
-        # Try auto-download from latest release
-        argsh::builtin::download || return 1
       }
       ARGSH_BUILTIN=1
       ;;
