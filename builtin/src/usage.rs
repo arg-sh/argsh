@@ -564,8 +564,8 @@ fn usage_help_text(title: &str, usage_arr: &[String], args_arr: &[String]) {
 
     // Built-in commands
     let _ = writeln!(out, "\nAdditional Commands:");
-    let _ = writeln!(out, "  {:width$} {}", "completion", "Generate shell completions (bash, zsh, fish)", width = fw);
-    let _ = writeln!(out, "  {:width$} {}", "docgen", "Generate documentation (man, md, rst, yaml)", width = fw);
+    let _ = writeln!(out, "  {:width$} Generate shell completions (bash, zsh, fish)", "completion", width = fw);
+    let _ = writeln!(out, "  {:width$} Generate documentation (man, md, rst, yaml)", "docgen", width = fw);
 
     // Flags section
     print_flags_section(&mut out, args_arr, fw);
@@ -786,7 +786,7 @@ fn generate_zsh_completion<W: Write>(
 
     for flag in &flags {
         let long = &flag.name;
-        let esc_desc = flag.desc.replace('[', "\\[").replace(']', "\\]");
+        let esc_desc = flag.desc.replace('\'', "'\\''").replace('[', "\\[").replace(']', "\\]");
         if let Some(ref short) = flag.short {
             if flag.is_boolean {
                 let _ = write!(out, " \\\n        '(-{} --{})'{{\"-{}\",\"--{}\"}}'[{}]'",
@@ -795,12 +795,10 @@ fn generate_zsh_completion<W: Write>(
                 let _ = write!(out, " \\\n        '(-{} --{})'{{\"-{}\",\"--{}\"}}'[{}]:{}:'",
                     short, long, short, long, esc_desc, flag.type_name);
             }
+        } else if flag.is_boolean {
+            let _ = write!(out, " \\\n        '--{}[{}]'", long, esc_desc);
         } else {
-            if flag.is_boolean {
-                let _ = write!(out, " \\\n        '--{}[{}]'", long, esc_desc);
-            } else {
-                let _ = write!(out, " \\\n        '--{}[{}]:{}:'", long, esc_desc, flag.type_name);
-            }
+            let _ = write!(out, " \\\n        '--{}[{}]:{}:'", long, esc_desc, flag.type_name);
         }
     }
 
@@ -1067,7 +1065,10 @@ fn generate_rst<W: Write>(
 
 /// Escape a string for YAML double-quoted output.
 fn yaml_escape(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('"', "\\\"")
+    s.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
 }
 
 /// Generate documentation as YAML.
