@@ -221,8 +221,8 @@ fn render_set(text: &str) -> String {
     if let Some(caps) = RE_SET.captures(text) {
         let var = &caps[1];
         let type_name = &caps[2];
-        let rest = &text[caps[0].len()..];
-        return format!("**{}** ({}):{}", var, type_name, rest);
+        let rest = text[caps[0].len()..].trim_start();
+        return format!("**{}** ({}): {}", var, type_name, rest);
     }
     text.to_string()
 }
