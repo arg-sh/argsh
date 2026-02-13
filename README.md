@@ -179,6 +179,8 @@ Every argsh script is AI-ready out of the box — no glue code required.
 ./myscript docgen man|md|rst|yaml
 ```
 
+See the [AI Integration docs](https://arg.sh/ai) for details on MCP and LLM tool schemas.
+
 &nbsp;
 
 ### ⚡ Native Builtins (Rust)
