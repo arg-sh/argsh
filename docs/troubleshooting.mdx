@@ -32,7 +32,7 @@ enable -f /path/to/libargsh.so :args
 # If this fails, bash prints the dlopen error (e.g., "GLIBC_2.39 not found")
 ```
 
-### glibc Compatibility {#glibc-compatibility}
+### glibc Compatibility
 
 The `.so` dynamically links against glibc. The rule is simple: **build glibc must be ≤ runtime glibc**. A `.so` built on Debian 12 (glibc 2.36) works on any system with glibc 2.36 or newer.
 
