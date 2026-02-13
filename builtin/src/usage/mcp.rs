@@ -93,7 +93,8 @@ pub fn mcp_main(args: &[String]) -> i32 {
         println!("The server exposes subcommands as tools via the MCP protocol.");
         println!("Configure your AI client to connect:\n");
         println!("  # .mcp.json");
-        println!("  {{\"mcpServers\": {{\"{}\":{{\"type\":\"stdio\",\"command\":\"./{}\",\"args\":[{}]}}}}}}", json_escape(&cmd_str), json_escape(&script_name), args_json);
+        let script_path = shell::get_script_path();
+        println!("  {{\"mcpServers\": {{\"{}\":{{\"type\":\"stdio\",\"command\":\"{}\",\"args\":[{}]}}}}}}", json_escape(&cmd_str), json_escape(&script_path), args_json);
         return shared::HELP_EXIT;
     }
 
@@ -190,7 +191,7 @@ fn write_jsonrpc_error<W: Write>(writer: &mut W, id: &Option<String>, code: i32,
 
 /// Handle `initialize` request.
 fn handle_initialize<W: Write>(writer: &mut W, id: &Option<String>, cmd_name: &str) {
-    let version = shell::get_scalar("ARGSH_VERSION").unwrap_or_else(|| "unknown".to_string());
+    let version = shell::get_scalar("ARGSH_VERSION").unwrap_or_default();
     let result = format!(
         "{{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{{\"tools\":{{}}}},\"serverInfo\":{{\"name\":\"{}\",\"version\":\"{}\"}}}}",
         json_escape(cmd_name),
@@ -575,7 +576,7 @@ fn find_matching_brace(s: &str, open: char, close: char) -> Option<usize> {
     None // coverage:off - json_defensive: unmatched brace in well-formed JSON
 }
 
-/// Unescape a JSON string (handles \\, \", \n, \r, \t).
+/// Unescape a JSON string (handles \\, \", \n, \r, \t, \/, \uXXXX).
 fn unescape_json_string(s: &str) -> String {
     let mut result = String::with_capacity(s.len());
     let mut chars = s.chars();
@@ -588,6 +589,27 @@ fn unescape_json_string(s: &str) -> String {
                 Some('r') => result.push('\r'), // coverage:off - json_escape: MCP field values don't contain literal \r
                 Some('t') => result.push('\t'), // coverage:off - json_escape: MCP field values don't contain literal \t
                 Some('/') => result.push('/'), // coverage:off - json_escape: MCP field values don't contain \/
+                Some('b') => result.push('\u{0008}'), // coverage:off - json_escape: backspace
+                Some('f') => result.push('\u{000C}'), // coverage:off - json_escape: form feed
+                Some('u') => { // coverage:off - json_escape: unicode escapes
+                    let hex: String = chars.by_ref().take(4).collect(); // coverage:off
+                    if hex.len() == 4 { // coverage:off
+                        if let Ok(code) = u32::from_str_radix(&hex, 16) { // coverage:off
+                            if let Some(ch) = char::from_u32(code) { // coverage:off
+                                result.push(ch); // coverage:off
+                            } else { // coverage:off
+                                result.push_str("\\u"); // coverage:off
+                                result.push_str(&hex); // coverage:off
+                            } // coverage:off
+                        } else { // coverage:off
+                            result.push_str("\\u"); // coverage:off
+                            result.push_str(&hex); // coverage:off
+                        } // coverage:off
+                    } else { // coverage:off
+                        result.push_str("\\u"); // coverage:off
+                        result.push_str(&hex); // coverage:off
+                    } // coverage:off
+                } // coverage:off
                 Some(other) => { // coverage:off - json_escape: unknown escape sequence defensive check
                     result.push('\\'); // coverage:off
                     result.push(other); // coverage:off
