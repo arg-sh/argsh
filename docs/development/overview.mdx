@@ -8,13 +8,13 @@ import Icons from '@theme/Icon';
 
 # Introduction 
 
-Argsh consists of a set of tools that help you to build not only beautiful but nad powerful command-line interfaces (CLIs) for your applications but also to help you with good code quallity and maintainability.
+Argsh consists of a set of tools that help you to build not only beautiful but powerful command-line interfaces (CLIs) for your applications but also to help you with good code quality and maintainability.
 
 ## Core Features
 
-Argsh [library](../libraries/overview) in itself constists of Bash code snippets that you can use in your scripts. Within this snippets you also finde the [command-line parser](./fundamentals/command-line-parser). 
+Argsh [library](../libraries/overview) in itself consists of Bash code snippets that you can use in your scripts. Within these snippets you also find the [command-line parser](./fundamentals/command-line-parser).
 
-Additionally argsh provides a collection of widly used projects around Bash scripting. These are conviniently packed into a single Docker image. The `argsh` script is the entry point to this image.
+Additionally argsh provides a collection of widely used projects around Bash scripting. These are conveniently packed into a single Docker image. The `argsh` script is the entry point to this image.
 
 You can always check what is available by running `argsh --help`.
 
@@ -71,6 +71,47 @@ You can always check what is available by running `argsh --help`.
     customProps: {
       icon: Icons['circle-dotted-line'],
       description: 'Minify your scripts after you have tested them.'
+    }
+  },
+  {
+    type: 'link',
+    href: '/development/fundamentals/builtins',
+    label: 'Native Builtins (Rust)',
+    customProps: {
+      icon: Icons['bolt-solid'],
+      description: 'Speed up parsing with native Bash loadable builtins.'
+    }
+  },
+]} />
+
+## Guides
+
+<DocCardList colSize={4} items={[
+  {
+    type: 'link',
+    href: '/shell-completion',
+    label: 'Shell Completion',
+    customProps: {
+      icon: Icons['command-line-solid'],
+      description: 'Generate shell completions for bash, zsh, and fish.'
+    }
+  },
+  {
+    type: 'link',
+    href: '/docgen',
+    label: 'Documentation Generation',
+    customProps: {
+      icon: Icons['document-text-solid'],
+      description: 'Generate man pages, Markdown, reST, YAML, and LLM schemas.'
+    }
+  },
+  {
+    type: 'link',
+    href: '/ai',
+    label: 'AI Integration',
+    customProps: {
+      icon: Icons['academic-cap-solid'],
+      description: 'MCP servers and LLM tool schemas from your CLI declarations.'
     }
   },
 ]} />

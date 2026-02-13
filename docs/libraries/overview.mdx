@@ -3,7 +3,51 @@ description: "A collection of libraries and tools to help you build scripts."
 hide_table_of_contents: true
 ---
 
-# Introduction
+# Libraries
 
-This section contains a collection of libraries and tools to help you build scripts.
-You find them also in the [GitHub repository](https://github.com/arg-sh/argsh/main/libraries).
+argsh ships with a set of pure-Bash libraries that you can source into your scripts. Each library is a single `.sh` file — no dependencies beyond Bash itself.
+
+You can find the source code in the [GitHub repository](https://github.com/arg-sh/argsh/tree/main/libraries).
+
+## Argument Parsing
+
+The core of argsh — parse flags, positional arguments, and subcommands with type checking and auto-generated help.
+
+| Library | Description |
+|---------|-------------|
+| [args](/libraries/args) | `:usage` for subcommand routing, `:args` for flag/argument parsing |
+| [args.utils](/libraries/args.utils) | Utilities for working with parsed arguments |
+
+## Types & Introspection
+
+Type converters and variable inspection helpers used by the argument parser and available for your own scripts.
+
+| Library | Description |
+|---------|-------------|
+| [to](/libraries/to) | Type converters: `to::int`, `to::float`, `to::boolean`, `to::file`, `to::stdin` |
+| [is](/libraries/is) | Variable introspection: `is::array`, `is::set`, `is::uninitialized`, `is::tty` |
+| [string](/libraries/string) | String manipulation: trim, indent, random, drop-index |
+| [array](/libraries/array) | Array utilities: contains, join, nth |
+
+## Terminal & Output
+
+Helpers for terminal interaction and formatted output.
+
+| Library | Description |
+|---------|-------------|
+| [fmt](/libraries/fmt) | Formatted output with colors and styles |
+| [binary](/libraries/binary) | Binary/executable helpers |
+
+## Utilities
+
+Error handling and other utilities.
+
+| Library | Description |
+|---------|-------------|
+| [error](/libraries/error) | Error handling, stack traces, and exit management |
+
+## 3rd Party Integrations
+
+| Library | Description |
+|---------|-------------|
+| [github](/libraries/github) | GitHub API helpers |

@@ -42,6 +42,23 @@ This is what argsh is trying to do. Check out the [Quickstart](https://arg.sh/ge
 
 &nbsp;
 
+### 📦 Install
+
+```bash
+curl -sL https://min.arg.sh > .bin/argsh
+chmod +x .bin/argsh
+```
+
+Or use the interactive installer:
+
+```bash
+bash -c "$(curl -sL https://get.arg.sh)"
+```
+
+See the [Getting Started](https://arg.sh/getting-started) guide for more options.
+
+&nbsp;
+
 ### 🧠 Design Philosophy
 
 - **First class citizen**: Treat your scripts as first class citizens. They are important and should be treated as such.
@@ -88,6 +105,51 @@ Options:
 ```
 
 The `:args` builtin handles `--flag value`, `-f value`, `--flag=value`, `--no-flag` (booleans), automatic `--help`/`-h`, unknown flag errors, and type validation (`int`, `float`, `boolean`, `file`, or custom). See the [CLI Parser docs](https://arg.sh/command-line-parser) for the full syntax.
+
+&nbsp;
+
+### 🗂️ Subcommand Routing
+
+`:usage` gives you git-style subcommands with auto-generated help, fuzzy suggestions on typos, and convention-based function dispatch.
+
+```bash
+#!/usr/bin/env bash
+source argsh
+
+main::deploy() {
+  local args=(
+    "env|e:!  Target environment"
+  )
+  :args "Deploy the application" "${@}"
+  echo "Deploying to ${env}..."
+}
+
+main::status() {
+  :args "Show deployment status" "${@}"
+  echo "All systems operational."
+}
+
+main() {
+  local usage=(
+    'deploy|d' "Deploy the application"
+    'status|s' "Show deployment status"
+  )
+  :usage "Application manager" "${@}"
+  "${usage[@]}"
+}
+
+main "${@}"
+```
+
+```console
+$ ./app deploy --env production
+Deploying to production...
+
+$ ./app stat
+Invalid command: stat. Did you mean 'status'?
+```
+
+Each subcommand maps to a function by convention (`main::deploy`, `main::status`). Nested subcommands compose naturally — just add another `:usage` inside a subcommand function.
 
 &nbsp;
 

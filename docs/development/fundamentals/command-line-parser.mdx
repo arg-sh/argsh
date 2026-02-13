@@ -18,8 +18,9 @@ The implementation of the command line parser in argsh is inspired by the [cobra
 - [x] Automatic help generation for commands and flags
 - [x] Grouping help for subcommands
 - [x] Automatic help flag recognition of -h, --help, etc.
-- [ ] Automatically generated shell autocomplete for your application (bash, zsh, fish, powershell)
-- [ ] Automatically generated man pages for your application
+- [x] Automatically generated shell autocomplete for your application (bash, zsh, fish, ~~powershell~~)
+- [x] Automatically generated man pages for your application
+- [x] Automatically generated documentation (man, md, rst, yaml, llm)
 - [x] Command aliases so you can change things without breaking them
 - [x] The flexibility to define your own help, usage, etc.
 
@@ -28,7 +29,7 @@ The implementation of the command line parser in argsh is inspired by the [cobra
 Argsh provides a simple way to define commands and flags. It consists of two parts, a root command `:usage` and arguments `:args`.
 
 :::warn
-argsh is still in development and prune to change.
+argsh is still in development and prone to change.
 :::
 
 ### Setup
@@ -41,7 +42,7 @@ If you are using argsh in the shebang line, your script will be executed within 
 
 ## Commands
 
-A command is defined by the [:usage](../../libraries/args.mdx#:usage) function. It takes a array defining available commands and flags.
+A command is defined by the [:usage](/libraries/args#usage) function. It takes an array defining available commands and flags.
 
 ```bash
 local -a usage=(
@@ -215,7 +216,7 @@ local -a usage=(
 
 ## Arguments
 
-The [:args](../../libraries/args) function is used to define the arguments and flags for a command. It takes a array defining available arguments and flags.
+The [:args](/libraries/args#args) function is used to define the arguments and flags for a command. It takes an array defining available arguments and flags.
 
 ```bash
 local arg1 arg2 flag
