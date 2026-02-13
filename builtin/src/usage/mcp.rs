@@ -84,7 +84,7 @@ pub fn mcp_main(args: &[String]) -> i32 {
         mcp_args.push("mcp".to_string());
         let args_json = mcp_args
             .iter()
-            .map(|s| format!("\"{}\"", s))
+            .map(|s| format!("\"{}\"", json_escape(s)))
             .collect::<Vec<_>>()
             .join(",");
 
@@ -93,7 +93,7 @@ pub fn mcp_main(args: &[String]) -> i32 {
         println!("The server exposes subcommands as tools via the MCP protocol.");
         println!("Configure your AI client to connect:\n");
         println!("  # .mcp.json");
-        println!("  {{\"mcpServers\": {{\"{}\":{{\"type\":\"stdio\",\"command\":\"./{}\",\"args\":[{}]}}}}}}", cmd_str, script_name, args_json);
+        println!("  {{\"mcpServers\": {{\"{}\":{{\"type\":\"stdio\",\"command\":\"./{}\",\"args\":[{}]}}}}}}", json_escape(&cmd_str), json_escape(&script_name), args_json);
         return shared::HELP_EXIT;
     }
 
@@ -190,9 +190,11 @@ fn write_jsonrpc_error<W: Write>(writer: &mut W, id: &Option<String>, code: i32,
 
 /// Handle `initialize` request.
 fn handle_initialize<W: Write>(writer: &mut W, id: &Option<String>, cmd_name: &str) {
+    let version = shell::get_scalar("ARGSH_VERSION").unwrap_or_else(|| "unknown".to_string());
     let result = format!(
-        "{{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{{\"tools\":{{}}}},\"serverInfo\":{{\"name\":\"{}\",\"version\":\"1.0.0\"}}}}",
-        json_escape(cmd_name)
+        "{{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{{\"tools\":{{}}}},\"serverInfo\":{{\"name\":\"{}\",\"version\":\"{}\"}}}}",
+        json_escape(cmd_name),
+        json_escape(&version)
     );
     write_jsonrpc_response(writer, id, &result);
 }

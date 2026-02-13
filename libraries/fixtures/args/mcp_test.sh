@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # MCP test fixture — actual script for tools/call subprocess invocation
-# shellcheck disable=SC2034 disable=SC1091
+# shellcheck disable=SC2034,SC1091
 set -euo pipefail
 
 # Source argsh library. Try ARGSH_SOURCE first (Docker), fall back to relative path.
