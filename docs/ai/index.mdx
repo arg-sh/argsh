@@ -1,0 +1,38 @@
+---
+description: "Turn any argsh script into an AI-native CLI — static tool schemas and live MCP servers from the same declarations"
+---
+
+import DocCardList from '@theme/DocCardList';
+
+# AI Integration
+
+argsh scripts are AI-native by design. The same `:usage` and `:args` declarations that power help text and shell completion also generate machine-readable tool definitions for LLMs. No glue code, no manual schema maintenance.
+
+## Two modes of operation
+
+| Mode | Command | What it does |
+|------|---------|--------------|
+| **Static schemas** | `docgen llm claude` | JSON tool arrays you feed into API calls |
+| **Live MCP server** | `mcp` | Stdio JSON-RPC server that AI agents connect to directly |
+
+Both derive their tool definitions from the same source — your script's `:usage` and `:args` declarations are the single source of truth.
+
+### Static schemas (`docgen llm`)
+
+Generate ready-to-use tool definitions for Anthropic, OpenAI, Gemini, or Kimi. Pipe the output into your agent framework or commit it to your repo for CI.
+
+```bash
+./myapp docgen llm claude > tools.json
+```
+
+### Live MCP server (`mcp`)
+
+Turn your script into a [Model Context Protocol](https://modelcontextprotocol.io/) server. Claude Code, Cursor, Claude Desktop, and other MCP clients can discover and invoke your commands directly.
+
+```bash
+./myapp mcp
+```
+
+No Python, no Node.js wrappers — one command and your CLI is a live tool server.
+
+<DocCardList />
