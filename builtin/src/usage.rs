@@ -124,7 +124,7 @@ extern "C" fn usage_completion_builtin_fn(word_list: *const WordList) -> c_int {
 // -- :usage::docgen builtin registration --------------------------------------
 
 static USAGE_DOCGEN_LONG_DOC: [SyncPtr; 2] = [
-    SyncPtr(c"Generate documentation (man, md, rst, yaml).".as_ptr()),
+    SyncPtr(c"Generate documentation (man, md, rst, yaml, llm).".as_ptr()),
     SyncPtr(std::ptr::null()),
 ];
 
@@ -257,6 +257,7 @@ pub fn usage_docgen_main(args: &[String]) -> i32 {
         println!("  md      Markdown");
         println!("  rst     reStructuredText");
         println!("  yaml    YAML");
+        println!("  llm     LLM tool schema (claude, openai, gemini, kimi)");
         return shared::HELP_EXIT;
     }
 
@@ -280,9 +281,28 @@ pub fn usage_docgen_main(args: &[String]) -> i32 {
         "md" => generate_markdown(&mut out, &cmd_name, title, usage_pairs, &args_arr),
         "rst" => generate_rst(&mut out, &cmd_name, title, usage_pairs, &args_arr),
         "yaml" => generate_yaml(&mut out, &cmd_name, title, usage_pairs, &args_arr),
+        "llm" => {
+            let provider = user_args.get(1).map(|s| s.as_str());
+            match provider {
+                Some("claude") | Some("anthropic") => {
+                    generate_llm_claude(&mut out, &cmd_name, title, usage_pairs, &args_arr);
+                }
+                Some("openai") | Some("gemini") | Some("kimi") => {
+                    generate_llm_openai(&mut out, &cmd_name, title, usage_pairs, &args_arr);
+                }
+                Some(unknown) => {
+                    return shared::error_usage("", &format!(
+                        "unknown LLM provider: {}. Use claude, openai, gemini, or kimi", unknown
+                    ));
+                }
+                None => {
+                    return shared::error_usage("", "llm format requires a provider: claude, openai, gemini, or kimi");
+                }
+            }
+        }
         _ => {
             return shared::error_usage("", &format!(
-                "unknown format: {}. Use man, md, rst, or yaml", format
+                "unknown format: {}. Use man, md, rst, yaml, or llm", format
             ));
         }
     }
@@ -649,6 +669,7 @@ struct FlagInfo {
     desc: String,
     is_boolean: bool,
     type_name: String,
+    required: bool,
 }
 
 /// Extract visible subcommands from usage pairs.
@@ -696,6 +717,7 @@ fn extract_flags(args_arr: &[String]) -> Vec<FlagInfo> {
                 desc: desc.to_string(),
                 is_boolean: def.is_boolean,
                 type_name: def.type_name,
+                required: def.required,
             });
         }
     }
@@ -707,7 +729,38 @@ fn extract_flags(args_arr: &[String]) -> Vec<FlagInfo> {
             desc: "Show this help message".to_string(),
             is_boolean: true,
             type_name: String::new(),
+            required: false,
         });
+    }
+
+    flags
+}
+
+/// Extract visible flags from args array, excluding help (for LLM tool schemas).
+fn extract_flags_for_llm(args_arr: &[String]) -> Vec<FlagInfo> {
+    let mut flags = Vec::new();
+
+    for i in (0..args_arr.len()).step_by(2) {
+        let entry = &args_arr[i];
+        let desc = args_arr.get(i + 1).map(|s| s.as_str()).unwrap_or("");
+
+        if !entry.contains('|') || entry == "-" || entry.starts_with('#') {
+            continue;
+        }
+
+        if let Ok(def) = field::parse_field(entry) {
+            if def.name == "help" {
+                continue;
+            }
+            flags.push(FlagInfo {
+                name: def.display_name,
+                short: def.short,
+                desc: desc.to_string(),
+                is_boolean: def.is_boolean,
+                type_name: def.type_name,
+                required: def.required,
+            });
+        }
     }
 
     flags
@@ -1119,4 +1172,144 @@ fn generate_yaml<W: Write>(
             }
         }
     }
+}
+
+// -- LLM tool schema generation -----------------------------------------------
+
+/// Escape a string for JSON string output.
+fn json_escape(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
+        .replace('\t', "\\t")
+}
+
+/// Map argsh type names to JSON Schema types.
+fn argsh_type_to_json(type_name: &str, is_boolean: bool) -> &'static str {
+    if is_boolean {
+        return "boolean";
+    }
+    match type_name {
+        "int" => "integer",
+        "float" => "number",
+        _ => "string",
+    }
+}
+
+/// Sanitize a string for use as a tool/function name (only [a-zA-Z0-9_-]).
+fn sanitize_tool_name(s: &str) -> String {
+    s.chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
+        .collect()
+}
+
+/// Write JSON Schema properties and required array (shared by all LLM providers).
+fn write_tool_properties<W: Write>(out: &mut W, flags: &[FlagInfo], indent: &str) {
+    let _ = writeln!(out, "{}\"properties\": {{", indent);
+    for (i, flag) in flags.iter().enumerate() {
+        let json_type = argsh_type_to_json(&flag.type_name, flag.is_boolean);
+        let trailing = if i < flags.len() - 1 { "," } else { "" };
+        let _ = writeln!(out, "{}  \"{}\": {{", indent, json_escape(&flag.name));
+        let _ = writeln!(out, "{}    \"type\": \"{}\",", indent, json_type);
+        let _ = writeln!(out, "{}    \"description\": \"{}\"", indent, json_escape(&flag.desc));
+        let _ = writeln!(out, "{}  }}{}", indent, trailing);
+    }
+    let _ = writeln!(out, "{}}},", indent);
+
+    let required: Vec<&str> = flags
+        .iter()
+        .filter(|f| f.required)
+        .map(|f| f.name.as_str())
+        .collect();
+    let _ = write!(out, "{}\"required\": [", indent);
+    for (i, name) in required.iter().enumerate() {
+        if i > 0 {
+            let _ = write!(out, ", ");
+        }
+        let _ = write!(out, "\"{}\"", json_escape(name));
+    }
+    let _ = writeln!(out, "]");
+}
+
+/// Generate LLM tool schema in Anthropic Claude format.
+fn generate_llm_claude<W: Write>(
+    out: &mut W,
+    cmd_name: &str,
+    title: &str,
+    usage_pairs: &[String],
+    args_arr: &[String],
+) {
+    let cmds = extract_subcommands(usage_pairs);
+    let flags = extract_flags_for_llm(args_arr);
+    let first_line = title.lines().next().unwrap_or(title).trim();
+
+    let _ = writeln!(out, "[");
+
+    if cmds.is_empty() {
+        write_claude_tool(out, &sanitize_tool_name(cmd_name), first_line, &flags, true);
+    } else {
+        for (i, cmd) in cmds.iter().enumerate() {
+            let tool_name = sanitize_tool_name(&format!("{}_{}", cmd_name, cmd.name));
+            let desc = if cmd.desc.is_empty() { first_line } else { &cmd.desc };
+            write_claude_tool(out, &tool_name, desc, &flags, i == cmds.len() - 1);
+        }
+    }
+
+    let _ = writeln!(out, "]");
+}
+
+fn write_claude_tool<W: Write>(out: &mut W, name: &str, description: &str, flags: &[FlagInfo], is_last: bool) {
+    let _ = writeln!(out, "  {{");
+    let _ = writeln!(out, "    \"name\": \"{}\",", json_escape(name));
+    let _ = writeln!(out, "    \"description\": \"{}\",", json_escape(description));
+    let _ = writeln!(out, "    \"input_schema\": {{");
+    let _ = writeln!(out, "      \"type\": \"object\",");
+    write_tool_properties(out, flags, "      ");
+    let _ = writeln!(out, "    }}");
+    let trailing = if is_last { "" } else { "," };
+    let _ = writeln!(out, "  }}{}", trailing);
+}
+
+/// Generate LLM tool schema in OpenAI function calling format.
+/// Also used for Gemini and Kimi (OpenAI-compatible).
+fn generate_llm_openai<W: Write>(
+    out: &mut W,
+    cmd_name: &str,
+    title: &str,
+    usage_pairs: &[String],
+    args_arr: &[String],
+) {
+    let cmds = extract_subcommands(usage_pairs);
+    let flags = extract_flags_for_llm(args_arr);
+    let first_line = title.lines().next().unwrap_or(title).trim();
+
+    let _ = writeln!(out, "[");
+
+    if cmds.is_empty() {
+        write_openai_tool(out, &sanitize_tool_name(cmd_name), first_line, &flags, true);
+    } else {
+        for (i, cmd) in cmds.iter().enumerate() {
+            let tool_name = sanitize_tool_name(&format!("{}_{}", cmd_name, cmd.name));
+            let desc = if cmd.desc.is_empty() { first_line } else { &cmd.desc };
+            write_openai_tool(out, &tool_name, desc, &flags, i == cmds.len() - 1);
+        }
+    }
+
+    let _ = writeln!(out, "]");
+}
+
+fn write_openai_tool<W: Write>(out: &mut W, name: &str, description: &str, flags: &[FlagInfo], is_last: bool) {
+    let _ = writeln!(out, "  {{");
+    let _ = writeln!(out, "    \"type\": \"function\",");
+    let _ = writeln!(out, "    \"function\": {{");
+    let _ = writeln!(out, "      \"name\": \"{}\",", json_escape(name));
+    let _ = writeln!(out, "      \"description\": \"{}\",", json_escape(description));
+    let _ = writeln!(out, "      \"parameters\": {{");
+    let _ = writeln!(out, "        \"type\": \"object\",");
+    write_tool_properties(out, flags, "        ");
+    let _ = writeln!(out, "      }}");
+    let _ = writeln!(out, "    }}");
+    let trailing = if is_last { "" } else { "," };
+    let _ = writeln!(out, "  }}{}", trailing);
 }

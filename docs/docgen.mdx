@@ -4,7 +4,7 @@ description: "Generate documentation from argsh-powered CLI tools"
 
 # Documentation Generation
 
-argsh can export your CLI's structure as **man pages**, **Markdown**, **reStructuredText**, or **YAML**. All documentation is generated directly from your `:usage` and `:args` declarations — your code is the single source of truth.
+argsh can export your CLI's structure as **man pages**, **Markdown**, **reStructuredText**, **YAML**, or **LLM tool schemas**. All documentation is generated directly from your `:usage` and `:args` declarations — your code is the single source of truth.
 
 ## How It Works
 
@@ -15,6 +15,7 @@ Every script built with `:usage` gets a built-in `docgen` subcommand. No extra c
 ./myscript docgen md
 ./myscript docgen rst
 ./myscript docgen yaml
+./myscript docgen llm claude   # LLM tool schemas
 ```
 
 Like `completion`, the `docgen` command is an **Additional Command** — always available without being listed in your `usage` array.
@@ -27,6 +28,9 @@ Like `completion`, the `docgen` command is an **Additional Command** — always 
 | Markdown | `docgen md` | GitHub-flavored Markdown |
 | reStructuredText | `docgen rst` | Sphinx-compatible reST |
 | YAML | `docgen yaml` | Structured data for tooling |
+| LLM tool schema | `docgen llm <provider>` | JSON tool definitions for AI agents |
+
+See [CLIs for LLMs](/clis-for-llms) for details on LLM tool schema generation.
 
 ## Example
 
@@ -187,6 +191,8 @@ steps:
       ./myapp docgen man  > docs/myapp.1
       ./myapp docgen yaml > docs/myapp.yaml
       ./myapp docgen rst  > docs/myapp.rst
+      ./myapp docgen llm claude > docs/myapp_claude.json
+      ./myapp docgen llm openai > docs/myapp_openai.json
 
   - name: Deploy to GitHub Pages
     uses: peaceiris/actions-gh-pages@v3
@@ -218,4 +224,5 @@ Available formats:
   md      Markdown
   rst     reStructuredText
   yaml    YAML
+  llm     LLM tool schema (claude, openai, gemini, kimi)
 ```

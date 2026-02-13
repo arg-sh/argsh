@@ -58,18 +58,18 @@
     },
     {
       "file": "builtin/src/usage.rs",
-      "percent_covered": "99.16",
-      "covered_lines": "705",
-      "total_lines": "711",
+      "percent_covered": "98.38",
+      "covered_lines": "850",
+      "total_lines": "864",
       "excluded_lines": "30"
     }
   ],
-  "percent_covered": "100.00",
-  "covered_lines": 1707,
-  "total_lines": 1707,
+  "percent_covered": "99.89",
+  "covered_lines": 1858,
+  "total_lines": 1860,
   "excluded_lines": 119,
   "percent_low": 25,
   "percent_high": 75,
   "command": "bats+llvm-cov",
-  "date": "2026-02-13 13:15:10"
+  "date": "2026-02-13 13:42:26"
 }

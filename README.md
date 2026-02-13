@@ -64,7 +64,7 @@ argsh ships with optional **Bash loadable builtins** compiled from Rust. When th
 | `to::int`, `to::float`, `to::boolean`, `to::file`, `to::string` | Type converters |
 | `args::field_name` | Field name extraction |
 | `:usage::completion` | Autocomplete backend for `:usage completion` (bash, zsh, fish) |
-| `:usage::docgen` | Documentation backend for `:usage docgen` (man, md, rst, yaml) |
+| `:usage::docgen` | Documentation backend for `:usage docgen` (man, md, rst, yaml, llm) |
 
 **Transparent fallback** — `args.sh` auto-detects the `.so` at load time. If found, builtins are enabled via `enable -f` and the pure-Bash function definitions are skipped. If not found, everything works as before with no change in behavior.
 

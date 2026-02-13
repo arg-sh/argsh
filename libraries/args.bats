@@ -2367,3 +2367,128 @@ source "${PATH_FIXTURES}/fmt.sh"
   contains 'cmd1' stdout
   contains 'noop' stdout
 }
+
+# ── LLM tool schema tests ──────────────────────────────────────────
+
+@test "usage: docgen llm claude generates anthropic tool schema" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  (
+    :test::usage docgen llm claude
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains '"input_schema":' stdout
+  contains '"properties":' stdout
+  contains '"verbose":' stdout
+}
+
+@test "usage: docgen llm openai generates openai tool schema" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  (
+    :test::usage docgen llm openai
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains '"type": "function"' stdout
+  contains '"parameters":' stdout
+  contains '"verbose":' stdout
+}
+
+@test "usage: docgen llm gemini is alias for openai format" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  (
+    :test::usage docgen llm gemini
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains '"type": "function"' stdout
+  contains '"parameters":' stdout
+}
+
+@test "usage: docgen llm kimi is alias for openai format" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  (
+    :test::usage docgen llm kimi
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains '"type": "function"' stdout
+}
+
+@test "usage: docgen llm without provider fails" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  (
+    :test::usage docgen llm
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -ne 0
+}
+
+@test "usage: docgen llm invalid provider fails" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  (
+    :test::usage docgen llm cohere
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -ne 0
+}
+
+@test "usage: docgen llm claude with subcommands generates one tool per subcommand" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  (
+    :test::usage docgen llm claude
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains '_cmd1' stdout
+  contains '_cmd2' stdout
+}
+
+@test "usage: docgen llm claude excludes help flag" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  (
+    :test::usage docgen llm claude
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  ! grep -q '"help"' "${stdout}"
+}
+
+@test "usage: docgen llm claude with no subcommands generates single tool" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  (
+    :test::nosub docgen llm claude
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains '"input_schema":' stdout
+  contains '"longonly":' stdout
+}
+
+@test "usage: docgen llm openai with no subcommands generates single tool" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  (
+    :test::nosub docgen llm openai
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains '"type": "function"' stdout
+  contains '"parameters":' stdout
+}
+
+@test "usage: docgen --help lists llm format" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  (
+    :test::usage docgen --help
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains "llm.*LLM tool schema" stdout
+}

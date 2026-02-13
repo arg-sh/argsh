@@ -10,15 +10,101 @@ argsh can generate structured output that Large Language Models (LLMs) can consu
 
 LLMs need structured, unambiguous descriptions of CLI tools to use them effectively. Manual documentation drifts from the actual implementation. argsh solves this by generating machine-readable descriptions directly from your `:usage` and `:args` declarations.
 
-## YAML for Tool Use
+## LLM Tool Schemas
 
-The `docgen yaml` output is the most useful format for LLMs:
+Generate ready-to-use tool schemas directly — no Python glue, no manual conversion:
+
+```bash
+# Anthropic Claude
+./myapp docgen llm claude
+
+# OpenAI / Gemini / Kimi
+./myapp docgen llm openai
+```
+
+Each command generates a JSON array of tool definitions with one tool per subcommand. Flags are mapped to JSON Schema types (`string`, `integer`, `number`, `boolean`), and required flags (`:!` modifier) populate the `required` array.
+
+### Supported Providers
+
+| Provider | Command | Schema Key |
+|----------|---------|------------|
+| Anthropic Claude | `llm claude` | `input_schema` |
+| OpenAI | `llm openai` | `parameters` (wrapped in `"type": "function"`) |
+| Google Gemini | `llm gemini` | Same as OpenAI (OpenAI-compatible API) |
+| Moonshot Kimi | `llm kimi` | Same as OpenAI (OpenAI-compatible API) |
+
+:::tip
+Gemini and Kimi use the OpenAI function calling format. If your provider follows the OpenAI convention, use `llm openai`.
+:::
+
+### Anthropic Tool Use
+
+```bash
+./myapp docgen llm claude
+```
+
+```json
+[
+  {
+    "name": "myapp_serve",
+    "description": "Start the server",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "verbose": {
+          "type": "boolean",
+          "description": "Enable verbose output"
+        },
+        "config": {
+          "type": "string",
+          "description": "Config file path"
+        }
+      },
+      "required": []
+    }
+  }
+]
+```
+
+### OpenAI Function Calling
+
+```bash
+./myapp docgen llm openai
+```
+
+```json
+[
+  {
+    "type": "function",
+    "function": {
+      "name": "myapp_serve",
+      "description": "Start the server",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "verbose": {
+            "type": "boolean",
+            "description": "Enable verbose output"
+          },
+          "config": {
+            "type": "string",
+            "description": "Config file path"
+          }
+        },
+        "required": []
+      }
+    }
+  }
+]
+```
+
+## YAML for Custom Integrations
+
+For custom integrations or providers not listed above, the raw YAML output gives you full control:
 
 ```bash
 ./myapp docgen yaml
 ```
-
-This produces structured data that maps directly to tool-use schemas:
 
 ```yaml
 name: "myapp"
@@ -38,68 +124,6 @@ options:
     short: "c"
     description: "Config file path"
     type: "string"
-  - name: "help"
-    short: "h"
-    description: "Show this help message"
-    type: boolean
-```
-
-## Converting to Tool Schemas
-
-### OpenAI Function Calling
-
-Transform the YAML output into an OpenAI function definition:
-
-```python
-import yaml, json
-
-# Generate from your CLI
-# ./myapp docgen yaml > cli.yaml
-
-with open("cli.yaml") as f:
-    cli = yaml.safe_load(f)
-
-tools = []
-for cmd in cli["commands"]:
-    properties = {}
-    for opt in cli["options"]:
-        prop = {"description": opt["description"]}
-        if opt["type"] == "boolean":
-            prop["type"] = "boolean"
-        else:
-            prop["type"] = "string"
-        properties[opt["name"]] = prop
-
-    tools.append({
-        "type": "function",
-        "function": {
-            "name": f"{cli['name']}_{cmd['name']}",
-            "description": cmd["description"],
-            "parameters": {
-                "type": "object",
-                "properties": properties,
-            }
-        }
-    })
-```
-
-### Anthropic Tool Use
-
-```python
-tools = []
-for cmd in cli["commands"]:
-    input_schema = {"type": "object", "properties": {}}
-    for opt in cli["options"]:
-        input_schema["properties"][opt["name"]] = {
-            "description": opt["description"],
-            "type": "boolean" if opt["type"] == "boolean" else "string",
-        }
-
-    tools.append({
-        "name": f"{cli['name']}_{cmd['name']}",
-        "description": cmd["description"],
-        "input_schema": input_schema,
-    })
 ```
 
 ## Markdown for Context Windows
@@ -122,14 +146,14 @@ Use this tool by running shell commands.
 
 ## Automation
 
-Generate LLM-ready documentation in CI:
+Generate LLM-ready tool definitions in CI — no Python glue required:
 
 ```yaml
 steps:
   - name: Generate LLM tool definitions
     run: |
-      ./myapp docgen yaml > tools/myapp.yaml
-      python scripts/yaml_to_tools.py tools/myapp.yaml > tools/myapp_tools.json
+      ./myapp docgen llm claude > tools/myapp_claude.json
+      ./myapp docgen llm openai > tools/myapp_openai.json
 ```
 
 Since the documentation is generated from code, it stays in sync automatically. Every release includes accurate tool definitions without manual updates.
