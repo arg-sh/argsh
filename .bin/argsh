@@ -560,6 +560,83 @@ _ci() {
 }
 
 ###
+### e2e (manual integration tests using claude CLI)
+###
+_e2e() {
+  local script model budget
+  # shellcheck disable=SC2016
+  local prompt='You have MCP tools from "test-app". Call the serve tool with verbose set to true. Reply with ONLY the raw tool output.'
+  local -a args=(
+    'script|s'      "Script to test (default: built-in fixture)"
+    'model|m'       "Claude model (default: haiku)"
+    'budget|b'      "Max budget in USD (default: 0.05)"
+    'prompt'        "Custom prompt for Claude"
+  )
+  :args "E2E MCP test: validates tool discovery + invocation via Claude CLI" "${@}"
+
+  : "${model:=haiku}"
+  : "${budget:=0.05}"
+  : "${script:="${PATH_BASE}/libraries/fixtures/args/mcp_test.sh"}"
+
+  binary::exists claude || {
+    echo "claude CLI required. Install: https://docs.anthropic.com/en/docs/claude-code"
+    return 1
+  } >&2
+  binary::exists jq || {
+    echo "jq required. Install: https://jqlang.github.io/jq/download/"
+    return 1
+  } >&2
+
+  script="$(cd "$(dirname "${script}")" && pwd)/$(basename "${script}")"
+  [[ -x "${script}" ]] || { echo "Script not executable: ${script}" >&2; return 1; }
+
+  # Ensure builtin .so
+  [[ -f "${PATH_BIN}/argsh.so" ]] || {
+    local release="${PATH_BASE}/builtin/target/release/libargsh.so"
+    [[ -f "${release}" ]] || { echo "builtin .so not found — run: argsh build builtin" >&2; return 1; }
+    cp "${release}" "${PATH_BIN}/argsh.so"
+  }
+
+  echo "Pre-flight: testing ${script} in CLI mode..."
+  local out
+  out=$("${script}" --help 2>&1) || { echo "Script --help failed" >&2; return 1; }
+  echo "  OK — help text works"
+
+  # Build MCP config
+  local mcp_config
+  mcp_config=$(printf '{"mcpServers":{"test-app":{"type":"stdio","command":"%s","args":["mcp"]}}}' "${script}")
+
+  echo ""
+  echo "Running: claude --print --model ${model} --max-budget-usd ${budget}"
+  echo "MCP server: ${script} mcp"
+  echo ""
+
+  local result
+  result=$(claude \
+    --print \
+    --model "${model}" \
+    --max-budget-usd "${budget}" \
+    --mcp-config "${mcp_config}" \
+    --allowedTools "mcp__test-app__*" \
+    --permission-mode "bypassPermissions" \
+    --no-session-persistence \
+    -p "${prompt}" \
+    2>/dev/null) || { echo "claude CLI failed" >&2; return 1; }
+
+  echo "Claude response:"
+  echo "${result}"
+  echo "---"
+
+  local pass=0 total=2
+  if echo "${result}" | grep -qi "serving"; then echo "PASS: contains 'serving'"; ((++pass)); else echo "FAIL: missing 'serving'"; fi
+  if echo "${result}" | grep -qi "verbose"; then echo "PASS: contains 'verbose'"; ((++pass)); else echo "FAIL: missing 'verbose'"; fi
+
+  echo ""
+  echo "Results: ${pass}/${total}"
+  [[ "${pass}" -eq "${total}" ]] || return 1
+}
+
+###
 ### main
 ###
 argsh::main() {
@@ -609,6 +686,8 @@ _main() {
     'docs-lint:-lint::docs'     "Run documentation linters"
     'docs-test:-test::docs'     "Run documentation tests"
     'vale:-lint::vale'          "Run vale"
+    -                           "Integration"
+    'e2e:-_e2e'                 "E2E MCP test via Claude CLI [--script ./app.sh]"
     -                           "Additional commands"
     'docker:-argsh::docker'     "Build docker image"
   )
