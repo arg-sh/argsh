@@ -9,7 +9,6 @@ This file contains functions for working with arguments
 ## Index
 
 * [:args](#args)
-* [args::field_name](#argsfieldname)
 * [:usage::completion](#usagecompletion)
 * [:usage::docgen](#usagedocgen)
 * [:usage::mcp](#usagemcp)
@@ -17,6 +16,8 @@ This file contains functions for working with arguments
 * [:usage::help](#usagehelp)
 
 ### :args
+
+> `bash` `rust`
 
 This function will parse the command line arguments and set the variables
 for the user to use. It will also print the usage information if the user
@@ -54,27 +55,33 @@ args=(
 * **0**: If user arguments are correct
 * **2**: If user arguments are incorrect
 
-### args::field_name
-
-Extract the variable name from an argsh field definition string (e.g. `'flag|f:~int!'` → `flag`).
-
 ### :usage::completion
+
+> `rust`
 
 Generate shell completion scripts (bash, zsh, fish) from the usage array.
 
 ### :usage::docgen
 
+> `rust`
+
 Generate documentation in various formats (man, md, rst, yaml, llm) from the usage array.
 
 ### :usage::mcp
+
+> `rust`
 
 Run an MCP (Model Context Protocol) tool server over stdio, exposing subcommands as tools.
 
 ### :usage
 
+> `rust`
+
 Parse subcommands from the usage array and dispatch to the matching handler.
 
 ### :usage::help
+
+> `rust`
 
 Display formatted help text for subcommands defined in the usage array.
 

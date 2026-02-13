@@ -79,6 +79,13 @@ fn render_function(func: &FunctionDoc) -> String {
     // Function heading
     lines.push(format!("### {}\n", func.name));
 
+    // Badges: implementation languages, @internal, @tags
+    let badges = render_badges(func);
+    if !badges.is_empty() {
+        lines.push(badges);
+        lines.push(String::new());
+    }
+
     // Description
     if let Some(ref desc) = func.description {
         lines.push(desc.clone());
@@ -272,6 +279,43 @@ fn unindent(text: &str) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// Render badges for a function: implementation languages, @internal, @tags.
+///
+/// Only shows implementation badges when there are mixed sources (not all bash-only).
+/// Output: `> `**`bash`** **`rust`** *`internal`* `` `tag1` `` `` `tag2` ``
+fn render_badges(func: &FunctionDoc) -> String {
+    let mut badges: Vec<String> = Vec::new();
+
+    // Implementation language badges (only when implementations are populated)
+    if !func.implementations.is_empty() {
+        let has_bash = func.implementations.iter().any(|i| i.lang == ImplLang::Bash);
+        let has_rust = func.implementations.iter().any(|i| i.lang == ImplLang::Rust);
+        if has_bash && has_rust {
+            badges.push("`bash`".to_string());
+            badges.push("`rust`".to_string());
+        } else if has_rust {
+            badges.push("`rust`".to_string());
+        }
+        // bash-only is the default — no badge needed
+    }
+
+    // @internal badge
+    if func.is_internal {
+        badges.push("*`internal`*".to_string());
+    }
+
+    // @tags badges
+    for tag in &func.tags {
+        badges.push(format!("`{}`", tag));
+    }
+
+    if badges.is_empty() {
+        return String::new();
+    }
+
+    format!("> {}", badges.join(" "))
 }
 
 #[cfg(test)]

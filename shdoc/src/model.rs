@@ -29,6 +29,8 @@ pub struct FunctionDoc {
     pub description: Option<String>,
     pub section: Option<SectionInfo>,
     pub example: Option<String>,
+    /// Whether this function is marked @internal
+    pub is_internal: bool,
     /// @arg entries, sorted by zero-padded index
     pub args: Vec<ArgEntry>,
     pub noargs: bool,
@@ -48,6 +50,8 @@ pub struct FunctionDoc {
     pub stderr: Vec<String>,
     /// @see entries
     pub see_also: Vec<String>,
+    /// @tags entries (function-level tags)
+    pub tags: Vec<String>,
     /// Implementation sources (populated by merge)
     pub implementations: Vec<Implementation>,
 }

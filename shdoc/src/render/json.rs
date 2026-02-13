@@ -107,6 +107,16 @@ fn render_function_json(func: &FunctionDoc) -> String {
         write_string_array(&mut out, "stderr", &func.stderr);
     }
 
+    // Internal
+    if func.is_internal {
+        out.push_str("      \"internal\": true,\n");
+    }
+
+    // Tags
+    if !func.tags.is_empty() {
+        write_string_array(&mut out, "tags", &func.tags);
+    }
+
     // Implementations
     if !func.implementations.is_empty() {
         out.push_str("      \"implementations\": [\n");

@@ -41,6 +41,15 @@ struct Cli {
     /// Disable YAML frontmatter from @tags
     #[arg(long)]
     no_frontmatter: bool,
+
+    /// Include @internal functions in output
+    #[arg(long)]
+    show_internal: bool,
+
+    /// Filter functions by tag. Prefix with ! to exclude.
+    /// Can be specified multiple times. E.g. --filter '!internal'
+    #[arg(long)]
+    filter: Vec<String>,
 }
 
 fn main() -> Result<()> {
@@ -61,7 +70,8 @@ fn stdin_mode(cli: &Cli) -> Result<()> {
         .read_to_string(&mut input)
         .context("failed to read stdin")?;
 
-    let doc = parser::bash::parse(&input);
+    let mut doc = parser::bash::parse(&input);
+    filter_functions(&mut doc, cli.show_internal, &cli.filter);
     let renderer = render::create_renderer(&cli.format)?;
     print!("{}", renderer.render(&doc));
     Ok(())
@@ -118,13 +128,14 @@ fn file_mode(cli: &Cli) -> Result<()> {
     let renderer = render::create_renderer(&cli.format)?;
     let ext = renderer.file_extension();
 
-    for (source, doc) in &merged {
+    for (source, mut doc) in merged {
+        filter_functions(&mut doc, cli.show_internal, &cli.filter);
         // Skip files with no documented functions (e.g., lib.rs, shared.rs)
         if doc.functions.is_empty() {
             continue;
         }
 
-        let name = derive_output_name(source);
+        let name = derive_output_name(&source);
         let out_path = output_dir.join(format!("{}.{}", name, ext));
 
         let mut output = String::new();
@@ -143,7 +154,7 @@ fn file_mode(cli: &Cli) -> Result<()> {
         }
 
         // Rendered documentation
-        output.push_str(&renderer.render(doc));
+        output.push_str(&renderer.render(&doc));
 
         fs::write(&out_path, &output)
             .with_context(|| format!("failed to write {}", out_path.display()))?;
@@ -248,6 +259,49 @@ fn derive_output_name(source: &str) -> String {
         .or_else(|| filename.strip_suffix(".rs"))
         .unwrap_or(filename)
         .to_string()
+}
+
+/// Filter functions based on --show-internal and --filter flags.
+///
+/// By default, @internal functions are excluded. Use --show-internal to include them.
+/// --filter supports inclusion (e.g. "core") and exclusion (e.g. "!deprecated") by tag.
+/// The special tag "internal" maps to the @internal annotation.
+fn filter_functions(doc: &mut model::Document, show_internal: bool, filters: &[String]) {
+    doc.functions.retain(|func| {
+        // Internal filter (default: exclude)
+        if func.is_internal && !show_internal {
+            // Unless explicitly included via --filter internal
+            if !filters.iter().any(|f| f == "internal") {
+                return false;
+            }
+        }
+
+        // Tag-based filters
+        for filter in filters {
+            if filter == "internal" {
+                // Handled above (inclusion)
+                continue;
+            }
+            if let Some(excluded) = filter.strip_prefix('!') {
+                if excluded == "internal" {
+                    if func.is_internal {
+                        return false;
+                    }
+                } else if func.tags.iter().any(|t| t == excluded) {
+                    return false;
+                }
+            } else {
+                // Inclusion filter: function must have this tag
+                let matches = func.tags.iter().any(|t| t == filter.as_str())
+                    || (filter == "internal" && func.is_internal);
+                if !matches {
+                    return false;
+                }
+            }
+        }
+
+        true
+    });
 }
 
 #[cfg(test)]

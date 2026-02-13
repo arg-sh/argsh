@@ -148,6 +148,7 @@ struct Docblock {
     stdout: Vec<String>,
     stderr: Vec<String>,
     see_also: Vec<String>,
+    tags: Vec<String>,
 }
 
 impl Docblock {
@@ -204,9 +205,19 @@ fn process_line(s: &mut ParserState, line: &str) {
         return;
     }
 
-    // 4. @tags (shdoc line 631)
+    // 4. @tags (shdoc line 631) — file-level or function-level
+    //    File-level: before any function has been processed
+    //    Function-level: when building a docblock (has content or description)
     if let Some(caps) = RE_TAGS.captures(line) {
-        s.file_doc.tags = Some(caps[1].to_string());
+        let raw = caps[1].to_string();
+        if s.functions.is_empty() && s.docblock.is_empty() && s.description.is_empty() {
+            // File-level tags
+            s.file_doc.tags = Some(raw);
+        } else {
+            // Function-level tags
+            let parsed: Vec<String> = raw.split(',').map(|t| t.trim().to_string()).filter(|t| !t.is_empty()).collect();
+            s.docblock.tags = parsed;
+        }
         return;
     }
 
@@ -419,54 +430,55 @@ fn process_function(s: &mut ParserState, line: &str) {
         return;
     }
 
-    if s.is_internal {
-        s.is_internal = false;
+    let internal = s.is_internal;
+    s.is_internal = false;
+
+    // Extract function name (shdoc line 119-124)
+    let func_name = extract_func_name(line);
+
+    let section = if let Some(title) = s.current_section.take() {
+        let desc = s.section_description.take();
+        Some(SectionInfo {
+            title,
+            description: desc,
+        })
     } else {
-        // Extract function name (shdoc line 119-124)
-        let func_name = extract_func_name(line);
+        None
+    };
 
-        let section = if let Some(title) = s.current_section.take() {
-            let desc = s.section_description.take();
-            Some(SectionInfo {
-                title,
-                description: desc,
-            })
-        } else {
+    // Sort args by sort_key
+    s.docblock.args.sort_by(|a, b| a.0.cmp(&b.0));
+
+    let func_doc = FunctionDoc {
+        name: func_name,
+        description: if s.description.is_empty() {
             None
-        };
+        } else {
+            Some(std::mem::take(&mut s.description))
+        },
+        section,
+        example: s.docblock.example.take(),
+        is_internal: internal,
+        args: s
+            .docblock
+            .args
+            .drain(..)
+            .map(|(sort_key, raw)| ArgEntry { sort_key, raw })
+            .collect(),
+        noargs: s.docblock.noargs,
+        options: std::mem::take(&mut s.docblock.options),
+        options_bad: std::mem::take(&mut s.docblock.options_bad),
+        set_vars: std::mem::take(&mut s.docblock.set_vars),
+        exit_codes: std::mem::take(&mut s.docblock.exit_codes),
+        stdin: std::mem::take(&mut s.docblock.stdin),
+        stdout: std::mem::take(&mut s.docblock.stdout),
+        stderr: std::mem::take(&mut s.docblock.stderr),
+        see_also: std::mem::take(&mut s.docblock.see_also),
+        tags: std::mem::take(&mut s.docblock.tags),
+        implementations: Vec::new(),
+    };
 
-        // Sort args by sort_key
-        s.docblock.args.sort_by(|a, b| a.0.cmp(&b.0));
-
-        let func_doc = FunctionDoc {
-            name: func_name,
-            description: if s.description.is_empty() {
-                None
-            } else {
-                Some(std::mem::take(&mut s.description))
-            },
-            section,
-            example: s.docblock.example.take(),
-            args: s
-                .docblock
-                .args
-                .drain(..)
-                .map(|(sort_key, raw)| ArgEntry { sort_key, raw })
-                .collect(),
-            noargs: s.docblock.noargs,
-            options: std::mem::take(&mut s.docblock.options),
-            options_bad: std::mem::take(&mut s.docblock.options_bad),
-            set_vars: std::mem::take(&mut s.docblock.set_vars),
-            exit_codes: std::mem::take(&mut s.docblock.exit_codes),
-            stdin: std::mem::take(&mut s.docblock.stdin),
-            stdout: std::mem::take(&mut s.docblock.stdout),
-            stderr: std::mem::take(&mut s.docblock.stderr),
-            see_also: std::mem::take(&mut s.docblock.see_also),
-            implementations: Vec::new(),
-        };
-
-        s.functions.push(func_doc);
-    }
+    s.functions.push(func_doc);
 
     reset_docblock(s);
 }
@@ -640,7 +652,7 @@ is::array() {
     }
 
     #[test]
-    fn parse_internal_skipped() {
+    fn parse_internal_preserved() {
         let input = r#"# @internal
 # @description Internal function
 _helper() {
@@ -652,8 +664,11 @@ public() {
 }
 "#;
         let doc = parse(input);
-        assert_eq!(doc.functions.len(), 1);
-        assert_eq!(doc.functions[0].name, "public");
+        assert_eq!(doc.functions.len(), 2);
+        assert_eq!(doc.functions[0].name, "_helper");
+        assert!(doc.functions[0].is_internal);
+        assert_eq!(doc.functions[1].name, "public");
+        assert!(!doc.functions[1].is_internal);
     }
 
     #[test]
