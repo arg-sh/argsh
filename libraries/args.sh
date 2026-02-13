@@ -19,7 +19,7 @@ import() { declare -A _i; (( ${_i[${1}]:-} )) || { _i[${1}]=1; . "${BASH_SOURCE[
 # Falls back to pure bash if unavailable.
 # Shared builtins list — also used by argsh::builtin::try() in main.sh.
 # obfus ignore variable
-declare -ga __ARGSH_BUILTINS=(:usage :usage::help :usage::completion :usage::docgen :args
+declare -ga __ARGSH_BUILTINS=(:usage :usage::help :usage::completion :usage::docgen :usage::mcp :args
   is::array is::uninitialized is::set is::tty
   args::field_name to::int to::float to::boolean to::file to::string
   import import::clear)

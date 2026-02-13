@@ -26,7 +26,7 @@ if [[ "${ARGSH_BUILTIN_TEST:-}" == "1" ]]; then
     else
       # shellcheck disable=SC2229
       enable -f "${_so}" \
-        :usage :usage::help :usage::completion :usage::docgen :args \
+        :usage :usage::help :usage::completion :usage::docgen :usage::mcp :args \
         is::array is::uninitialized is::set is::tty \
         args::field_name to::int to::float to::boolean to::file to::string \
         import import::clear 2>/dev/null || __BUILTIN_SKIP="builtin .so failed to load"
@@ -2491,4 +2491,222 @@ source "${PATH_FIXTURES}/fmt.sh"
   assert "${status}" -eq 0
   is_empty stderr
   contains "llm.*LLM tool schema" stdout
+}
+
+# ── MCP server tests ──────────────────────────────────────────────
+
+@test "usage: mcp --help shows help text" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  (
+    :test::usage mcp --help
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains 'MCP.*Model Context Protocol' stdout
+  contains 'mcpServers' stdout
+}
+
+@test "usage: mcp initialize returns protocol version" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' | (
+    :test::usage mcp
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains '"protocolVersion":"2025-11-25"' stdout
+  contains '"serverInfo"' stdout
+}
+
+@test "usage: mcp ping returns empty result" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"ping"}' | (
+    :test::usage mcp
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains '"result":{}' stdout
+}
+
+@test "usage: mcp tools/list returns tools with inputSchema" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | (
+    :test::usage mcp
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains '"inputSchema"' stdout
+  contains '"properties"' stdout
+}
+
+@test "usage: mcp tools/list has one tool per subcommand" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | (
+    :test::usage mcp
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains 'argsh_cmd1' stdout
+  contains 'argsh_cmd2' stdout
+}
+
+@test "usage: mcp tools/list excludes hidden commands" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | (
+    :test::usage mcp
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  ! grep -q 'cmd3' "${stdout}"
+}
+
+@test "usage: mcp unknown method returns error" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"bogus/method"}' | (
+    :test::usage mcp
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains '"error"' stdout
+  contains '"code":-32601' stdout
+  contains 'Method not found' stdout
+}
+
+@test "usage: mcp invalid request returns error" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  printf '%s\n' '{"jsonrpc":"2.0","id":1}' | (
+    :test::usage mcp
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains '"error"' stdout
+  contains '"code":-32600' stdout
+  contains 'Invalid request' stdout
+}
+
+@test "usage: mcp notifications/initialized produces no jsonrpc response" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  printf '%s\n' '{"jsonrpc":"2.0","method":"notifications/initialized"}' | (
+    :test::usage mcp
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stdout
+}
+
+@test "usage: mcp empty lines are ignored" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  printf '%s\n' '' '{"jsonrpc":"2.0","id":1,"method":"ping"}' '' | (
+    :test::usage mcp
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains '"result":{}' stdout
+}
+
+@test "usage: mcp tools/list with no subcommands returns single tool" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | (
+    :test::nosub mcp
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains '"inputSchema"' stdout
+  contains '"longonly"' stdout
+}
+
+@test "usage: mcp tools/call missing tool name returns error" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"arguments":{}}}' | (
+    :test::usage mcp
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains '"error"' stdout
+  contains 'Missing tool name' stdout
+}
+
+@test "usage: mcp tools/call unknown tool returns error" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"nonexistent","arguments":{}}}' | (
+    :test::usage mcp
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains '"error"' stdout
+  contains 'Unknown tool' stdout
+}
+
+@test "usage: mcp tools/call invokes subcommand" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  local fixture="${PATH_FIXTURES}/mcp_test.sh"
+  [[ -x "${fixture}" ]] || skip "mcp_test.sh fixture not found"
+  printf '%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
+    '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+    '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"args_sh_serve","arguments":{"verbose":true}}}' \
+  | "${fixture}" mcp >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains 'serving' stdout
+  contains 'verbose=on' stdout
+}
+
+@test "usage: mcp tools/call with string argument" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  local fixture="${PATH_FIXTURES}/mcp_test.sh"
+  [[ -x "${fixture}" ]] || skip "mcp_test.sh fixture not found"
+  printf '%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
+    '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+    '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"args_sh_serve","arguments":{"config":"test.yml"}}}' \
+  | "${fixture}" mcp >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains 'serving' stdout
+  contains 'config=test.yml' stdout
+}
+
+@test "usage: mcp tools/call with unknown arg is ignored" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  local fixture="${PATH_FIXTURES}/mcp_test.sh"
+  [[ -x "${fixture}" ]] || skip "mcp_test.sh fixture not found"
+  printf '%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
+    '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+    '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"args_sh_serve","arguments":{"verbose":true,"nonexistent":"ignored"}}}' \
+  | "${fixture}" mcp >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains 'serving' stdout
+  contains 'verbose=on' stdout
+}
+
+@test "usage: mcp tools/call with false boolean omits flag" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  local fixture="${PATH_FIXTURES}/mcp_test.sh"
+  [[ -x "${fixture}" ]] || skip "mcp_test.sh fixture not found"
+  printf '%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
+    '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+    '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"args_sh_serve","arguments":{"verbose":false}}}' \
+  | "${fixture}" mcp >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains 'serving' stdout
+  ! grep -q 'verbose=on' "${stdout}"
+}
+
+@test "usage: mcp tools/call build subcommand" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  local fixture="${PATH_FIXTURES}/mcp_test.sh"
+  [[ -x "${fixture}" ]] || skip "mcp_test.sh fixture not found"
+  printf '%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
+    '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+    '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"args_sh_build","arguments":{}}}' \
+  | "${fixture}" mcp >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains 'building' stdout
 }

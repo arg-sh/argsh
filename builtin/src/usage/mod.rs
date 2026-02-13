@@ -4,6 +4,7 @@
 
 pub mod completion;
 pub mod docgen;
+pub mod mcp;
 
 use crate::{word_list_to_vec, BashBuiltin, SyncPtr, WordList, BUILTIN_ENABLED};
 use crate::field;
@@ -233,7 +234,7 @@ pub fn usage_main(args: &[String]) -> i32 {
         // Command not found in usage array — check built-in special commands.
         // These are always available without being listed in the usage array.
         return match cmd.as_str() {
-            "completion" | "docgen" => {
+            "completion" | "docgen" | "mcp" => {
                 defer_builtin_command(&cmd, title, &usage_arr, cli);
                 0
             }
@@ -309,9 +310,9 @@ pub fn usage_main(args: &[String]) -> i32 {
     0 // EXECUTION_SUCCESS
 }
 
-/// Check if a function name is a deferred :usage:: builtin (completion, docgen).
+/// Check if a function name is a deferred :usage:: builtin (completion, docgen, mcp).
 fn is_deferred_builtin(name: &str) -> bool {
-    matches!(name, ":usage::completion" | ":usage::docgen")
+    matches!(name, ":usage::completion" | ":usage::docgen" | ":usage::mcp")
 }
 
 /// Defer a built-in special command (completion, docgen) via the usage array.

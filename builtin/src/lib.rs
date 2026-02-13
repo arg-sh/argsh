@@ -2,7 +2,7 @@
 //!
 //! Module layout mirrors libraries/*.sh:
 //!   args.rs  ← args.sh (:args)
-//!   usage.rs ← args.sh (:usage)
+//!   usage/   ← args.sh (:usage, :usage::help, :usage::completion, :usage::docgen, :usage::mcp)
 //!   field.rs ← args.sh (args::field_name, field parsing)
 //!   is.rs    ← is.sh   (is::array, is::uninitialized, is::set, is::tty)
 //!   to.rs    ← to.sh   (to::int, to::float, to::boolean, to::file, to::string)
@@ -10,7 +10,7 @@
 //!
 //! Build: cargo build --release
 //! Load:  enable -f ./target/release/libargsh.so :usage :usage::help \
-//!            :usage::completion :usage::docgen :args \
+//!            :usage::completion :usage::docgen :usage::mcp :args \
 //!            is::array is::uninitialized is::set is::tty args::field_name \
 //!            to::int to::float to::boolean to::file to::string
 
