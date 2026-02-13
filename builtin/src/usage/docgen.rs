@@ -55,7 +55,7 @@ pub fn usage_docgen_main(args: &[String]) -> i32 {
     let sep = args.iter().position(|s| s == "--");
     let (user_args, meta) = match sep {
         Some(pos) => (&args[..pos], &args[pos + 1..]),
-        None => (args, [].as_slice()),
+        None => (args, [].as_slice()), // coverage:off - defensive_check: deferred dispatch always provides "--"
     };
 
     if user_args.is_empty() || user_args[0] == "-h" || user_args[0] == "--help" {
@@ -78,7 +78,7 @@ pub fn usage_docgen_main(args: &[String]) -> i32 {
 
     let format = &user_args[0];
     let title = meta.first().map(|s| s.as_str()).unwrap_or("");
-    let usage_pairs = if meta.len() > 1 { &meta[1..] } else { &[] as &[String] };
+    let usage_pairs = if meta.len() > 1 { &meta[1..] } else { &[] as &[String] }; // coverage:off - defensive_check: deferred dispatch always provides title + usage_pairs
     let args_arr = shell::read_array("args");
 
     let commandname = shell::get_commandname();
