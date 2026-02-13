@@ -2230,21 +2230,6 @@ source "${PATH_FIXTURES}/fmt.sh"
   assert "${status}" -ne 0
 }
 
-@test "usage: help shows additional commands section" {
-  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
-  # Ensure the Rust builtin is used (bash function takes precedence if defined)
-  unset -f :usage::help 2>/dev/null || true
-  (
-    :test::usage --help
-  ) >"${stdout}" 2>"${stderr}" || status=$?
-
-  assert "${status}" -eq 0
-  is_empty stderr
-  contains "Additional Commands:" stdout
-  contains "completion.*Generate shell completions" stdout
-  contains "docgen.*Generate documentation" stdout
-}
-
 @test "usage: completion includes subcommands from usage array" {
   if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
   (

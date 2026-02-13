@@ -496,7 +496,7 @@ fn is_deferred_builtin(name: &str) -> bool {
     matches!(name, ":usage::completion" | ":usage::docgen")
 }
 
-/// Defer a built-in special command (completion, man) via the usage array.
+/// Defer a built-in special command (completion, docgen) via the usage array.
 fn defer_builtin_command(cmd: &str, title: &str, usage_arr: &[String], cli: Vec<String>) {
     let builtin_name = format!(":usage::{}", cmd);
     let mut new_usage = vec![builtin_name];
@@ -561,11 +561,6 @@ fn usage_help_text(title: &str, usage_arr: &[String], args_arr: &[String]) {
         let name = entry.split(['|', ':']).next().unwrap_or(entry);
         let _ = writeln!(out, "  {:width$} {}", name, desc, width = fw);
     }
-
-    // Built-in commands
-    let _ = writeln!(out, "\nAdditional Commands:");
-    let _ = writeln!(out, "  {:width$} Generate shell completions (bash, zsh, fish)", "completion", width = fw);
-    let _ = writeln!(out, "  {:width$} Generate documentation (man, md, rst, yaml)", "docgen", width = fw);
 
     // Flags section
     print_flags_section(&mut out, args_arr, fw);
@@ -958,12 +953,15 @@ fn generate_markdown<W: Write>(
     }
     let _ = writeln!(out, " [options]\n```\n");
 
-    // Description
-    let _ = writeln!(out, "## Description\n");
-    for line in title.lines() {
-        let _ = writeln!(out, "{}", line.trim());
+    // Description (skip first line since it's already shown as summary above)
+    let remaining: Vec<&str> = title.lines().skip(1).collect();
+    if !remaining.is_empty() {
+        let _ = writeln!(out, "## Description\n");
+        for line in &remaining {
+            let _ = writeln!(out, "{}", line.trim());
+        }
+        let _ = writeln!(out);
     }
-    let _ = writeln!(out);
 
     // Commands
     if !cmds.is_empty() {
@@ -1025,13 +1023,16 @@ fn generate_rst<W: Write>(
     }
     let _ = writeln!(out, " [options]\n");
 
-    // Description
-    let _ = writeln!(out, "Description");
-    let _ = writeln!(out, "-----------\n");
-    for line in title.lines() {
-        let _ = writeln!(out, "{}", line.trim());
+    // Description (skip first line since it's already shown as summary above)
+    let remaining: Vec<&str> = title.lines().skip(1).collect();
+    if !remaining.is_empty() {
+        let _ = writeln!(out, "Description");
+        let _ = writeln!(out, "-----------\n");
+        for line in &remaining {
+            let _ = writeln!(out, "{}", line.trim());
+        }
+        let _ = writeln!(out);
     }
-    let _ = writeln!(out);
 
     // Commands
     if !cmds.is_empty() {
