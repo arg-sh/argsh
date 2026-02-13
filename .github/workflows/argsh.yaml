@@ -41,12 +41,11 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            builtin/target
             minifier/target
             ~/.cargo/registry
-          key: ${{ runner.os }}-cargo-all-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-all-
+            ${{ runner.os }}-cargo-test-
             ${{ runner.os }}-cargo-
       - name: Lint
         run: argsh lint
