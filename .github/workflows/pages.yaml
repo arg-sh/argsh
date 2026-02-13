@@ -2,7 +2,7 @@ name: pages
 on:
   push:
     branches:
-      - gh-pages
+      - docs
   workflow_dispatch:
 
 defaults:
@@ -27,6 +27,28 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Checkout main branch docs content
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: main-repo
+          sparse-checkout: |
+            docs
+          sparse-checkout-cone-mode: false
+
+      - name: Copy main branch docs to content and sidebars
+        run: |
+          if [ -d "main-repo/docs" ]; then
+            rm -rf apps/docs/content
+            cp -r main-repo/docs/ apps/docs/content
+            if [ -f "main-repo/docs/sidebars.js" ]; then
+              cp main-repo/docs/sidebars.js apps/docs/sidebars.js
+            fi
+            echo "Copied docs and sidebars from main branch"
+          else
+            echo "No docs directory found in main branch, using existing content"
+          fi
 
       - name: Setup Node.js
         uses: actions/setup-node@v4

@@ -2,7 +2,7 @@ name: docs
 on:
   pull_request:
     branches:
-      - gh-pages
+      - docs
 
 defaults:
   run:
