@@ -86,17 +86,10 @@ _test() {
     BATS_LOAD="argsh.min.sh"
     export BATS_LOAD
   }
-  # Build latest .so before running builtin tests so Docker uses the
-  # mounted workspace copy instead of the stale image-baked one.
-  if [[ "${target}" == "all" || "${target}" == "builtin" ]] && command -v cargo &>/dev/null; then
-    cargo build --release --manifest-path "${PATH_BASE}/builtin/Cargo.toml"
-    rm -f "${PATH_BIN}/argsh.so" && cp "${PATH_BASE}/builtin/target/release/libargsh.so" "${PATH_BIN}/argsh.so"
-  fi
 
   case "${target}" in
     all)
       ARGSH_BUILTIN_TEST=1 \
-      ARGSH_BUILTIN_PATH="/workspace/builtin/target/release/libargsh.so" \
         argsh::main test libraries .docker/test
       if command -v cargo &>/dev/null; then
         test::minifier
@@ -105,7 +98,6 @@ _test() {
     argsh)    argsh::main test libraries .docker/test ;;
     builtin)
       ARGSH_BUILTIN_TEST=1 \
-      ARGSH_BUILTIN_PATH="/workspace/builtin/target/release/libargsh.so" \
         argsh::main test libraries .docker/test
       ;;
     minifier) test::minifier ;;
@@ -223,16 +215,23 @@ coverage::builtin() {
     rustup component add llvm-tools
   }
 
-  # Build with coverage instrumentation (override release profile settings that break coverage)
-  echo "Building with coverage instrumentation..."
-  RUSTFLAGS="-C instrument-coverage" \
-  CARGO_PROFILE_RELEASE_STRIP="none" \
-  CARGO_PROFILE_RELEASE_LTO="false" \
-  CARGO_PROFILE_RELEASE_PANIC="unwind" \
-    cargo build --release \
-      --manifest-path "${PATH_BASE}/builtin/Cargo.toml"
+  # Build coverage-instrumented .so inside Docker (rust:1-slim-bookworm) to ensure
+  # glibc compatibility with the kcov/kcov test container (also Debian bookworm).
+  # Mount sources at the same absolute path so llvm-cov finds them on the host.
+  # Share cargo registry cache to avoid re-downloading dependencies.
+  echo "Building with coverage instrumentation (via Docker)..."
+  mkdir -p "${HOME}/.cargo/registry"
+  docker run --rm \
+    -v "${PATH_BASE}/builtin:${PATH_BASE}/builtin" \
+    -v "${HOME}/.cargo/registry:/usr/local/cargo/registry" \
+    -w "${PATH_BASE}/builtin" \
+    rust:1-slim-bookworm \
+    bash -c 'RUSTFLAGS="-C instrument-coverage" \
+      CARGO_PROFILE_RELEASE_STRIP=none \
+      CARGO_PROFILE_RELEASE_LTO=false \
+      CARGO_PROFILE_RELEASE_PANIC=unwind \
+      cargo build --release'
 
-  rm -f "${PATH_BIN}/argsh.so" && cp "${so_path}" "${PATH_BIN}/argsh.so"
   rm -rf "${cov_dir}"
   mkdir -p "${cov_dir}"
 
@@ -655,10 +654,14 @@ _e2e() {
 ###
 argsh::main() {
   local tty=""
-  argsh::docker &>/dev/null || {
-    echo "Docker build failed. Run 'argsh docker' to see errors." >&2
-    return 1
-  }
+  local _image="${ARGSH_DOCKER_IMAGE:-ghcr.io/arg-sh/argsh:latest}"
+
+  if [[ -z "${ARGSH_DOCKER_IMAGE:-}" ]]; then
+    argsh::docker &>/dev/null || {
+      echo "Docker build failed. Run 'argsh docker' to see errors." >&2
+      return 1
+    }
+  fi
 
   [[ ! -t 1 ]] || tty="-it"
   # shellcheck disable=SC2046
@@ -670,7 +673,7 @@ argsh::main() {
     -e "LLVM_PROFILE_FILE" \
     -e "GIT_COMMIT_SHA=$(git rev-parse HEAD 2>/dev/null || :)" \
     -e "GIT_VERSION=$(git describe --tags --dirty 2>/dev/null || :)" \
-    ghcr.io/arg-sh/argsh:latest "${@}" 
+    "${_image}" "${@}"
 }
 
 _main() {

@@ -52,12 +52,12 @@ jobs:
         run: argsh lint
       - name: Test
         run: argsh test
-      - name: Build builtin release
-        working-directory: builtin
-        run: cargo build --release
-      - name: Build minifier release
-        working-directory: minifier
-        run: cargo build --release
+      - name: Extract artifacts from Docker
+        run: |
+          mkdir -p builtin/target/release minifier/target/release
+          docker run --rm --entrypoint cat ghcr.io/arg-sh/argsh:latest /usr/local/lib/argsh.so > builtin/target/release/libargsh.so
+          docker run --rm --entrypoint cat ghcr.io/arg-sh/argsh:latest /usr/local/bin/minifier > minifier/target/release/minifier
+          chmod +x minifier/target/release/minifier
       - name: Upload builtin library
         uses: actions/upload-artifact@v4
         with:
@@ -85,16 +85,6 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: llvm-tools
-      - name: Cache cargo
-        uses: actions/cache@v4
-        with:
-          path: |
-            builtin/target
-            ~/.cargo/registry
-          key: ${{ runner.os }}-cargo-cov-${{ hashFiles('builtin/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-cov-
-            ${{ runner.os }}-cargo-
       - name: Coverage
         run: argsh coverage builtin
       - name: Is insync
@@ -196,9 +186,11 @@ jobs:
             trap "rm -f '${_t}'" EXIT
             base64 -d <<< "${__ARGSH_SO_B64}" > "${_t}" || return 1
             # shellcheck disable=SC2229
-            enable -f "${_t}" :usage :args \
+            enable -f "${_t}" \
+              :usage :usage::help :usage::completion :usage::docgen :usage::mcp :args \
               is::array is::uninitialized is::set is::tty \
               args::field_name to::int to::float to::boolean to::file to::string \
+              import import::clear \
               2>/dev/null || return 1
             rm -f "${_t}"
             return 0

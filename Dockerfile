@@ -1,13 +1,17 @@
 # All the tools required to run the tests, lint and coverage Bash scripts
 
 # minify — build Rust minifier
-FROM rust:1-slim AS minifier-build
+FROM rust:1-slim-bookworm AS minifier-build
 WORKDIR /build
 COPY minifier/ .
 RUN cargo build --release
 
 # builtin — build Rust loadable builtins
-FROM rust:1-slim AS builtin-build
+FROM rust:1-slim-bookworm AS builtin-build
+ARG RUSTFLAGS
+ARG CARGO_PROFILE_RELEASE_STRIP
+ARG CARGO_PROFILE_RELEASE_LTO
+ARG CARGO_PROFILE_RELEASE_PANIC
 WORKDIR /build
 COPY builtin/ .
 RUN cargo build --release
