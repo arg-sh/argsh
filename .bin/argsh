@@ -595,11 +595,6 @@ _e2e() {
     echo "claude CLI required. Install: https://docs.anthropic.com/en/docs/claude-code"
     return 1
   } >&2
-  binary::exists jq || {
-    echo "jq required. Install: https://jqlang.github.io/jq/download/"
-    return 1
-  } >&2
-
   script="$(cd "$(dirname "${script}")" && pwd)/$(basename "${script}")"
   [[ -x "${script}" ]] || { echo "Script not executable: ${script}" >&2; return 1; }
 
@@ -669,7 +664,7 @@ argsh::main() {
     -e "BATS_LOAD" \
     -e "ARGSH_SOURCE" \
     -e "ARGSH_BUILTIN_TEST" \
-    -e "ARGSH_BUILTIN_PATH" \
+    ${ARGSH_BUILTIN_PATH:+-e "ARGSH_BUILTIN_PATH=${ARGSH_BUILTIN_PATH}"} \
     -e "LLVM_PROFILE_FILE" \
     -e "GIT_COMMIT_SHA=$(git rev-parse HEAD 2>/dev/null || :)" \
     -e "GIT_VERSION=$(git describe --tags --dirty 2>/dev/null || :)" \
