@@ -51,6 +51,74 @@ This is what argsh is trying to do. Check out the [Quickstart](https://arg.sh/ge
 
 &nbsp;
 
+### 🔧 CLI Parser
+
+argsh turns a plain Bash array into a full CLI — flags, types, defaults, validation and help — with zero boilerplate.
+
+```bash
+#!/usr/bin/env bash
+source argsh
+
+main() {
+  local args=(
+    "name|n:!    Name of the person"
+    "age|a:int   Age in years"
+    "verbose|v:+ Enable verbose output"
+  )
+  :args "Greet someone" "${@}"
+
+  echo "Hello ${name}, you are ${age} years old."
+}
+
+main "${@}"
+```
+
+```console
+$ ./greet --name World --age 42
+Hello World, you are 42 years old.
+
+$ ./greet --help
+Greet someone
+
+Options:
+   --name, -n     string  Name of the person (required)
+   --age, -a      int     Age in years
+   --verbose, -v          Enable verbose output
+   --help, -h             Show this help message
+```
+
+The `:args` builtin handles `--flag value`, `-f value`, `--flag=value`, `--no-flag` (booleans), automatic `--help`/`-h`, unknown flag errors, and type validation (`int`, `float`, `boolean`, `file`, or custom). See the [CLI Parser docs](https://arg.sh/command-line-parser) for the full syntax.
+
+&nbsp;
+
+### 🤖 AI Integration
+
+Every argsh script is AI-ready out of the box — no glue code required.
+
+**MCP Server** — expose subcommands as tools for AI agents over [Model Context Protocol](https://modelcontextprotocol.io):
+
+```bash
+./myscript mcp            # starts JSON-RPC 2.0 stdio server
+./myscript mcp --help     # prints .mcp.json config snippet
+```
+
+**LLM Tool Schemas** — generate ready-to-use tool definitions for AI APIs:
+
+```bash
+./myscript docgen llm claude   # Anthropic tool array (input_schema)
+./myscript docgen llm openai   # OpenAI function calling format
+./myscript docgen llm gemini   # Gemini (OpenAI-compatible)
+```
+
+**Shell Completions & Docs** — also generated from the same source:
+
+```bash
+./myscript completion bash|zsh|fish
+./myscript docgen man|md|rst|yaml
+```
+
+&nbsp;
+
 ### ⚡ Native Builtins (Rust)
 
 argsh ships with optional **Bash loadable builtins** compiled from Rust. When the shared library is available, the core parsing commands (`:args`, `:usage`, type converters, etc.) run as native code inside the Bash process — zero fork overhead, zero subshell cost.
