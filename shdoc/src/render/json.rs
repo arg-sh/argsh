@@ -166,7 +166,7 @@ fn write_string_array(out: &mut String, name: &str, items: &[String]) {
         out.push('\n');
         for (i, item) in items.iter().enumerate() {
             let comma = if i < items.len() - 1 { "," } else { "" };
-            out.push_str(&format!("        \"{}\"{}",json_escape(item), comma));
+            out.push_str(&format!("        \"{}\"{}", json_escape(item), comma));
             out.push('\n');
         }
         out.push_str("      ");

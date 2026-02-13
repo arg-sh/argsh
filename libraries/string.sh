@@ -40,7 +40,7 @@ string::random() {
 
 # @description Left trim all lines in a string
 # @arg $1 string The string to trim
-# @arg $2 int [0] Indent the string by this amount:w
+# @arg $2 int [0] Indent the string by this amount
 # @stdout The trimmed string
 # @example
 #   string::indent "  hello\n  world" # "hello\nworld"

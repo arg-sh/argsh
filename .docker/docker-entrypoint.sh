@@ -151,6 +151,7 @@ argsh::docs() {
   local -a shdoc_args=(-o "${out}")
   [[ -z "${prefix}" ]] || shdoc_args+=(-p "${prefix}")
   # shellcheck disable=SC2086
+  # ${in} is intentionally unquoted to allow glob expansion (e.g. "libraries/*.sh")
   shdoc "${shdoc_args[@]}" ${in}
 }
 

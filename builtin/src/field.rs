@@ -13,6 +13,7 @@ static FIELD_NAME_LONG_DOC: [SyncPtr; 2] = [
     SyncPtr(std::ptr::null()),
 ];
 
+/// Extract the variable name from an argsh field definition string (e.g. `'flag|f:~int!'` → `flag`).
 #[export_name = "args::field_name_struct"]
 pub static mut FIELD_NAME_STRUCT: BashBuiltin = BashBuiltin {
     name: c"args::field_name".as_ptr(),

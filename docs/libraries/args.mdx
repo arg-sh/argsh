@@ -56,25 +56,25 @@ args=(
 
 ### args::field_name
 
-args::field_name <field> [asref]
+Extract the variable name from an argsh field definition string (e.g. `'flag|f:~int!'` → `flag`).
 
 ### :usage::completion
 
-:usage::completion <shell> [-- title usage_pairs...]
+Generate shell completion scripts (bash, zsh, fish) from the usage array.
 
 ### :usage::docgen
 
-:usage::docgen <format> [-- title usage_pairs...]
+Generate documentation in various formats (man, md, rst, yaml, llm) from the usage array.
 
 ### :usage::mcp
 
-:usage::mcp [--] <title> [usage_pairs...]
+Run an MCP (Model Context Protocol) tool server over stdio, exposing subcommands as tools.
 
 ### :usage
 
-:usage <title> [args...]
+Parse subcommands from the usage array and dispatch to the matching handler.
 
 ### :usage::help
 
-:usage::help <title> [usage_pairs...]
+Display formatted help text for subcommands defined in the usage array.
 

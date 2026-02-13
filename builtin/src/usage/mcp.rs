@@ -24,6 +24,7 @@ static MCP_LONG_DOC: [SyncPtr; 2] = [
     SyncPtr(std::ptr::null()),
 ];
 
+/// Run an MCP (Model Context Protocol) tool server over stdio, exposing subcommands as tools.
 #[export_name = ":usage::mcp_struct"]
 pub static mut MCP_STRUCT: BashBuiltin = BashBuiltin {
     name: c":usage::mcp".as_ptr(),
