@@ -99,6 +99,22 @@ jobs:
             --ignore-matching-lines '^  "date":' \
             -- minifier/coverage.json
 
+  shdoc-coverage:
+    runs-on: ubuntu-latest
+    needs: [test]
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v4
+      - name: Direnv
+        uses: HatsuneMiku3939/direnv-action@v1
+      - name: Coverage
+        run: argsh coverage shdoc
+      - name: Is insync
+        run: |
+          git diff --exit-code \
+            --ignore-matching-lines '^  "date":' \
+            -- shdoc/coverage.json
+
   minify:
     runs-on: ubuntu-latest
     needs: [test]
