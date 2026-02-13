@@ -20,6 +20,7 @@ static USAGE_LONG_DOC: [SyncPtr; 2] = [
     SyncPtr(std::ptr::null()),
 ];
 
+/// Parse subcommands from the usage array and dispatch to the matching handler.
 #[export_name = ":usage_struct"]
 pub static mut USAGE_STRUCT: BashBuiltin = BashBuiltin {
     name: c":usage".as_ptr(),
@@ -61,6 +62,7 @@ static USAGE_HELP_LONG_DOC: [SyncPtr; 2] = [
     SyncPtr(std::ptr::null()),
 ];
 
+/// Display formatted help text for subcommands defined in the usage array.
 #[export_name = ":usage::help_struct"]
 pub static mut USAGE_HELP_STRUCT: BashBuiltin = BashBuiltin {
     name: c":usage::help".as_ptr(),

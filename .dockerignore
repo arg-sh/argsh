@@ -4,5 +4,7 @@
 !argsh.min.sh
 !minifier
 !builtin
+!shdoc
 builtin/target
 minifier/target
+shdoc/target

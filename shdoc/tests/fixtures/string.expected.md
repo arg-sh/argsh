@@ -1,13 +1,3 @@
----
-tags: [core]
----
-
-import Link from "@docusaurus/Link";
-import ExternalLink from "@site/src/theme/Icon/Twitter";
-
-<Link to="https://github.com/arg-sh/argsh/blob/main/libraries/string.sh" alt="source code">
-Source code
-</Link>
 This file contains functions for manipulating strings
 
 ## Index

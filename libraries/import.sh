@@ -49,7 +49,7 @@ import::source() {
 }
 
 # @description
-#   Clear the import cache
+#   Clear the import cache, allowing previously loaded libraries to be re-sourced
 import::clear() {
   import_cache=()
 }

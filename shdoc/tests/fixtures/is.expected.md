@@ -1,21 +1,26 @@
----
-tags: [core, builtin]
----
-
-import Link from "@docusaurus/Link";
-import ExternalLink from "@site/src/theme/Icon/Twitter";
-
-<Link to="https://github.com/arg-sh/argsh/blob/main/libraries/is.sh" alt="source code">
-Source code
-</Link>
 This file contains functions for checking types
 
 ## Index
 
+* [is::tty](#istty)
 * [is::array](#isarray)
 * [is::uninitialized](#isuninitialized)
 * [is::set](#isset)
-* [is::tty](#istty)
+
+### is::tty
+
+Check if terminal is a tty
+
+#### Example
+
+```bash
+is::tty # succeeds (returns 0)
+```
+
+#### Exit codes
+
+* **0**: If the terminal is a tty
+* **1**: If the terminal is not a tty
 
 ### is::array
 
@@ -79,19 +84,4 @@ is::set arr # succeeds (returns 0)
 
 * **0**: If the variable is set
 * **1**: If the variable is not set
-
-### is::tty
-
-Check if terminal is a tty
-
-#### Example
-
-```bash
-is::tty # succeeds (returns 0)
-```
-
-#### Exit codes
-
-* **0**: If the terminal is a tty
-* **1**: If the terminal is not a tty
 

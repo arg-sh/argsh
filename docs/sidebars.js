@@ -460,6 +460,33 @@ module.exports = {
           },
           className: "homepage-sidebar-item",
         },
+        {
+          type: "doc",
+          id: "libraries/bash",
+          label: "bash",
+          customProps: {
+            sidebar_icon: "command-line",
+          },
+          className: "homepage-sidebar-item",
+        },
+        {
+          type: "doc",
+          id: "libraries/main",
+          label: "main",
+          customProps: {
+            sidebar_icon: "play-solid",
+          },
+          className: "homepage-sidebar-item",
+        },
+        {
+          type: "doc",
+          id: "libraries/import",
+          label: "import",
+          customProps: {
+            sidebar_icon: "arrow-down-tray",
+          },
+          className: "homepage-sidebar-item",
+        },
       ],
     },
     {
@@ -476,6 +503,15 @@ module.exports = {
           label: "github",
           customProps: {
             sidebar_icon: "github",
+          },
+          className: "homepage-sidebar-item",
+        },
+        {
+          type: "doc",
+          id: "libraries/docker",
+          label: "docker",
+          customProps: {
+            sidebar_icon: "server-stack",
           },
           className: "homepage-sidebar-item",
         },

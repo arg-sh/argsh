@@ -148,44 +148,11 @@ argsh::docs() {
     :args::error_usage "out is not a directory"
     exit 1
   }
-
-  if [[ -f "${prefix}" ]]; then
-    prefix="$(cat "${prefix}")"
-  elif [[ -d "${prefix}" || -f "${prefix}/_prefix.mdx" ]]; then
-    prefix="$(cat "${prefix}/_prefix.mdx")"
-  elif [[ -f "${out}/_prefix.mdx" ]]; then
-    prefix="$(cat "${out}/_prefix.mdx")"
-  fi
-
-  local -a glob
-  if [[ -d "${in}" ]]; then
-    glob=("${in}"/*.{sh,bash,bats})
-  else
-    # shellcheck disable=SC2206 disable=SC2128
-    glob=(${in})
-  fi
-  
-  local file f name to tags
-  for file in "${glob[@]}"; do
-    [[ -e "${file}" ]] || continue
-
-    name="${file##*/}"
-    name="${name%.sh}"
-    export name
-
-    to="${out}/${name}.mdx"
-    # Extract @tags from source file for frontmatter
-    tags="$(grep -oP '(?<=^# @tags ).*' "${file}" 2>/dev/null || :)"
-    if [[ -n "${tags}" ]]; then
-      # shellcheck disable=SC2016
-      printf -- '---\ntags: [%s]\n---\n\n' "${tags}" >"${to}"
-      echo "${prefix}" | envsubst '$name' >>"${to}"
-    else
-      # shellcheck disable=SC2016
-      echo "${prefix}" | envsubst '$name' >"${to}"
-    fi
-    shdoc <"${file}" >>"${to}"
-  done
+  local -a shdoc_args=(-o "${out}")
+  [[ -z "${prefix}" ]] || shdoc_args+=(-p "${prefix}")
+  # shellcheck disable=SC2086
+  # ${in} is intentionally unquoted to allow glob expansion (e.g. "libraries/*.sh")
+  shdoc "${shdoc_args[@]}" ${in}
 }
 
 argsh::main() {

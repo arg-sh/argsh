@@ -250,7 +250,7 @@ That being said, most of it is quite rough. But it's a start. The best time that
 - [ ] Design a logo
 - [ ] Write a language server to lint and format bash code according to the styleguide
 - [ ] VSCode extension for the language server
-- [ ] Convert [shdoc](https://github.com/reconquest/shdoc) to rust
+- [x] Convert [shdoc](https://github.com/reconquest/shdoc) to rust
 - [ ] Bash debugger integration (e.g. with `bashdb`)
 
 &nbsp;

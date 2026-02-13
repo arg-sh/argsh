@@ -20,6 +20,7 @@ static IMPORT_LONG_DOC: [SyncPtr; 2] = [
     SyncPtr(std::ptr::null()),
 ];
 
+/// Import a bash module with optional selective function filtering and aliasing.
 #[export_name = "import_struct"]
 pub static mut IMPORT_STRUCT: BashBuiltin = BashBuiltin {
     name: c"import".as_ptr(),
@@ -51,6 +52,7 @@ static IMPORT_CLEAR_LONG_DOC: [SyncPtr; 2] = [
     SyncPtr(std::ptr::null()),
 ];
 
+/// Clear the import cache, allowing previously loaded libraries to be re-sourced.
 #[export_name = "import::clear_struct"]
 pub static mut IMPORT_CLEAR_STRUCT: BashBuiltin = BashBuiltin {
     name: c"import::clear".as_ptr(),

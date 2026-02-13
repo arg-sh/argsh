@@ -1,20 +1,8 @@
-import Link from "@docusaurus/Link";
-import ExternalLink from "@site/src/theme/Icon/Twitter";
-
-<Link to="https://github.com/arg-sh/argsh/blob/main/libraries/args.sh" alt="source code">
-Source code
-</Link>
 This file contains functions for working with arguments
 
 ## Index
 
 * [:args](#args)
-* [args::field_name](#argsfieldname)
-* [:usage::completion](#usagecompletion)
-* [:usage::docgen](#usagedocgen)
-* [:usage::mcp](#usagemcp)
-* [:usage](#usage)
-* [:usage::help](#usagehelp)
 
 ### :args
 
@@ -53,28 +41,4 @@ args=(
 
 * **0**: If user arguments are correct
 * **2**: If user arguments are incorrect
-
-### args::field_name
-
-Extract the variable name from an argsh field definition string (e.g. `'flag|f:~int!'` → `flag`).
-
-### :usage::completion
-
-Generate shell completion scripts (bash, zsh, fish) from the usage array.
-
-### :usage::docgen
-
-Generate documentation in various formats (man, md, rst, yaml, llm) from the usage array.
-
-### :usage::mcp
-
-Run an MCP (Model Context Protocol) tool server over stdio, exposing subcommands as tools.
-
-### :usage
-
-Parse subcommands from the usage array and dispatch to the matching handler.
-
-### :usage::help
-
-Display formatted help text for subcommands defined in the usage array.
 

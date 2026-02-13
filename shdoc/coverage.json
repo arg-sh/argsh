@@ -1,0 +1,89 @@
+{
+  "files": [
+    {
+      "file": "shdoc/src/render/mod.rs",
+      "percent_covered": "100.00",
+      "covered_lines": "10",
+      "total_lines": "10",
+      "excluded_lines": "0"
+    },
+    {
+      "file": "shdoc/tests/integration.rs",
+      "percent_covered": "98.91",
+      "covered_lines": "181",
+      "total_lines": "183",
+      "excluded_lines": "0"
+    },
+    {
+      "file": "shdoc/src/parser/rust.rs",
+      "percent_covered": "95.45",
+      "covered_lines": "147",
+      "total_lines": "154",
+      "excluded_lines": "0"
+    },
+    {
+      "file": "shdoc/src/parser/merge.rs",
+      "percent_covered": "93.55",
+      "covered_lines": "174",
+      "total_lines": "186",
+      "excluded_lines": "0"
+    },
+    {
+      "file": "shdoc/src/render/json.rs",
+      "percent_covered": "91.04",
+      "covered_lines": "122",
+      "total_lines": "134",
+      "excluded_lines": "0"
+    },
+    {
+      "file": "shdoc/src/render/html.rs",
+      "percent_covered": "84.11",
+      "covered_lines": "90",
+      "total_lines": "107",
+      "excluded_lines": "0"
+    },
+    {
+      "file": "shdoc/src/parser/bash.rs",
+      "percent_covered": "82.64",
+      "covered_lines": "376",
+      "total_lines": "455",
+      "excluded_lines": "0"
+    },
+    {
+      "file": "shdoc/src/render/markdown.rs",
+      "percent_covered": "79.33",
+      "covered_lines": "165",
+      "total_lines": "208",
+      "excluded_lines": "0"
+    },
+    {
+      "file": "shdoc/src/main.rs",
+      "percent_covered": "69.14",
+      "covered_lines": "112",
+      "total_lines": "162",
+      "excluded_lines": "0"
+    },
+    {
+      "file": "shdoc/src/toc.rs",
+      "percent_covered": "67.02",
+      "covered_lines": "63",
+      "total_lines": "94",
+      "excluded_lines": "0"
+    },
+    {
+      "file": "shdoc/src/parser/mod.rs",
+      "percent_covered": "50.00",
+      "covered_lines": "5",
+      "total_lines": "10",
+      "excluded_lines": "0"
+    }
+  ],
+  "percent_covered": "84.85",
+  "covered_lines": 1445,
+  "total_lines": 1703,
+  "excluded_lines": 0,
+  "percent_low": 25,
+  "percent_high": 75,
+  "command": "cargo-test+llvm-cov",
+  "date": "2026-02-13 22:59:58"
+}

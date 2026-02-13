@@ -6,6 +6,12 @@ WORKDIR /build
 COPY minifier/ .
 RUN cargo build --release
 
+# shdoc — build Rust documentation generator
+FROM rust:1-slim-bookworm AS shdoc-build
+WORKDIR /build
+COPY shdoc/ .
+RUN cargo build --release
+
 # builtin — build Rust loadable builtins
 FROM rust:1-slim-bookworm AS builtin-build
 ARG RUSTFLAGS
@@ -32,12 +38,6 @@ RUN set -eux \
   && apt autoremove -y \
   && rm -rf /var/lib/apt/lists/*
 
-# docs
-RUN set -eux \
-  && apt update \
-  && apt install -y gawk \
-  && rm -rf /var/lib/apt/lists/*
-
 # lint
 COPY --from=koalaman/shellcheck:stable /bin/shellcheck /usr/local/bin/shellcheck
 
@@ -50,8 +50,8 @@ RUN set -eux \
 
 # argsh itself
 COPY --from=minifier-build /build/target/release/minifier /usr/local/bin/minifier
+COPY --from=shdoc-build /build/target/release/shdoc /usr/local/bin/shdoc
 COPY --from=builtin-build /build/target/release/libargsh.so /usr/local/lib/argsh.so
-COPY .bin/shdoc /usr/local/bin/shdoc
 COPY ./argsh.min.sh /usr/local/bin/argsh
 ENV ARGSH_BUILTIN_PATH=/usr/local/lib/argsh.so
 

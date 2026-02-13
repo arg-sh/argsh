@@ -1,4 +1,6 @@
 //! :usage::completion builtin -- shell completion script generation.
+//!
+//! Mirrors: libraries/args.sh
 
 use crate::{word_list_to_vec, BashBuiltin, SyncPtr, WordList, BUILTIN_ENABLED};
 use crate::shared;
@@ -26,6 +28,7 @@ static USAGE_COMPLETION_LONG_DOC: [SyncPtr; 2] = [
     SyncPtr(std::ptr::null()),
 ];
 
+/// Generate shell completion scripts (bash, zsh, fish) from the usage array.
 #[export_name = ":usage::completion_struct"]
 pub static mut USAGE_COMPLETION_STRUCT: BashBuiltin = BashBuiltin {
     name: c":usage::completion".as_ptr(),

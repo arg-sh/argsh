@@ -1,4 +1,6 @@
 //! :usage::docgen builtin -- documentation generation in various formats.
+//!
+//! Mirrors: libraries/args.sh
 
 use crate::{word_list_to_vec, BashBuiltin, SyncPtr, WordList, BUILTIN_ENABLED};
 use crate::shared;
@@ -18,6 +20,7 @@ static USAGE_DOCGEN_LONG_DOC: [SyncPtr; 2] = [
     SyncPtr(std::ptr::null()),
 ];
 
+/// Generate documentation in various formats (man, md, rst, yaml, llm) from the usage array.
 #[export_name = ":usage::docgen_struct"]
 pub static mut USAGE_DOCGEN_STRUCT: BashBuiltin = BashBuiltin {
     name: c":usage::docgen".as_ptr(),

@@ -53,7 +53,7 @@ lint::vale() {
 ###
 generate::docs() {
   :args "Generate library documentation for docs" "${@}"
-  argsh::main docs libraries www/apps/docs/content/libraries
+  argsh::main docs "libraries/*.sh builtin/src/to.rs builtin/src/is.rs builtin/src/args.rs builtin/src/field.rs builtin/src/import.rs builtin/src/usage/mod.rs builtin/src/usage/completion.rs builtin/src/usage/docgen.rs builtin/src/usage/mcp.rs" www/apps/docs/content/libraries
 }
 
 minify::argsh() {
@@ -79,7 +79,7 @@ _test() {
   local test_minify
   local -a args=(
     'test-minify|m:+' "Run tests for argsh.min.sh"
-    'target' "Test target (all, argsh, builtin, minifier)"
+    'target' "Test target (all, argsh, builtin, minifier, shdoc)"
   )
   :args "Run tests" "${@}"
   ! (( test_minify )) || {
@@ -93,6 +93,7 @@ _test() {
         argsh::main test libraries .docker/test
       if command -v cargo &>/dev/null; then
         test::minifier
+        test::shdoc
       fi
       ;;
     argsh)    argsh::main test libraries .docker/test ;;
@@ -101,8 +102,9 @@ _test() {
         argsh::main test libraries .docker/test
       ;;
     minifier) test::minifier ;;
+    shdoc)    test::shdoc ;;
     *)
-      echo "Unknown target: ${target}. Use: all, argsh, builtin, minifier" >&2
+      echo "Unknown target: ${target}. Use: all, argsh, builtin, minifier, shdoc" >&2
       return 1
       ;;
   esac
@@ -126,7 +128,7 @@ _lint() {
   local test_minify
   local -a args=(
     'test-minify|m:+' "Lint argsh.min.sh"
-    'target' "Lint target (all, argsh, builtin, minifier)"
+    'target' "Lint target (all, argsh, builtin, minifier, shdoc)"
   )
   :args "Run linters" "${@}"
   case "${target}" in
@@ -139,6 +141,7 @@ _lint() {
       if command -v cargo &>/dev/null; then
         lint::builtin
         lint::minifier
+        lint::shdoc
       fi
       ;;
     argsh)
@@ -150,8 +153,9 @@ _lint() {
       ;;
     builtin)  lint::builtin ;;
     minifier) lint::minifier ;;
+    shdoc)    lint::shdoc ;;
     *)
-      echo "Unknown target: ${target}. Use: all, argsh, builtin, minifier" >&2
+      echo "Unknown target: ${target}. Use: all, argsh, builtin, minifier, shdoc" >&2
       return 1
       ;;
   esac
@@ -332,6 +336,159 @@ coverage::builtin() {
 }
 
 ###
+### shdoc (Rust documentation generator)
+###
+lint::shdoc() {
+  :args "Run clippy on shdoc" "${@}"
+  _require_rust
+  cargo clippy \
+    --manifest-path "${PATH_BASE}/shdoc/Cargo.toml" \
+    -- -D warnings
+}
+
+test::shdoc() {
+  :args "Build and test shdoc" "${@}"
+  _require_rust
+  cargo test \
+    --manifest-path "${PATH_BASE}/shdoc/Cargo.toml"
+}
+
+build::shdoc() {
+  :args "Build shdoc binary" "${@}"
+  _require_rust
+  cargo build --release \
+    --manifest-path "${PATH_BASE}/shdoc/Cargo.toml"
+  rm -f "${PATH_BIN}/shdoc" && cp "${PATH_BASE}/shdoc/target/release/shdoc" "${PATH_BIN}/shdoc"
+  echo "Built: ${PATH_BIN}/shdoc"
+}
+
+# shellcheck disable=SC2016
+coverage::shdoc() {
+  :args "Generate coverage for shdoc" "${@}"
+  _require_rust
+
+  local host_triple llvm_tools cov_dir
+  host_triple="$(rustc -vV | awk '/host:/{print $2}')"
+  llvm_tools="$(rustc --print sysroot)/lib/rustlib/${host_triple}/bin"
+  cov_dir="${PATH_BASE}/shdoc/target/coverage"
+
+  # Ensure llvm-tools
+  [[ -x "${llvm_tools}/llvm-profdata" ]] || {
+    echo "Installing llvm-tools..."
+    rustup component add llvm-tools
+  }
+
+  # Build test binaries with coverage and capture their paths
+  echo "Building tests with coverage instrumentation..."
+  local -a bins=()
+  while IFS= read -r line; do
+    bins+=("${line}")
+  done < <(
+    RUSTFLAGS="-C instrument-coverage" \
+    cargo test --no-run --message-format=json \
+      --manifest-path "${PATH_BASE}/shdoc/Cargo.toml" 2>/dev/null |
+    jq -r 'select(.executable) | .executable'
+  )
+
+  rm -rf "${cov_dir}"
+  mkdir -p "${cov_dir}"
+
+  # Run tests with coverage
+  echo "Running tests..."
+  RUSTFLAGS="-C instrument-coverage" \
+  LLVM_PROFILE_FILE="${cov_dir}/coverage-%p.profraw" \
+    cargo test --manifest-path "${PATH_BASE}/shdoc/Cargo.toml"
+
+  # Merge profile data
+  "${llvm_tools}/llvm-profdata" merge -sparse \
+    "${cov_dir}"/coverage-*.profraw \
+    -o "${cov_dir}/coverage.profdata"
+  rm -f "${cov_dir}"/coverage-*.profraw
+
+  # Build --object args for llvm-cov (multiple test binaries)
+  local -a obj_args=()
+  local bin
+  for bin in "${bins[@]}"; do
+    obj_args+=("--object" "${bin}")
+  done
+
+  echo ""
+  "${llvm_tools}/llvm-cov" report \
+    --instr-profile="${cov_dir}/coverage.profdata" \
+    "${obj_args[@]}" \
+    --ignore-filename-regex='\.cargo/registry' \
+    --ignore-filename-regex='\.rustup/toolchains' \
+    --ignore-filename-regex='^/rustc/'
+
+  # Export JSON and generate shdoc/coverage.json
+  local _cov_tmp; _cov_tmp="$(mktemp)"
+  "${llvm_tools}/llvm-cov" export \
+    --instr-profile="${cov_dir}/coverage.profdata" \
+    "${obj_args[@]}" \
+    --ignore-filename-regex='\.cargo/registry' \
+    --ignore-filename-regex='\.rustup/toolchains' \
+    --ignore-filename-regex='^/rustc/' \
+    --summary-only > "${_cov_tmp}"
+
+  # Count // coverage:off lines per source file → JSON map
+  local _excl="{" _first=true _f _n
+  while IFS= read -r _f; do
+    _n=$(grep -c '// coverage:off' "${_f}" 2>/dev/null) || _n=0
+    ${_first} || _excl+=","
+    _excl+="$(printf '"%s":%d' "${_f}" "${_n}")"
+    _first=false
+  done < <(jq -r '.data[0].files[].filename' "${_cov_tmp}")
+  _excl+="}"
+
+  # Generate coverage.json with jq (excludes annotated lines from totals)
+  jq --argjson excl "${_excl}" --arg date "$(date '+%Y-%m-%d %H:%M:%S')" --arg prefix "${PATH_BASE}/" '
+    def fmt2: (. * 100 | round) / 100 | tostring |
+      if test("[.]") then (if test("[.][0-9]$") then . + "0" else . end)
+      else . + ".00" end;
+    .data[0] as $d |
+    ($excl | to_entries | map(.value) | add // 0) as $total_excl |
+    {
+      files: ([
+        $d.files[] |
+        .summary.lines as $s |
+        ($excl[.filename] // 0) as $ex |
+        ($s.count - $ex) as $adj |
+        ([$s.covered, $adj] | min) as $cov |
+        {
+          file: (.filename | ltrimstr($prefix)),
+          percent_covered: (if $adj > 0 then ($cov / $adj * 100 | fmt2) else "100.00" end),
+          covered_lines: ($cov | tostring),
+          total_lines: ($adj | tostring),
+          excluded_lines: ($ex | tostring)
+        }
+      ] | sort_by(.percent_covered | tonumber) | reverse),
+      percent_covered: (
+        ($d.totals.lines.count - $total_excl) as $adj |
+        ([$d.totals.lines.covered, $adj] | min) as $cov |
+        if $adj > 0 then ($cov / $adj * 100 | fmt2) else "100.00" end
+      ),
+      covered_lines: ([$d.totals.lines.covered, ($d.totals.lines.count - $total_excl)] | min),
+      total_lines: ($d.totals.lines.count - $total_excl),
+      excluded_lines: $total_excl,
+      percent_low: 25,
+      percent_high: 75,
+      command: "cargo-test+llvm-cov",
+      date: $date
+    }
+  ' "${_cov_tmp}" > "${PATH_BASE}/shdoc/coverage.json"
+  rm -f "${_cov_tmp}"
+
+  local pct
+  pct="$(jq -r '.percent_covered' "${PATH_BASE}/shdoc/coverage.json")"
+  echo ""
+  echo "Coverage: ${pct}% of required ${MIN_COVERAGE}%"
+
+  # Clean up coverage artifacts
+  rm -rf "${cov_dir}"
+  find "${PATH_BASE}/shdoc" -maxdepth 2 -name '*.profraw' -delete 2>/dev/null || true
+}
+
+###
 ### minifier (Rust bash minifier)
 ###
 lint::minifier() {
@@ -499,7 +656,7 @@ build::minifier() {
 _build() {
   local target="all"
   local -a args=(
-    'target' "Build target (all, builtin, minifier)"
+    'target' "Build target (all, builtin, minifier, shdoc)"
   )
   :args "Build release binaries" "${@}"
 
@@ -507,11 +664,13 @@ _build() {
     all)
       build::builtin
       build::minifier
+      build::shdoc
       ;;
     builtin)  build::builtin ;;
     minifier) build::minifier ;;
+    shdoc)    build::shdoc ;;
     *)
-      echo "Unknown target: ${target}. Use: all, builtin, minifier" >&2
+      echo "Unknown target: ${target}. Use: all, builtin, minifier, shdoc" >&2
       return 1
       ;;
   esac
@@ -523,7 +682,7 @@ _build() {
 _coverage() {
   local target="all"
   local -a args=(
-    'target' "Coverage target (all, builtin, minifier)"
+    'target' "Coverage target (all, builtin, minifier, shdoc)"
   )
   :args "Generate code coverage reports" "${@}"
 
@@ -531,11 +690,13 @@ _coverage() {
     all)
       coverage::builtin
       coverage::minifier
+      coverage::shdoc
       ;;
     builtin)  coverage::builtin ;;
     minifier) coverage::minifier ;;
+    shdoc)    coverage::shdoc ;;
     *)
-      echo "Unknown target: ${target}. Use: all, builtin, minifier" >&2
+      echo "Unknown target: ${target}. Use: all, builtin, minifier, shdoc" >&2
       return 1
       ;;
   esac
