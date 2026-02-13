@@ -1,0 +1,167 @@
+---
+description: "Generate shell completion scripts for argsh-powered CLI tools"
+---
+
+# Shell Completion
+
+argsh can generate shell completion scripts for **bash**, **zsh**, and **fish**. Completions are derived automatically from your `:usage` and `:args` declarations — subcommands, flags, and their descriptions are all included.
+
+## How It Works
+
+Every script built with `:usage` gets a built-in `completion` subcommand for free. No extra code required:
+
+```bash
+./myscript completion bash
+./myscript completion zsh
+./myscript completion fish
+```
+
+The `completion` command is an **Additional Command** — it's always available even though it doesn't appear in your `usage` array. argsh detects it as a special command and generates the appropriate completion script.
+
+## Prerequisites
+
+Your script must use `:usage` for subcommand dispatch:
+
+```bash
+#!/usr/bin/env bash
+source argsh
+
+main() {
+  local -a args=(
+    'verbose|v:+' "Enable verbose output"
+    'config|c'    "Config file path"
+  )
+  local -a usage=(
+    'serve'  "Start the server"
+    'build'  "Build the project"
+    'deploy' "Deploy to production"
+  )
+  :usage "My application" "${@}"
+  "${usage[@]}"
+}
+
+main "${@}"
+```
+
+With this declaration, `./myapp completion bash` produces a completion script that knows about `serve`, `build`, `deploy`, `--verbose`, `--config`, and `--help`.
+
+## Generating Completions
+
+### Bash
+
+Add to your `~/.bashrc` or `~/.bash_profile`:
+
+```bash
+source <(./myapp completion bash)
+```
+
+Or save to the system completions directory:
+
+```bash
+./myapp completion bash > /etc/bash_completion.d/myapp
+```
+
+For the best experience, install the `bash-completion` package:
+
+```bash
+# macOS (Homebrew)
+brew install bash-completion
+
+# Ubuntu/Debian
+sudo apt-get install bash-completion
+```
+
+### Zsh
+
+Add to your `~/.zshrc`:
+
+```zsh
+source <(./myapp completion zsh)
+```
+
+Or save to your fpath:
+
+```bash
+./myapp completion zsh > "${fpath[1]}/_myapp"
+```
+
+If you're using Oh My Zsh, place the file in `~/.oh-my-zsh/completions/`:
+
+```bash
+mkdir -p ~/.oh-my-zsh/completions
+./myapp completion zsh > ~/.oh-my-zsh/completions/_myapp
+```
+
+### Fish
+
+Save to the Fish completions directory:
+
+```bash
+mkdir -p ~/.config/fish/completions
+./myapp completion fish > ~/.config/fish/completions/myapp.fish
+```
+
+## What Gets Completed
+
+The generated scripts include:
+
+| Source | Completed |
+|--------|-----------|
+| `usage` array entries | Subcommand names |
+| `args` array flags | `--long` and `-s` short flags |
+| `help\|h:+` (auto-added) | `--help` / `-h` |
+
+Hidden commands (prefixed with `#` in the usage array) and group separators (`-`) are excluded from completions.
+
+## Example Output
+
+For the example script above, `./myapp completion bash` produces:
+
+```bash
+# bash completion for myapp
+_myapp() {
+    local cur="${COMP_WORDS[COMP_CWORD]}"
+
+    if [[ "${cur}" == -* ]]; then
+        COMPREPLY=($(compgen -W "--verbose -v --config -c --help -h" -- "${cur}"))
+    else
+        COMPREPLY=($(compgen -W "serve build deploy" -- "${cur}"))
+    fi
+}
+complete -o default -F _myapp myapp
+```
+
+## CI/CD Integration
+
+Generate and publish completion scripts as part of your release:
+
+```yaml
+# .github/workflows/release.yml
+steps:
+  - name: Generate completions
+    run: |
+      ./myapp completion bash > completions/myapp.bash
+      ./myapp completion zsh  > completions/_myapp
+      ./myapp completion fish > completions/myapp.fish
+  - name: Upload artifacts
+    uses: actions/upload-artifact@v4
+    with:
+      name: completions
+      path: completions/
+```
+
+## Help
+
+Run `completion --help` to see available shells:
+
+```
+$ ./myapp completion --help
+Generate shell completion scripts.
+
+Usage: myapp completion <shell>
+
+Available shells:
+  bash    Bash completion script
+  zsh     Zsh completion script
+  fish    Fish completion script
+```

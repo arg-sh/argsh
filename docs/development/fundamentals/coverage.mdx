@@ -1,0 +1,33 @@
+---
+description: "How to be covered"
+---
+
+# How to be covered
+
+In this document, you’ll learn about code coverage and how to use it in your Bash scripts.
+
+## Introduction
+
+Code coverage is a metric that measures the percentage of your code that is executed during testing. It helps you to identify untested code and to ensure that your tests are comprehensive.
+
+There are different tools for measuring code coverage in Bash scripts. The most popular is [kcov](https://simonkagstrom.github.io/kcov/).
+
+## Use kcov with argsh
+
+Argsh provides a wrapper for kcov that you can use in your projects. If you [installed argsh](../../getting-started#project-based) as executable, you can use it like this:
+
+```bash
+argsh coverage ./scripts -o ./coverage-output
+```
+
+Use `argsh coverage --help` to get more information about the available options.
+
+## Show your coverage in your README
+
+You can use [shields.io](https://shields.io/) to show your code coverage in your README. You can use the following URL to generate a badge for your coverage, assuming that you have your coverage report in the `coverage` directory:
+
+```html
+<img alt="Coverage" src="https://img.shields.io/badge/dynamic/json?style=for-the-badge&logo=gnubash&color=F2CDCD&logoColor=D9E0EE&labelColor=302D41&url=https%3A%2F%2Fraw.githubusercontent.com%2<GITHUB_ORG>%2F<GITHUB_REPO>%2Fmain%2Fcoverage%2Fcoverage.json&query=%24.percent_covered&label=Coverage&suffix=%25"/>
+```
+
+Replace `<GITHUB_ORG>` and `<GITHUB_REPO>` with your GitHub organization and repository name. There are also other options available for customizing the badge. Check out the [shields.io documentation](https://shields.io/badges/dynamic-json-badge) for more information.

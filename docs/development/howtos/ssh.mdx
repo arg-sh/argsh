@@ -1,0 +1,21 @@
+
+
+```bash
+: "${REMOTE_USER:="root"}"
+
+ssh::run() {
+    local host="${1}"
+    echo "${host}" | grep -q '@' || host="${REMOTE_USER?}@${host}"
+    shift
+    ssh "${host}" "$(typeset -f ${1}); ${@}"
+}
+
+do::stuff() {
+  local arg="${1}"
+  echo "doing stuff ${arg} on $(hostname)"
+}
+
+main() {
+  ssh::run "example.com" do::stuff "hello"
+}
+```

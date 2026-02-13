@@ -1,0 +1,76 @@
+---
+description: ""
+hide_table_of_contents: true
+---
+
+import DocCardList from '@theme/DocCardList';
+import Icons from '@theme/Icon';
+
+# Introduction 
+
+Argsh consists of a set of tools that help you to build not only beautiful but nad powerful command-line interfaces (CLIs) for your applications but also to help you with good code quallity and maintainability.
+
+## Core Features
+
+Argsh [library](../libraries/overview) in itself constists of Bash code snippets that you can use in your scripts. Within this snippets you also finde the [command-line parser](./fundamentals/command-line-parser). 
+
+Additionally argsh provides a collection of widly used projects around Bash scripting. These are conviniently packed into a single Docker image. The `argsh` script is the entry point to this image.
+
+You can always check what is available by running `argsh --help`.
+
+<DocCardList colSize={4} items={[
+  {
+    type: 'link',
+    href: '/development/fundamentals/command-line-parser',
+    label: 'Command-line Parser',
+    customProps: {
+      icon: Icons['command-line-solid'],
+      description: 'Parse command-line arguments with ease.'
+    }
+  },
+  {
+    type: 'link',
+    href: '/development/fundamentals/lint',
+    label: 'Lint your Scripts',
+    customProps: {
+      icon: Icons['magnifying-glass'],
+      description: 'Make sure your scripts are clean and readable.'
+    }
+  },
+  {
+    type: 'link',
+    href: '/development/fundamentals/test',
+    label: 'Bash is Testable',
+    customProps: {
+      icon: Icons['beaker'],
+      description: 'Write tests for your scripts.'
+    }
+  },
+  {
+    type: 'link',
+    href: '/development/fundamentals/coverage',
+    label: 'Make sure you are covered',
+    customProps: {
+      icon: Icons['receipt-percent'],
+      description: 'Check your test coverage.'
+    }
+  },
+  {
+    type: 'link',
+    href: '/development/fundamentals/docs',
+    label: 'Make your scripts more readable',
+    customProps: {
+      icon: Icons['academic-cap-solid'],
+      description: 'Document your scripts.'
+    }
+  },
+  {
+    type: 'link',
+    href: '/development/fundamentals/minify',
+    label: 'Deliver your scripts compact and fast',
+    customProps: {
+      icon: Icons['circle-dotted-line'],
+      description: 'Minify your scripts after you have tested them.'
+    }
+  },
+]} />

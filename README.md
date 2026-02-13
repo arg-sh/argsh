@@ -22,10 +22,6 @@
 		<img alt="Bash Coverage" src="https://img.shields.io/badge/dynamic/json?style=for-the-badge&logo=gnubash&color=F2CDCD&logoColor=D9E0EE&labelColor=302D41&url=https%3A%2F%2Fraw.githubusercontent.com%2Farg-sh%2Fargsh%2Fmain%2Fcoverage%2Fcoverage.json&query=%24.percent_covered&label=Bash&suffix=%25"/></a>
 	<a href="https://github.com/arg-sh/argsh/blob/main/builtin/coverage.json">
 		<img alt="Rust Coverage" src="https://img.shields.io/badge/dynamic/json?style=for-the-badge&logo=rust&color=F2CDCD&logoColor=D9E0EE&labelColor=302D41&url=https%3A%2F%2Fraw.githubusercontent.com%2Farg-sh%2Fargsh%2Fmain%2Fbuiltin%2Fcoverage.json&query=%24.percent_covered&label=Rust&suffix=%25"/></a>
-	<a href="https://github.com/arg-sh/argsh/issues">
-		<img alt="Issues" src="https://img.shields.io/github/issues/arg-sh/argsh?style=for-the-badge&logo=gitbook&color=B5E8E0&logoColor=D9E0EE&labelColor=302D41"></a>
-	<a href="https://discord.gg/VsQpUQX3Zr">
-		<img alt="Discord" src="https://img.shields.io/discord/1216780297727770746?style=for-the-badge&logo=discord&color=DDB6F2&logoColor=D9E0EE&labelColor=302D41"></a>
 </p>
 
 &nbsp;
