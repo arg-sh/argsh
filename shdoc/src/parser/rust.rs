@@ -42,7 +42,7 @@ pub fn parse(input: &str, path: &Path) -> Document {
 
     // Phase 1: collect module docs
     let mut module_desc = String::new();
-    let mut _mirrors: Option<String> = None;
+    let mut mirrors: Option<String> = None;
 
     let lines: Vec<&str> = input.lines().collect();
     let mut i = 0;
@@ -52,7 +52,14 @@ pub fn parse(input: &str, path: &Path) -> Document {
         if let Some(caps) = RE_MODULE_DOC.captures(lines[i]) {
             let text = caps[1].to_string();
             if let Some(caps) = RE_MIRRORS.captures(&text) {
-                _mirrors = Some(caps[1].trim().to_string());
+                // Take only the path part (strip parenthetical notes like "(:usage function)")
+                let raw = caps[1].trim();
+                mirrors = Some(
+                    raw.split_whitespace()
+                        .next()
+                        .unwrap_or(raw)
+                        .to_string(),
+                );
             } else if !module_desc.is_empty() || !text.is_empty() {
                 if !module_desc.is_empty() {
                     module_desc.push('\n');
@@ -73,6 +80,7 @@ pub fn parse(input: &str, path: &Path) -> Document {
     }
     // Use filename stem as title
     file_doc.title = path.file_stem().map(|s| s.to_string_lossy().to_string());
+    file_doc.mirrors = mirrors;
 
     // Phase 2: scan for export_name + doc comments + pub fn
     let mut current_doc: Vec<String> = Vec::new();
@@ -103,16 +111,9 @@ pub fn parse(input: &str, path: &Path) -> Document {
             continue;
         }
 
-        // Detect pub fn (function that may have preceding doc comments)
+        // Detect pub fn — only emit if it has an #[export_name] (actual builtin)
         if RE_PUB_FN.is_match(line) {
-            if !current_doc.is_empty() || current_export_name.is_some() {
-                let name = current_export_name.take().unwrap_or_else(|| {
-                    RE_PUB_FN
-                        .captures(line)
-                        .map(|c| c[2].to_string())
-                        .unwrap_or_default()
-                });
-
+            if let Some(export_name) = current_export_name.take() {
                 let description = if !current_doc.is_empty() {
                     Some(current_doc.join("\n").trim().to_string())
                 } else {
@@ -120,7 +121,7 @@ pub fn parse(input: &str, path: &Path) -> Document {
                 };
 
                 functions.push(FunctionDoc {
-                    name,
+                    name: export_name,
                     description,
                     implementations: vec![Implementation {
                         lang: ImplLang::Rust,
@@ -195,6 +196,7 @@ mod tests {
         let input = "//! to::* builtins\n//!\n//! Mirrors: libraries/to.sh\n\nuse foo;\n";
         let doc = parse(input, Path::new("to.rs"));
         assert_eq!(doc.file.description.as_deref(), Some("to::* builtins"));
+        assert_eq!(doc.file.mirrors.as_deref(), Some("libraries/to.sh"));
     }
 
     #[test]
@@ -212,13 +214,21 @@ pub static mut TO_INT_STRUCT: BashBuiltin = BashBuiltin {
     }
 
     #[test]
-    fn parse_doc_comment_on_fn() {
-        let input = "/// Check if variable is an array.\npub fn is_array() {}\n";
+    fn parse_doc_comment_on_exported_fn() {
+        let input = "/// Check if variable is an array.\n#[export_name = \"is::array_struct\"]\npub fn is_array() {}\n";
         let doc = parse(input, Path::new("is.rs"));
         assert_eq!(doc.functions.len(), 1);
+        assert_eq!(doc.functions[0].name, "is::array");
         assert_eq!(
             doc.functions[0].description.as_deref(),
             Some("Check if variable is an array.")
         );
+    }
+
+    #[test]
+    fn parse_internal_fn_skipped() {
+        let input = "/// Internal helper function.\npub fn helper() {}\n";
+        let doc = parse(input, Path::new("shared.rs"));
+        assert_eq!(doc.functions.len(), 0);
     }
 }

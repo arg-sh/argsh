@@ -119,6 +119,11 @@ fn file_mode(cli: &Cli) -> Result<()> {
     let ext = renderer.file_extension();
 
     for (source, doc) in &merged {
+        // Skip files with no documented functions (e.g., lib.rs, shared.rs)
+        if doc.functions.is_empty() {
+            continue;
+        }
+
         let name = derive_output_name(source);
         let out_path = output_dir.join(format!("{}.{}", name, ext));
 
@@ -186,13 +191,33 @@ fn resolve_prefix(prefix_arg: Option<&str>, output_dir: &Path) -> Result<Option<
     }
 }
 
+/// File extensions recognized as source files.
+const SUPPORTED_EXTENSIONS: &[&str] = &["sh", "bash", "bats", "rs"];
+
 /// Expand glob patterns into a list of real file paths.
+/// Also handles bare directory paths by scanning for supported file types.
 fn expand_globs(patterns: &[String]) -> Result<Vec<PathBuf>> {
     let mut files = Vec::new();
     for pattern in patterns {
         let path = Path::new(pattern);
         if path.is_file() {
             files.push(path.to_path_buf());
+            continue;
+        }
+        // If it's a directory, scan for supported extensions (non-recursive)
+        if path.is_dir() {
+            let entries = fs::read_dir(path)
+                .with_context(|| format!("failed to read directory: {}", path.display()))?;
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.is_file() {
+                    if let Some(ext) = p.extension().and_then(|e| e.to_str()) {
+                        if SUPPORTED_EXTENSIONS.contains(&ext) {
+                            files.push(p);
+                        }
+                    }
+                }
+            }
             continue;
         }
         // Try as glob

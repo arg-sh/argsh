@@ -8,51 +8,13 @@ This file contains functions for working with arguments
 
 ## Index
 
-* [:usage](#usage)
 * [:args](#args)
-
-### :usage
-
-Print usage information and dispatch to subcommands.
-
-Commands are defined as pairs in the `usage` array:
-- `'name|alias'` — auto-resolved via namespace fallback
-- `'name|alias:-func::name'` — explicit function mapping
-
-**Namespace resolution** (when no `:-` mapping is given):
-1. `<caller>::<cmd>` — caller is the function that invoked `:usage`
-2. `argsh::<cmd>` — framework namespace
-3. `<cmd>` — bare function name
-
-If none match, an error is raised. When an explicit `:-` mapping is given, the function must exist exactly.
-
-#### Example
-
-```bash
-main() {
-  local -a usage=(
-    'up|u'              "Start cluster"     # resolves to main::up
-    'down:-other::down' "Stop cluster"      # resolves to other::down
-  )
-  :usage "Title" "${@}"
-  "${usage[@]}"
-}
-main::up() { echo "up"; }
-```
-
-#### Arguments
-
-* **$1** (string): The title of the usage
-* **...** (array): User arguments
-
-#### Variables set
-
-* **usage** (array): Usage information for the command
-
-#### Exit codes
-
-* **0**: If user arguments are correct
-* **2**: If user arguments are incorrect
+* [args::field_name](#argsfieldname)
+* [:usage::completion](#usagecompletion)
+* [:usage::docgen](#usagedocgen)
+* [:usage::mcp](#usagemcp)
+* [:usage](#usage)
+* [:usage::help](#usagehelp)
 
 ### :args
 
@@ -91,4 +53,28 @@ args=(
 
 * **0**: If user arguments are correct
 * **2**: If user arguments are incorrect
+
+### args::field_name
+
+args::field_name <field> [asref]
+
+### :usage::completion
+
+:usage::completion <shell> [-- title usage_pairs...]
+
+### :usage::docgen
+
+:usage::docgen <format> [-- title usage_pairs...]
+
+### :usage::mcp
+
+:usage::mcp [--] <title> [usage_pairs...]
+
+### :usage
+
+:usage <title> [args...]
+
+### :usage::help
+
+:usage::help <title> [usage_pairs...]
 

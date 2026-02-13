@@ -8,18 +8,21 @@ This file contains the main function for running a bash script
 
 ## Index
 
-* [argsh::shebang](#argshshebang)
+* [argsh::builtins](#argshbuiltins)
 
-### argsh::shebang
+### argsh::builtins
 
-Run a bash script from a shebang
+Manage argsh native builtins (.so).
+
+#### Example
+
+```bash
+argsh builtins           # show current status
+argsh builtins install   # download if not present
+argsh builtins update    # re-download latest
+```
 
 #### Arguments
 
-* **$1** (string): file to run
-
-#### Exit codes
-
-* **1**: If the file does not exist
-* **1**: If the file is the same as the current file
+* **$1** (string): Subcommand: install, update, or empty for status
 

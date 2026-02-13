@@ -15,8 +15,14 @@ pub fn merge(docs: Vec<(String, Document)>) -> Vec<(String, Document)> {
     let mut groups: HashMap<String, Vec<(String, Document)>> = HashMap::new();
 
     for (source_file, doc) in docs {
-        // Derive module name from filename
-        let module_name = derive_module_name(&source_file);
+        // Use mirrors annotation for module name if available (e.g., "libraries/args.sh" → "args"),
+        // otherwise derive from the source filename.
+        let module_name = doc
+            .file
+            .mirrors
+            .as_deref()
+            .map(derive_module_name)
+            .unwrap_or_else(|| derive_module_name(&source_file));
         groups
             .entry(module_name)
             .or_default()
@@ -41,6 +47,22 @@ pub fn merge(docs: Vec<(String, Document)>) -> Vec<(String, Document)> {
     result
 }
 
+/// Check if a source file is a bash script.
+fn is_bash_source(path: &str) -> bool {
+    path.ends_with(".sh") || path.ends_with(".bash") || path.ends_with(".bats")
+}
+
+/// Check if a function has richer documentation (from bash shdoc annotations).
+fn is_richer(func: &FunctionDoc) -> bool {
+    func.example.is_some()
+        || !func.args.is_empty()
+        || !func.exit_codes.is_empty()
+        || !func.stdout.is_empty()
+        || !func.stderr.is_empty()
+        || !func.options.is_empty()
+        || !func.set_vars.is_empty()
+}
+
 /// Merge a group of documents that share the same module name.
 fn merge_group(docs: Vec<(String, Document)>) -> Document {
     let mut file_doc = FileDoc::default();
@@ -48,8 +70,10 @@ fn merge_group(docs: Vec<(String, Document)>) -> Document {
     let mut func_order: Vec<String> = Vec::new();
 
     for (source_file, doc) in docs {
+        let from_bash = is_bash_source(&source_file);
+
         // File-level: bash takes priority
-        if source_file.ends_with(".sh") || source_file.ends_with(".bash") {
+        if from_bash {
             if doc.file.title.is_some() {
                 file_doc.title = doc.file.title;
             }
@@ -74,12 +98,19 @@ fn merge_group(docs: Vec<(String, Document)>) -> Document {
             let canonical = canonical_name(&func.name);
 
             if let Some(existing) = func_map.get_mut(&canonical) {
-                // Merge implementations
-                existing.implementations.extend(func.implementations);
-
-                // If existing has no description, use this one
-                if existing.description.is_none() && func.description.is_some() {
-                    existing.description = func.description;
+                // When the incoming function has richer docs (bash annotations),
+                // replace the existing entry but keep all implementations merged.
+                if is_richer(&func) && !is_richer(existing) {
+                    let mut merged_impls = existing.implementations.clone();
+                    merged_impls.extend(func.implementations.clone());
+                    let _ = std::mem::replace(existing, func);
+                    existing.implementations = merged_impls;
+                } else {
+                    // Just merge implementations and fill in missing description
+                    existing.implementations.extend(func.implementations);
+                    if existing.description.is_none() && func.description.is_some() {
+                        existing.description = func.description;
+                    }
                 }
             } else {
                 func_order.push(canonical.clone());

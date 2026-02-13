@@ -1,4 +1,6 @@
 //! :usage::docgen builtin -- documentation generation in various formats.
+//!
+//! Mirrors: libraries/args.sh
 
 use crate::{word_list_to_vec, BashBuiltin, SyncPtr, WordList, BUILTIN_ENABLED};
 use crate::shared;

@@ -478,6 +478,15 @@ module.exports = {
           },
           className: "homepage-sidebar-item",
         },
+        {
+          type: "doc",
+          id: "libraries/import",
+          label: "import",
+          customProps: {
+            sidebar_icon: "arrow-down-tray",
+          },
+          className: "homepage-sidebar-item",
+        },
       ],
     },
     {

@@ -1,5 +1,7 @@
 //! :usage::mcp builtin -- MCP (Model Context Protocol) tool server over stdio.
 //!
+//! Mirrors: libraries/args.sh
+//!
 //! Turns any argsh script into a live MCP server. AI agents connect via stdio
 //! and discover/invoke subcommands as tools.
 

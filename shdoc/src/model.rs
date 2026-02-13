@@ -18,6 +18,8 @@ pub struct FileDoc {
     pub description: Option<String>,
     /// @tags (raw comma-separated string)
     pub tags: Option<String>,
+    /// Mirrors annotation (e.g., "libraries/args.sh") for cross-referencing
+    pub mirrors: Option<String>,
 }
 
 /// A single documented function.
