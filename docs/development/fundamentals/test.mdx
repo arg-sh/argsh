@@ -20,6 +20,16 @@ There are different testing frameworks for bash. The most popular ones are [bats
 
 Every script should have a corresponding test file. The test file should be in the same directory as the script and should have the same name as the script, but with a `.bats` extension.
 
+### The source guard
+
+For a script to be testable, it must not run `main` when sourced. The [source guard](/development/fundamentals/command-line-parser#subcommands) at the bottom of your script ensures this:
+
+```bash
+[[ "${0}" != "${BASH_SOURCE[0]}" && -z "${ARGSH_SOURCE:-}" ]] || main "${@}"
+```
+
+When BATS sources your script via `load_source`, this guard prevents `main` from executing, so you can call individual functions in isolation.
+
 ## Easy Testing with argsh
 
 Argsh provides `bats` within its docker container. You can use it to run your tests.
@@ -32,7 +42,7 @@ Use `argsh test --help` to get more information about the available options.
 
 ### Bats helper
 
-Argsh provides a helper function that you can use in your tests. If you [bootstrapped your project](../../getting-started#bootstrap), you already have it in your project.
+Argsh provides a helper function that you can use in your tests. If you [bootstrapped your project](../../getting-started#bootstrap-a-new-project), you already have it in your project.
 
 If not you can add it to your project like this:
 
@@ -106,6 +116,6 @@ load_source
 }
 ```
 
-## Examples
+## Further Examples
 
 Argsh is using bats for testing. You can have a look at the [tests](https://github.com/arg-sh/argsh/tree/main/libraries) in the argsh repository to see how it's done.

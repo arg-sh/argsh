@@ -134,6 +134,10 @@ main() {
 [[ "${0}" != "${BASH_SOURCE[0]}" && -z "${ARGSH_SOURCE:-}" ]] || main "${@}"
 ```
 
+:::note
+This guard ensures `main` only runs when the script is executed directly — not when it's sourced by another script (`${0} != ${BASH_SOURCE[0]}`) or loaded via the argsh shebang (`ARGSH_SOURCE` is set). This lets you reuse functions from the script without triggering `main`, and makes the script [testable](/development/fundamentals/test) — your test files can source it and call individual functions in isolation.
+:::
+
 In this example, `subcommand1` is called with `script command1 subcommand1`.
 
 ### Hidden commands
