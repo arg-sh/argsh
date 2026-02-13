@@ -3,6 +3,7 @@
 set -euo pipefail
 
 : "${PATH_BASE:="$(git rev-parse --show-toplevel)"}"
+: "${PATH_BIN:="${PATH_BASE}/.bin"}"
 : "${ARGSH_SOURCE:="argsh"}"; export ARGSH_SOURCE
 : "${MIN_COVERAGE:="70"}"
 
@@ -85,15 +86,20 @@ _test() {
     BATS_LOAD="argsh.min.sh"
     export BATS_LOAD
   }
+
   case "${target}" in
     all)
-      ARGSH_BUILTIN_TEST=1 argsh::main test libraries .docker/test
+      ARGSH_BUILTIN_TEST=1 \
+        argsh::main test libraries .docker/test
       if command -v cargo &>/dev/null; then
         test::minifier
       fi
       ;;
     argsh)    argsh::main test libraries .docker/test ;;
-    builtin)  ARGSH_BUILTIN_TEST=1 argsh::main test libraries .docker/test ;;
+    builtin)
+      ARGSH_BUILTIN_TEST=1 \
+        argsh::main test libraries .docker/test
+      ;;
     minifier) test::minifier ;;
     *)
       echo "Unknown target: ${target}. Use: all, argsh, builtin, minifier" >&2
@@ -209,16 +215,24 @@ coverage::builtin() {
     rustup component add llvm-tools
   }
 
-  # Build with coverage instrumentation (override release profile settings that break coverage)
-  echo "Building with coverage instrumentation..."
-  RUSTFLAGS="-C instrument-coverage" \
-  CARGO_PROFILE_RELEASE_STRIP="none" \
-  CARGO_PROFILE_RELEASE_LTO="false" \
-  CARGO_PROFILE_RELEASE_PANIC="unwind" \
-    cargo build --release \
-      --manifest-path "${PATH_BASE}/builtin/Cargo.toml"
+  # Build coverage-instrumented .so inside Docker (rust:1-slim-bookworm) to ensure
+  # glibc compatibility with the kcov/kcov test container (also Debian bookworm).
+  # Mount sources at the same absolute path so llvm-cov finds them on the host.
+  # Share cargo registry cache to avoid re-downloading dependencies.
+  echo "Building with coverage instrumentation (via Docker)..."
+  mkdir -p "${HOME}/.cargo/registry"
+  docker run --rm \
+    --user "$(id -u):$(id -g)" \
+    -v "${PATH_BASE}/builtin:${PATH_BASE}/builtin" \
+    -v "${HOME}/.cargo/registry:/usr/local/cargo/registry" \
+    -w "${PATH_BASE}/builtin" \
+    rust:1-slim-bookworm \
+    bash -c 'RUSTFLAGS="-C instrument-coverage" \
+      CARGO_PROFILE_RELEASE_STRIP=none \
+      CARGO_PROFILE_RELEASE_LTO=false \
+      CARGO_PROFILE_RELEASE_PANIC=unwind \
+      cargo build --release'
 
-  rm -f "${PATH_BIN}/argsh.so" && cp "${so_path}" "${PATH_BIN}/argsh.so"
   rm -rf "${cov_dir}"
   mkdir -p "${cov_dir}"
 
@@ -239,8 +253,8 @@ coverage::builtin() {
   "${llvm_tools}/llvm-cov" report \
     --instr-profile="${cov_dir}/coverage.profdata" \
     "${so_path}" \
-    --ignore-filename-regex='\.cargo/registry' \
-    --ignore-filename-regex='\.rustup/toolchains' \
+    --ignore-filename-regex='cargo/registry' \
+    --ignore-filename-regex='rustup/toolchains' \
     --ignore-filename-regex='^/rustc/'
 
   # Export JSON and generate builtin/coverage.json
@@ -248,8 +262,8 @@ coverage::builtin() {
   "${llvm_tools}/llvm-cov" export \
     --instr-profile="${cov_dir}/coverage.profdata" \
     "${so_path}" \
-    --ignore-filename-regex='\.cargo/registry' \
-    --ignore-filename-regex='\.rustup/toolchains' \
+    --ignore-filename-regex='cargo/registry' \
+    --ignore-filename-regex='rustup/toolchains' \
     --ignore-filename-regex='^/rustc/' \
     --summary-only > "${_cov_tmp}"
 
@@ -528,14 +542,27 @@ _coverage() {
 }
 
 ###
-### all (minify + lint + coverage + commit)
+### ci (minify + lint + coverage + commit)
 ###
-_all() {
+_ci() {
   local message="regenerate files"
   local -a args=(
     'message|m' "Commit message"
   )
   :args "Minify, lint, coverage, then commit regenerated files" "${@}"
+
+  if [[ -n "$(git -C "${PATH_BASE}" status --porcelain)" ]]; then
+    echo "Warning: repository has uncommitted changes." >&2
+    git -C "${PATH_BASE}" status --short >&2
+    echo >&2
+    if [[ -t 0 ]]; then
+      read -rp "Continue anyway? [y/N] " answer
+      [[ "${answer}" =~ ^[Yy] ]] || { echo "Aborted." >&2; return 1; }
+    else
+      echo "Non-interactive mode — aborting. Commit or stash changes first." >&2
+      return 1
+    fi
+  fi
 
   minify::argsh
   _lint
@@ -547,14 +574,92 @@ _all() {
 }
 
 ###
+### e2e (manual integration tests using claude CLI)
+###
+_e2e() {
+  local script model budget
+  # shellcheck disable=SC2016
+  local prompt='You have MCP tools from "test-app". Call the serve tool with verbose set to true. Reply with ONLY the raw tool output.'
+  local -a args=(
+    'script|s'      "Script to test (default: built-in fixture)"
+    'model|m'       "Claude model (default: haiku)"
+    'budget|b'      "Max budget in USD (default: 0.05)"
+    'prompt'        "Custom prompt for Claude"
+  )
+  :args "E2E MCP test: validates tool discovery + invocation via Claude CLI" "${@}"
+
+  : "${model:=haiku}"
+  : "${budget:=0.05}"
+  : "${script:="${PATH_BASE}/libraries/fixtures/args/mcp_test.sh"}"
+
+  binary::exists claude || {
+    echo "claude CLI required. Install: https://docs.anthropic.com/en/docs/claude-code"
+    return 1
+  } >&2
+  script="$(cd "$(dirname "${script}")" && pwd)/$(basename "${script}")"
+  [[ -x "${script}" ]] || { echo "Script not executable: ${script}" >&2; return 1; }
+
+  # Ensure builtin .so
+  [[ -f "${PATH_BIN}/argsh.so" ]] || {
+    local release="${PATH_BASE}/builtin/target/release/libargsh.so"
+    [[ -f "${release}" ]] || { echo "builtin .so not found — run: argsh build builtin" >&2; return 1; }
+    cp "${release}" "${PATH_BIN}/argsh.so"
+  }
+
+  echo "Pre-flight: testing ${script} in CLI mode..."
+  local out
+  out=$("${script}" --help 2>&1) || { echo "Script --help failed" >&2; return 1; }
+  echo "  OK — help text works"
+
+  # Build MCP config (JSON-escape the script path)
+  local mcp_config escaped_script
+  escaped_script="${script//\\/\\\\}"
+  escaped_script="${escaped_script//\"/\\\"}"
+  mcp_config=$(printf '{"mcpServers":{"test-app":{"type":"stdio","command":"%s","args":["mcp"]}}}' "${escaped_script}")
+
+  echo ""
+  echo "Running: claude --print --model ${model} --max-budget-usd ${budget}"
+  echo "MCP server: ${script} mcp"
+  echo ""
+
+  local result
+  result=$(claude \
+    --print \
+    --model "${model}" \
+    --max-budget-usd "${budget}" \
+    --mcp-config "${mcp_config}" \
+    --allowedTools "mcp__test-app__*" \
+    --permission-mode "bypassPermissions" \
+    --no-session-persistence \
+    -p "${prompt}" \
+    2>/dev/null) || { echo "claude CLI failed" >&2; return 1; }
+
+  echo "Claude response:"
+  echo "${result}"
+  echo "---"
+
+  local pass=0 total=2
+  if echo "${result}" | grep -qi "serving"; then echo "PASS: contains 'serving'"; ((++pass)); else echo "FAIL: missing 'serving'"; fi
+  if echo "${result}" | grep -qi "verbose"; then echo "PASS: contains 'verbose'"; ((++pass)); else echo "FAIL: missing 'verbose'"; fi
+
+  echo ""
+  echo "Results: ${pass}/${total}"
+  [[ "${pass}" -eq "${total}" ]] || return 1
+}
+
+###
 ### main
 ###
 argsh::main() {
   local tty=""
-  argsh::docker &>/dev/null || {
-    echo "Docker build failed. Run 'argsh docker' to see errors." >&2
-    return 1
-  }
+  local _image="${ARGSH_DOCKER_IMAGE:-ghcr.io/arg-sh/argsh:latest}"
+
+  if [[ -z "${ARGSH_DOCKER_IMAGE:-}" ]]; then
+    argsh::docker &>/dev/null || {
+      echo "Docker build failed. Run 'argsh docker' to see errors." >&2
+      return 1
+    }
+  fi
 
   [[ ! -t 1 ]] || tty="-it"
   # shellcheck disable=SC2046
@@ -562,11 +667,11 @@ argsh::main() {
     -e "BATS_LOAD" \
     -e "ARGSH_SOURCE" \
     -e "ARGSH_BUILTIN_TEST" \
-    -e "ARGSH_BUILTIN_PATH" \
+    ${ARGSH_BUILTIN_PATH:+-e "ARGSH_BUILTIN_PATH=${ARGSH_BUILTIN_PATH}"} \
     -e "LLVM_PROFILE_FILE" \
     -e "GIT_COMMIT_SHA=$(git rev-parse HEAD 2>/dev/null || :)" \
     -e "GIT_VERSION=$(git describe --tags --dirty 2>/dev/null || :)" \
-    ghcr.io/arg-sh/argsh:latest "${@}" 
+    "${_image}" "${@}"
 }
 
 _main() {
@@ -585,7 +690,7 @@ _main() {
   local -a usage
   usage=(
     -                           "Commands"
-    'all:-_all'                 "Minify, lint, coverage, commit regenerated files"
+    'ci|all:-_ci'               "Minify, lint, coverage, commit regenerated files"
     'build:-_build'             "Build release binaries [all|builtin|minifier]"
     'lint:-_lint'               "Run linters [all|argsh|builtin|minifier]"
     'test:-_test'               "Run tests [all|argsh|builtin|minifier]"
@@ -596,6 +701,8 @@ _main() {
     'docs-lint:-lint::docs'     "Run documentation linters"
     'docs-test:-test::docs'     "Run documentation tests"
     'vale:-lint::vale'          "Run vale"
+    -                           "Integration"
+    'e2e:-_e2e'                 "E2E MCP test via Claude CLI [--script ./app.sh]"
     -                           "Additional commands"
     'docker:-argsh::docker'     "Build docker image"
   )

@@ -16,14 +16,15 @@ if [[ "${ARGSH_BUILTIN_TEST:-}" == "1" ]]; then
     _so="${BATS_TEST_DIRNAME}/../builtin/target/release/libargsh.so"
     [[ -f "${_so}" ]] || _so="${ARGSH_BUILTIN_PATH:-}"
     if [[ ! -f "${_so}" ]]; then
-      __BUILTIN_SKIP="builtin .so not found"
-    else
-      # shellcheck disable=SC2229
-      enable -f "${_so}" import import::clear 2>/dev/null || __BUILTIN_SKIP="builtin .so failed to load"
-      if [[ -z "${__BUILTIN_SKIP}" ]]; then
-        unset -f import import::source import::clear 2>/dev/null || true
-      fi
+      echo "ERROR: builtin .so not found: ${_so}" >&2
+      exit 1
     fi
+    # shellcheck disable=SC2229
+    if ! enable -f "${_so}" import import::clear; then
+      echo "ERROR: builtin .so failed to load: ${_so}" >&2
+      exit 1
+    fi
+    unset -f import import::source import::clear 2>/dev/null || true
     unset _so
   fi
 fi

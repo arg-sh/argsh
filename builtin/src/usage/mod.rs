@@ -2,6 +2,10 @@
 //!
 //! Mirrors: libraries/args.sh (:usage function)
 
+pub mod completion;
+pub mod docgen;
+pub mod mcp;
+
 use crate::{word_list_to_vec, BashBuiltin, SyncPtr, WordList, BUILTIN_ENABLED};
 use crate::field;
 use crate::shared;
@@ -86,13 +90,15 @@ extern "C" fn usage_help_builtin_fn(word_list: *const WordList) -> c_int {
     std::process::exit(code) // coverage:off - exit() kills process before coverage flush
 }
 
+// -- :usage::help implementation ----------------------------------------------
+
 /// Main entry point for :usage::help builtin.
 /// Called via "${usage[@]}" after caller's setup code has run.
 /// Args: title [original_usage_pairs...]
 pub fn usage_help_main(args: &[String]) -> i32 {
-    if args.is_empty() {
-        return shared::error_usage("", ":usage::help requires a title argument");
-    }
+    if args.is_empty() { // coverage:off - defensive_check: always called via deferred dispatch with title
+        return shared::error_usage("", ":usage::help requires a title argument"); // coverage:off
+    } // coverage:off
 
     let title = &args[0];
     let usage_pairs: Vec<String> = args[1..].to_vec();
@@ -102,7 +108,7 @@ pub fn usage_help_main(args: &[String]) -> i32 {
     0
 }
 
-// -- Implementation ---------------------------------------------------------
+// -- :usage main implementation -----------------------------------------------
 
 /// Main entry point for :usage builtin.
 /// Returns exit code (0 = success, 2 = usage error).
@@ -225,18 +231,28 @@ pub fn usage_main(args: &[String]) -> i32 {
     }
 
     if func.is_empty() {
-        let msg = match shared::suggest_command(&cmd, &usage_arr) {
-            Some(suggestion) => format!("Invalid command: {}. Did you mean '{}'?", cmd, suggestion),
-            None => format!("Invalid command: {}", cmd),
+        // Command not found in usage array — check built-in special commands.
+        // These are always available without being listed in the usage array.
+        return match cmd.as_str() {
+            "completion" | "docgen" | "mcp" => {
+                defer_builtin_command(&cmd, title, &usage_arr, cli);
+                0
+            }
+            _ => {
+                let msg = match shared::suggest_command(&cmd, &usage_arr) {
+                    Some(suggestion) => format!("Invalid command: {}. Did you mean '{}'?", cmd, suggestion),
+                    None => format!("Invalid command: {}", cmd),
+                };
+                shared::error_usage(&cmd, &msg)
+            }
         };
-        return shared::error_usage(&cmd, &msg);
     }
 
     // Resolve function with prefix fallback
     let explicit = found_field.contains(":-");
 
     if explicit {
-        if !shell::function_exists(&func) {
+        if !shell::function_exists(&func) && !is_deferred_builtin(&func) {
             return shared::error_usage(&cmd, &format!("Invalid command: {}", cmd));
         }
     } else {
@@ -269,6 +285,19 @@ pub fn usage_main(args: &[String]) -> i32 {
         }
     }
 
+    // Check if the resolved function is a deferred :usage:: builtin
+    if is_deferred_builtin(&func) {
+        let cmd_name = found_field.split(['|', ':']).next().unwrap_or(&found_field);
+        shell::append_commandname(cmd_name);
+        let mut new_usage = vec![func];
+        new_usage.extend(cli);
+        new_usage.push("--".to_string());
+        new_usage.push(title.clone());
+        new_usage.extend_from_slice(&usage_arr);
+        shell::write_array("usage", &new_usage);
+        return 0;
+    }
+
     // Append to COMMANDNAME
     let cmd_name = found_field.split(['|', ':']).next().unwrap_or(&found_field);
     shell::append_commandname(cmd_name);
@@ -281,6 +310,23 @@ pub fn usage_main(args: &[String]) -> i32 {
     0 // EXECUTION_SUCCESS
 }
 
+/// Check if a function name is a deferred :usage:: builtin (completion, docgen, mcp).
+fn is_deferred_builtin(name: &str) -> bool {
+    matches!(name, ":usage::completion" | ":usage::docgen" | ":usage::mcp")
+}
+
+/// Defer a built-in special command (completion, docgen, mcp) via the usage array.
+fn defer_builtin_command(cmd: &str, title: &str, usage_arr: &[String], cli: Vec<String>) {
+    let builtin_name = format!(":usage::{}", cmd);
+    let mut new_usage = vec![builtin_name];
+    new_usage.extend(cli);
+    new_usage.push("--".to_string());
+    new_usage.push(title.to_string());
+    new_usage.extend_from_slice(usage_arr);
+    shell::write_array("usage", &new_usage);
+    shell::append_commandname(cmd);
+}
+
 fn set_or_increment(name: &str) {
     if shell::is_array(name) {
         shell::array_append(name, "1"); // coverage:off - dead_code: parse_flag_at handles array booleans directly, never calls set_bool for arrays
@@ -288,6 +334,8 @@ fn set_or_increment(name: &str) {
         shell::set_scalar(name, "1");
     }
 }
+
+// -- Help text generation -----------------------------------------------------
 
 /// Print usage help text.
 fn usage_help_text(title: &str, usage_arr: &[String], args_arr: &[String]) {
@@ -392,10 +440,10 @@ pub fn print_flags_section<W: Write>(out: &mut W, args_arr: &[String], _fw: usiz
         // Field format
         let def = match field::parse_field(entry) {
             Ok(d) => d,
-            Err(e) => {
-                eprintln!("warning: invalid flag definition '{}': {}", entry, e);
-                continue;
-            }
+            Err(e) => { // coverage:off - defensive_check: invalid fields caught during :args/:usage parsing before help display
+                eprintln!("warning: invalid flag definition '{}': {}", entry, e); // coverage:off
+                continue; // coverage:off
+            } // coverage:off
         };
         let field_fmt = field::format_field(&def);
         let _ = writeln!(out, "{}", field_fmt);
@@ -403,4 +451,176 @@ pub fn print_flags_section<W: Write>(out: &mut W, args_arr: &[String], _fw: usiz
         // Description (indented 11 spaces)
         let _ = writeln!(out, "           {}", desc);
     }
+}
+
+// -- Shared types -------------------------------------------------------------
+
+/// Extracted subcommand info from usage pairs.
+pub struct SubCmd {
+    pub name: String,
+    pub desc: String,
+}
+
+/// Extracted flag info from args array.
+pub struct FlagInfo {
+    pub name: String,
+    pub short: Option<String>,
+    pub desc: String,
+    pub is_boolean: bool,
+    pub type_name: String,
+    pub required: bool,
+}
+
+// -- Shared extraction helpers ------------------------------------------------
+
+/// Extract visible subcommands from usage pairs.
+pub fn extract_subcommands(usage_pairs: &[String]) -> Vec<SubCmd> {
+    let mut cmds = Vec::new();
+    for i in (0..usage_pairs.len()).step_by(2) {
+        let entry = &usage_pairs[i];
+        let desc = usage_pairs.get(i + 1).map(|s| s.as_str()).unwrap_or("");
+
+        // Skip hidden (#prefix) and group separators (-)
+        if entry.starts_with('#') || entry == "-" {
+            continue;
+        }
+
+        let name = entry.split(['|', ':']).next().unwrap_or(entry);
+        cmds.push(SubCmd {
+            name: name.to_string(),
+            desc: desc.to_string(),
+        });
+    }
+    cmds
+}
+
+/// Extract visible flags from args array.
+pub fn extract_flags(args_arr: &[String]) -> Vec<FlagInfo> {
+    let mut flags = Vec::new();
+    let mut has_help = false;
+
+    for i in (0..args_arr.len()).step_by(2) {
+        let entry = &args_arr[i];
+        let desc = args_arr.get(i + 1).map(|s| s.as_str()).unwrap_or("");
+
+        // Only process flags (have | separator), skip positionals and group separators
+        if !entry.contains('|') || entry == "-" || entry.starts_with('#') {
+            continue;
+        }
+
+        if let Ok(def) = field::parse_field(entry) {
+            if def.name == "help" {
+                has_help = true;
+            }
+            flags.push(FlagInfo {
+                name: def.display_name,
+                short: def.short,
+                desc: desc.to_string(),
+                is_boolean: def.is_boolean,
+                type_name: def.type_name,
+                required: def.required,
+            });
+        }
+    }
+
+    if !has_help {
+        flags.push(FlagInfo {
+            name: "help".to_string(),
+            short: Some("h".to_string()),
+            desc: "Show this help message".to_string(),
+            is_boolean: true,
+            type_name: String::new(),
+            required: false,
+        });
+    }
+
+    flags
+}
+
+/// Extract visible flags from args array, excluding help (for LLM tool schemas).
+pub fn extract_flags_for_llm(args_arr: &[String]) -> Vec<FlagInfo> {
+    let mut flags = Vec::new();
+
+    for i in (0..args_arr.len()).step_by(2) {
+        let entry = &args_arr[i];
+        let desc = args_arr.get(i + 1).map(|s| s.as_str()).unwrap_or("");
+
+        if !entry.contains('|') || entry == "-" || entry.starts_with('#') {
+            continue;
+        }
+
+        if let Ok(def) = field::parse_field(entry) {
+            if def.name == "help" {
+                continue;
+            }
+            flags.push(FlagInfo {
+                name: def.display_name,
+                short: def.short,
+                desc: desc.to_string(),
+                is_boolean: def.is_boolean,
+                type_name: def.type_name,
+                required: def.required,
+            });
+        }
+    }
+
+    flags
+}
+
+// -- Shared JSON/LLM helpers --------------------------------------------------
+
+/// Escape a string for JSON string output.
+pub fn json_escape(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
+        .replace('\t', "\\t")
+}
+
+/// Map argsh type names to JSON Schema types.
+pub fn argsh_type_to_json(type_name: &str, is_boolean: bool) -> &'static str {
+    if is_boolean {
+        return "boolean";
+    }
+    match type_name {
+        "int" => "integer",
+        "float" => "number",
+        _ => "string",
+    }
+}
+
+/// Sanitize a string for use as a tool/function name (only [a-zA-Z0-9_-]).
+pub fn sanitize_tool_name(s: &str) -> String {
+    s.chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
+        .collect()
+}
+
+/// Write JSON Schema properties and required array (shared by all LLM providers).
+pub fn write_tool_properties<W: Write>(out: &mut W, flags: &[FlagInfo], indent: &str) {
+    let _ = writeln!(out, "{}\"properties\": {{", indent);
+    for (i, flag) in flags.iter().enumerate() {
+        let json_type = argsh_type_to_json(&flag.type_name, flag.is_boolean);
+        let trailing = if i < flags.len() - 1 { "," } else { "" };
+        let _ = writeln!(out, "{}  \"{}\": {{", indent, json_escape(&flag.name));
+        let _ = writeln!(out, "{}    \"type\": \"{}\",", indent, json_type);
+        let _ = writeln!(out, "{}    \"description\": \"{}\"", indent, json_escape(&flag.desc));
+        let _ = writeln!(out, "{}  }}{}", indent, trailing);
+    }
+    let _ = writeln!(out, "{}}},", indent);
+
+    let required: Vec<&str> = flags
+        .iter()
+        .filter(|f| f.required)
+        .map(|f| f.name.as_str())
+        .collect();
+    let _ = write!(out, "{}\"required\": [", indent);
+    for (i, name) in required.iter().enumerate() {
+        if i > 0 {
+            let _ = write!(out, ", ");
+        }
+        let _ = write!(out, "\"{}\"", json_escape(name));
+    }
+    let _ = writeln!(out, "]");
 }

@@ -1,11 +1,12 @@
 #!/usr/bin/env bats
-# shellcheck disable=SC1091 disable=SC2154 disable=SC2317 disable=SC2329 disable=SC2034 disable=SC2030 disable=SC2031
+# shellcheck disable=SC1091 disable=SC2154 disable=SC2317 disable=SC2329 disable=SC2034 disable=SC2030 disable=SC2031 disable=SC2314
 # shellcheck shell=bats
 #
 # Shared tests for both pure-bash and native builtin implementations.
 # Set ARGSH_BUILTIN_TEST=1 to test with Rust loadable builtins.
 
 load ../test/helper
+ARGSH_SOURCE=argsh
 load_source
 
 # Load native builtins when requested.
@@ -14,27 +15,29 @@ declare -g __BUILTIN_SKIP=""
 if [[ "${ARGSH_BUILTIN_TEST:-}" == "1" ]]; then
   if (( ARGSH_BUILTIN )); then
     # Builtins already loaded by args.sh (e.g., via ARGSH_BUILTIN_PATH in Docker)
-    unset -f :usage :args \
+    unset -f :usage :usage::help :args \
       is::array is::uninitialized is::set is::tty \
       to::int to::float to::boolean to::file to::string \
       args::field_name import import::source import::clear 2>/dev/null || true
   else
     _so="${BATS_TEST_DIRNAME}/../builtin/target/release/libargsh.so"
     if [[ ! -f "${_so}" ]]; then
-      __BUILTIN_SKIP="builtin .so not found: ${_so}"
-    else
-      # shellcheck disable=SC2229
-      enable -f "${_so}" \
-        :usage :args is::array is::uninitialized is::set is::tty \
-        args::field_name to::int to::float to::boolean to::file to::string \
-        import import::clear 2>/dev/null || __BUILTIN_SKIP="builtin .so failed to load"
-      if [[ -z "${__BUILTIN_SKIP}" ]]; then
-        unset -f :usage :args \
-          is::array is::uninitialized is::set is::tty \
-          to::int to::float to::boolean to::file to::string \
-          args::field_name import import::source import::clear 2>/dev/null || true
-      fi
+      echo "ERROR: builtin .so not found: ${_so}" >&2
+      exit 1
     fi
+    # shellcheck disable=SC2229
+    if ! enable -f "${_so}" \
+      :usage :usage::help :usage::completion :usage::docgen :usage::mcp :args \
+      is::array is::uninitialized is::set is::tty \
+      args::field_name to::int to::float to::boolean to::file to::string \
+      import import::clear; then
+      echo "ERROR: builtin .so failed to load: ${_so}" >&2
+      exit 1
+    fi
+    unset -f :usage :usage::help :args \
+      is::array is::uninitialized is::set is::tty \
+      to::int to::float to::boolean to::file to::string \
+      args::field_name import import::source import::clear 2>/dev/null || true
     unset _so
   fi
 fi
@@ -1130,14 +1133,14 @@ source "${PATH_FIXTURES}/fmt.sh"
 
 @test "is: uninitialized with no args returns error" {
   # Pure-bash crashes with unbound variable; only testable with builtin
-  [[ "${ARGSH_BUILTIN_TEST:-}" == "1" ]] || return 0
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
   is::uninitialized && status=0 || status=$?
   assert "${status}" -ne 0
 }
 
 @test "is: set with no args returns error" {
   # Pure-bash crashes with unbound variable; only testable with builtin
-  [[ "${ARGSH_BUILTIN_TEST:-}" == "1" ]] || return 0
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
   is::set && status=0 || status=$?
   assert "${status}" -ne 0
 }
@@ -1172,7 +1175,7 @@ source "${PATH_FIXTURES}/fmt.sh"
 @test "usage: unknown flag before command defers to help" {
   # In :usage, unknown flags break out of the flag loop. If no command was found
   # before the break, it defers to help via "${usage[@]}".
-  [[ "${ARGSH_BUILTIN_TEST:-}" == "1" ]] || return 0
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
   (
     :test::usage --unknownflag cmd2
   ) >"${stdout}" 2>"${stderr}" || status=$?
@@ -1228,7 +1231,7 @@ source "${PATH_FIXTURES}/fmt.sh"
 @test "usage: scalar boolean flag in usage triggers set_or_increment" {
   # Covers usage.rs set_or_increment (lines 221-227)
   # Must use a SCALAR boolean (not array) to trigger set_bool callback
-  [[ "${ARGSH_BUILTIN_TEST:-}" == "1" ]] || return 0
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
   (
     local debug
     local -a usage=(
@@ -1249,7 +1252,7 @@ source "${PATH_FIXTURES}/fmt.sh"
 
 @test "usage: required flag missing in usage context" {
   # Covers usage.rs line 128 (check_required_flags returns non-zero)
-  [[ "${ARGSH_BUILTIN_TEST:-}" == "1" ]] || return 0
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
   (
     local -a usage=(
       'cmd1' "A command"
@@ -1270,7 +1273,7 @@ source "${PATH_FIXTURES}/fmt.sh"
   # Covers usage.rs line 304 (print_flags_section early return when no flags)
   # Actually, help|h is always added, so this tests the path where
   # all flags are auto-added.
-  [[ "${ARGSH_BUILTIN_TEST:-}" == "1" ]] || return 0
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
   (
     local mypos
     local -a args=(
@@ -1286,7 +1289,7 @@ source "${PATH_FIXTURES}/fmt.sh"
 
 @test "attrs: to::boolean type with false value" {
   # Covers field.rs line 216 (boolean "false" -> "0")
-  [[ "${ARGSH_BUILTIN_TEST:-}" == "1" ]] || return 0
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
   (
     local mybool
     local -a args=(
@@ -1303,7 +1306,7 @@ source "${PATH_FIXTURES}/fmt.sh"
 
 @test "attrs: to::boolean type with 0 value" {
   # Covers field.rs line 216 (boolean "0" -> "0")
-  [[ "${ARGSH_BUILTIN_TEST:-}" == "1" ]] || return 0
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
   (
     local mybool
     local -a args=(
@@ -1320,7 +1323,7 @@ source "${PATH_FIXTURES}/fmt.sh"
 
 @test "attrs: to::boolean type with truthy value" {
   # Covers field.rs line 217 (_ => "1")
-  [[ "${ARGSH_BUILTIN_TEST:-}" == "1" ]] || return 0
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
   (
     local mybool
     local -a args=(
@@ -1337,7 +1340,7 @@ source "${PATH_FIXTURES}/fmt.sh"
 
 @test "attrs: unknown modifier character in field spec errors" {
   # Covers field.rs modifier validation (unknown modifier returns Err)
-  [[ "${ARGSH_BUILTIN_TEST:-}" == "1" ]] || return 0
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
   (
     local myfield
     local -a args=(
@@ -1353,7 +1356,7 @@ source "${PATH_FIXTURES}/fmt.sh"
 
 @test "attrs: odd-length args array causes error" {
   # Covers args.rs line 71 (odd args array validation)
-  [[ "${ARGSH_BUILTIN_TEST:-}" == "1" ]] || return 0
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
   (
     local myfield
     local -a args=(
@@ -1372,7 +1375,7 @@ source "${PATH_FIXTURES}/fmt.sh"
   # Covers args.rs line 212 (skip '-' in positional listing) -- actually
   # '-' is filtered by contains('|') || == '-' check, so it won't be in
   # positional_indices. But the help output should show the group.
-  [[ "${ARGSH_BUILTIN_TEST:-}" == "1" ]] || return 0
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
   (
     local mypos
     local myflag
@@ -1391,7 +1394,7 @@ source "${PATH_FIXTURES}/fmt.sh"
 
 @test "usage: odd-length usage array causes error" {
   # Covers usage.rs line 72 (odd usage array validation)
-  [[ "${ARGSH_BUILTIN_TEST:-}" == "1" ]] || return 0
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
   (
     local -a usage=(
       'cmd1' "Description"
@@ -1408,7 +1411,7 @@ source "${PATH_FIXTURES}/fmt.sh"
 
 @test "attrs: remaining flags after positionals causes error" {
   # Covers args.rs line 159 (remaining args after all consumed)
-  [[ "${ARGSH_BUILTIN_TEST:-}" == "1" ]] || return 0
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
   (
     local mypos
     local -a args=(
@@ -1423,14 +1426,14 @@ source "${PATH_FIXTURES}/fmt.sh"
 
 @test "args::field_name builtin with no args returns error" {
   # Covers field.rs line 36 (args::field_name with empty args)
-  [[ "${ARGSH_BUILTIN_TEST:-}" == "1" ]] || return 0
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
   args::field_name && status=0 || status=$?
   assert "${status}" -ne 0
 }
 
 @test "attrs: invalid custom type name with special chars" {
   # Covers field.rs line 243 (invalid type name validation)
-  [[ "${ARGSH_BUILTIN_TEST:-}" == "1" ]] || return 0
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
   (
     local myfield
     local -a args=(
@@ -1448,7 +1451,7 @@ source "${PATH_FIXTURES}/fmt.sh"
   # In builtin mode, set -e causes the script to exit with the function's
   # exit code (1) before the builtin can process the error return.
   # In pure-bash mode, the error propagation also exits with code 2.
-  [[ "${ARGSH_BUILTIN_TEST:-}" == "1" ]] || return 0
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
   (
     to::failing_type() { return 1; }
     local myfield
@@ -1466,7 +1469,7 @@ source "${PATH_FIXTURES}/fmt.sh"
 @test "usage: error break from parse_flag_at in usage context" {
   # Covers usage.rs line 120 (Err break from parse_flag_at)
   # Trigger by passing a value flag with missing value at end
-  [[ "${ARGSH_BUILTIN_TEST:-}" == "1" ]] || return 0
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
   (
     local -a usage=(
       'cmd1' "A command"
@@ -1489,7 +1492,7 @@ source "${PATH_FIXTURES}/fmt.sh"
   # This happens when FUNCNAME is empty (no caller function).
   # Difficult to trigger since builtins always have a caller in FUNCNAME.
   # Instead, test the argsh:: fallback path more thoroughly.
-  [[ "${ARGSH_BUILTIN_TEST:-}" == "1" ]] || return 0
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
   (
     argsh::mycmd2() { echo "argsh-mycmd2"; }
     local -a usage=(
@@ -2018,7 +2021,7 @@ source "${PATH_FIXTURES}/fmt.sh"
 
 @test "usage: array boolean flag triggers array_append in set_or_increment" {
   # Covers usage.rs set_or_increment array path (line 223)
-  [[ "${ARGSH_BUILTIN_TEST:-}" == "1" ]] || return 0
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
   (
     local -a verbose
     local -a usage=(
@@ -2039,7 +2042,7 @@ source "${PATH_FIXTURES}/fmt.sh"
 
 @test "attrs: stdin type passthrough via :args" {
   # Covers field.rs convert_type stdin non-dash path (lines 227, 234)
-  [[ "${ARGSH_BUILTIN_TEST:-}" == "1" ]] || return 0
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
   (
     local myinput
     local -a args=(
@@ -2056,7 +2059,7 @@ source "${PATH_FIXTURES}/fmt.sh"
 
 @test "attrs: custom type returns None from exec_capture" {
   # Covers field.rs line 257 (custom type returning error on exec_capture None)
-  [[ "${ARGSH_BUILTIN_TEST:-}" == "1" ]] || return 0
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
   (
     to::silent_fail() { echo ""; }
     local myfield
@@ -2075,7 +2078,7 @@ source "${PATH_FIXTURES}/fmt.sh"
 @test "attrs: help shows default for array flag with values" {
   # Covers shell.rs get_var_display array path with values, and
   # triggers format_field's has_default + array display path
-  [[ "${ARGSH_BUILTIN_TEST:-}" == "1" ]] || return 0
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
   (
     local -a myflag=("val1" "val2")
     local -a args=(
@@ -2087,4 +2090,624 @@ source "${PATH_FIXTURES}/fmt.sh"
   assert "${status}" -eq 0
   is_empty stderr
   contains "default:.*val1 val2" stdout
+}
+
+# ── completion/man/md/rst/yaml builtin tests ──────────────────────────
+# These are builtin-only features — skip in pure bash mode.
+
+@test "usage: completion bash generates script" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  (
+    :test::usage completion bash
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains "complete -o default -F" stdout
+  contains "COMPREPLY" stdout
+}
+
+@test "usage: completion zsh generates script" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  (
+    :test::usage completion zsh
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains "#compdef" stdout
+  contains "_arguments" stdout
+}
+
+@test "usage: completion fish generates script" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  (
+    :test::usage completion fish
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains "complete -c" stdout
+}
+
+@test "usage: completion --help shows shell list" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  (
+    :test::usage completion --help
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains "bash.*Bash completion" stdout
+  contains "zsh.*Zsh completion" stdout
+  contains "fish.*Fish completion" stdout
+}
+
+@test "usage: completion invalid shell fails" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  (
+    :test::usage completion powershell
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -ne 0
+}
+
+@test "usage: docgen man generates troff output" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  (
+    :test::usage docgen man
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains '\.TH' stdout
+  contains '\.SH NAME' stdout
+  contains '\.SH COMMANDS' stdout
+  contains '\.SH OPTIONS' stdout
+}
+
+@test "usage: docgen --help shows format list" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  (
+    :test::usage docgen --help
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains "man.*Man page" stdout
+  contains "md.*Markdown" stdout
+  contains "rst.*reStructuredText" stdout
+  contains "yaml.*YAML" stdout
+}
+
+@test "usage: docgen md generates markdown output" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  (
+    :test::usage docgen md
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains '## Synopsis' stdout
+  contains '## Commands' stdout
+  contains '## Options' stdout
+  contains '\| Command \| Description \|' stdout
+}
+
+@test "usage: docgen rst generates restructuredtext output" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  (
+    :test::usage docgen rst
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains 'Synopsis' stdout
+  contains '\.\. code-block:: bash' stdout
+  contains 'Commands' stdout
+  contains 'Options' stdout
+}
+
+@test "usage: docgen yaml generates yaml output" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  (
+    :test::usage docgen yaml
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains 'name:' stdout
+  contains 'description:' stdout
+  contains 'commands:' stdout
+  contains 'options:' stdout
+}
+
+@test "usage: docgen invalid format fails" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  (
+    :test::usage docgen html
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -ne 0
+}
+
+@test "usage: completion includes subcommands from usage array" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  (
+    :test::usage completion bash
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains "cmd1" stdout
+  contains "cmd2" stdout
+}
+
+@test "usage: completion includes flags from args array" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  (
+    :test::usage completion bash
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains "\-\-verbose" stdout
+  contains "\-\-config" stdout
+  contains "\-\-help" stdout
+}
+
+# ── coverage: no visible subcommands + long-only flag ────────────────
+# These tests exercise branches unreachable from :test::usage (which has
+# subcommands and flags with short options):
+#   - Flag without short option (flag.short == None)
+#   - Empty subcommands list (cmds.is_empty() == true)
+#   - Multi-line title with blank line (man .PP path)
+
+@test "usage: completion bash with no subcommands and long-only flag" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  (
+    :test::nosub completion bash
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains "complete -o default -F" stdout
+  contains "\-\-longonly" stdout
+  contains "\-\-help" stdout
+}
+
+@test "usage: completion zsh with no subcommands and long-only flag" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  (
+    :test::nosub completion zsh
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains "#compdef" stdout
+  contains "\-\-longonly" stdout
+  # No _describe/commands block when subcommands are empty
+}
+
+@test "usage: completion fish with no subcommands and long-only flag" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  (
+    :test::nosub completion fish
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains "complete -c" stdout
+  contains "longonly" stdout
+}
+
+@test "usage: docgen man with no subcommands and long-only flag" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  (
+    :test::nosub docgen man
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains '\.TH' stdout
+  contains '\.SH OPTIONS' stdout
+  # Long-only non-boolean flag (no short option)
+  contains '\\-\\-longonly.*string' stdout
+  # Multi-line title with blank line produces .PP
+  contains '\.PP' stdout
+}
+
+@test "usage: docgen md with no subcommands and long-only flag" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  (
+    :test::nosub docgen md
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains '## Synopsis' stdout
+  contains '## Options' stdout
+  # No ## Commands section
+  contains '\-\-longonly' stdout
+}
+
+@test "usage: docgen rst with no subcommands and long-only flag" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  (
+    :test::nosub docgen rst
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains 'Synopsis' stdout
+  contains 'Options' stdout
+  contains '\-\-longonly' stdout
+}
+
+@test "usage: docgen yaml with no subcommands and long-only flag" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  (
+    :test::nosub docgen yaml
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains 'name:' stdout
+  contains 'options:' stdout
+  contains 'longonly' stdout
+}
+
+@test "usage: docgen yaml with group separators in usage array" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  (
+    :test::fmt1 docgen yaml
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains 'commands:' stdout
+  # Group separators ('-') should be filtered, only real commands listed
+  contains 'cmd1' stdout
+  contains 'noop' stdout
+}
+
+# ── LLM tool schema tests ──────────────────────────────────────────
+
+@test "usage: docgen llm claude generates anthropic tool schema" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  (
+    :test::usage docgen llm claude
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains '"input_schema":' stdout
+  contains '"properties":' stdout
+  contains '"verbose":' stdout
+}
+
+@test "usage: docgen llm openai generates openai tool schema" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  (
+    :test::usage docgen llm openai
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains '"type": "function"' stdout
+  contains '"parameters":' stdout
+  contains '"verbose":' stdout
+}
+
+@test "usage: docgen llm gemini is alias for openai format" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  (
+    :test::usage docgen llm gemini
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains '"type": "function"' stdout
+  contains '"parameters":' stdout
+}
+
+@test "usage: docgen llm kimi is alias for openai format" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  (
+    :test::usage docgen llm kimi
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains '"type": "function"' stdout
+}
+
+@test "usage: docgen llm without provider fails" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  (
+    :test::usage docgen llm
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -ne 0
+}
+
+@test "usage: docgen llm invalid provider fails" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  (
+    :test::usage docgen llm cohere
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -ne 0
+}
+
+@test "usage: docgen llm claude with subcommands generates one tool per subcommand" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  (
+    :test::usage docgen llm claude
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains '_cmd1' stdout
+  contains '_cmd2' stdout
+}
+
+@test "usage: docgen llm claude excludes help flag" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  (
+    :test::usage docgen llm claude
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  ! grep -q '"help"' "${stdout}"
+}
+
+@test "usage: docgen llm claude with no subcommands generates single tool" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  (
+    :test::nosub docgen llm claude
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains '"input_schema":' stdout
+  contains '"longonly":' stdout
+}
+
+@test "usage: docgen llm openai with no subcommands generates single tool" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  (
+    :test::nosub docgen llm openai
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains '"type": "function"' stdout
+  contains '"parameters":' stdout
+}
+
+@test "usage: docgen --help lists llm format" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  (
+    :test::usage docgen --help
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains "llm.*LLM tool schema" stdout
+}
+
+# ── MCP server tests ──────────────────────────────────────────────
+
+@test "usage: mcp --help shows help text" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  (
+    :test::usage mcp --help
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains 'MCP.*Model Context Protocol' stdout
+  contains 'mcpServers' stdout
+}
+
+@test "usage: mcp initialize returns protocol version" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' | (
+    :test::usage mcp
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains '"protocolVersion":"2025-11-25"' stdout
+  contains '"serverInfo"' stdout
+}
+
+@test "usage: mcp ping returns empty result" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"ping"}' | (
+    :test::usage mcp
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains '"result":{}' stdout
+}
+
+@test "usage: mcp tools/list returns tools with inputSchema" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | (
+    :test::usage mcp
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains '"inputSchema"' stdout
+  contains '"properties"' stdout
+}
+
+@test "usage: mcp tools/list has one tool per subcommand" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | (
+    :test::usage mcp
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains 'argsh_cmd1' stdout
+  contains 'argsh_cmd2' stdout
+}
+
+@test "usage: mcp tools/list excludes hidden commands" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | (
+    :test::usage mcp
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  ! grep -q 'cmd3' "${stdout}"
+}
+
+@test "usage: mcp unknown method returns error" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"bogus/method"}' | (
+    :test::usage mcp
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains '"error"' stdout
+  contains '"code":-32601' stdout
+  contains 'Method not found' stdout
+}
+
+@test "usage: mcp invalid request returns error" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  printf '%s\n' '{"jsonrpc":"2.0","id":1}' | (
+    :test::usage mcp
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains '"error"' stdout
+  contains '"code":-32600' stdout
+  contains 'Invalid request' stdout
+}
+
+@test "usage: mcp notifications/initialized produces no jsonrpc response" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  printf '%s\n' '{"jsonrpc":"2.0","method":"notifications/initialized"}' | (
+    :test::usage mcp
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stdout
+}
+
+@test "usage: mcp empty lines are ignored" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  printf '%s\n' '' '{"jsonrpc":"2.0","id":1,"method":"ping"}' '' | (
+    :test::usage mcp
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains '"result":{}' stdout
+}
+
+@test "usage: mcp tools/list with no subcommands returns single tool" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | (
+    :test::nosub mcp
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains '"inputSchema"' stdout
+  contains '"longonly"' stdout
+}
+
+@test "usage: mcp tools/call missing tool name returns error" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"arguments":{}}}' | (
+    :test::usage mcp
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains '"error"' stdout
+  contains 'Missing tool name' stdout
+}
+
+@test "usage: mcp tools/call unknown tool returns error" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"nonexistent","arguments":{}}}' | (
+    :test::usage mcp
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains '"error"' stdout
+  contains 'Unknown tool' stdout
+}
+
+@test "usage: mcp tools/call invokes subcommand" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  local fixture="${PATH_FIXTURES}/mcp_test.sh"
+  [[ -x "${fixture}" ]] || skip "mcp_test.sh fixture not found"
+  printf '%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
+    '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+    '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"args_sh_serve","arguments":{"verbose":true}}}' \
+  | "${fixture}" mcp >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains 'serving' stdout
+  contains 'verbose=on' stdout
+}
+
+@test "usage: mcp tools/call with string argument" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  local fixture="${PATH_FIXTURES}/mcp_test.sh"
+  [[ -x "${fixture}" ]] || skip "mcp_test.sh fixture not found"
+  printf '%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
+    '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+    '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"args_sh_serve","arguments":{"config":"test.yml"}}}' \
+  | "${fixture}" mcp >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains 'serving' stdout
+  contains 'config=test.yml' stdout
+}
+
+@test "usage: mcp tools/call with unknown arg is ignored" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  local fixture="${PATH_FIXTURES}/mcp_test.sh"
+  [[ -x "${fixture}" ]] || skip "mcp_test.sh fixture not found"
+  printf '%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
+    '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+    '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"args_sh_serve","arguments":{"verbose":true,"nonexistent":"ignored"}}}' \
+  | "${fixture}" mcp >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains 'serving' stdout
+  contains 'verbose=on' stdout
+}
+
+@test "usage: mcp tools/call with false boolean omits flag" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  local fixture="${PATH_FIXTURES}/mcp_test.sh"
+  [[ -x "${fixture}" ]] || skip "mcp_test.sh fixture not found"
+  printf '%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
+    '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+    '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"args_sh_serve","arguments":{"verbose":false}}}' \
+  | "${fixture}" mcp >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains 'serving' stdout
+  ! grep -q 'verbose=on' "${stdout}"
+}
+
+@test "usage: mcp tools/call build subcommand" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  local fixture="${PATH_FIXTURES}/mcp_test.sh"
+  [[ -x "${fixture}" ]] || skip "mcp_test.sh fixture not found"
+  printf '%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
+    '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+    '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"args_sh_build","arguments":{}}}' \
+  | "${fixture}" mcp >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains 'building' stdout
 }

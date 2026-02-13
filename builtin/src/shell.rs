@@ -166,6 +166,21 @@ pub fn get_script_name() -> String {
     }
 }
 
+/// Get the raw value of $0 (without basename stripping).
+/// NOTE: may be a relative path or just a basename depending on how the script
+/// was invoked. Used by MCP to re-invoke the script as a subprocess.
+pub fn get_script_path() -> String {
+    unsafe {
+        let ptr = dollar_vars[0];
+        if ptr.is_null() {
+            return "argsh".to_string(); // coverage:off - dollar_vars[0] always set by bash
+        }
+        std::ffi::CStr::from_ptr(ptr)
+            .to_string_lossy()
+            .into_owned()
+    }
+}
+
 /// Get a scalar variable's value for use in default display.
 /// For arrays, returns space-joined elements.
 pub fn get_var_display(name: &str) -> Option<String> {

@@ -4,3 +4,5 @@
 !argsh.min.sh
 !minifier
 !builtin
+builtin/target
+minifier/target

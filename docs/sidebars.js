@@ -142,13 +142,34 @@ module.exports = {
       className: "homepage-sidebar-item",
     },
     {
-      type: "doc",
-      id: "clis-for-llms",
-      label: "CLIs for LLMs",
+      type: "category",
+      label: "AI Integration",
+      link: {
+        type: "doc",
+        id: "ai/index",
+      },
       customProps: {
         sidebar_icon: "academic-cap-solid",
       },
       className: "homepage-sidebar-item",
+      items: [
+        {
+          type: "doc",
+          id: "ai/clis-for-llms",
+          label: "CLIs for LLMs",
+          customProps: {
+            iconName: "document-text-solid",
+          },
+        },
+        {
+          type: "doc",
+          id: "ai/mcp",
+          label: "MCP Server",
+          customProps: {
+            iconName: "bolt-solid",
+          },
+        },
+      ],
     },
     {
       type: "html",

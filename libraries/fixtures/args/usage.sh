@@ -104,3 +104,20 @@ start() {
 :test::nested::sub::action() {
   echo "nested::sub::action"
 }
+
+# --- coverage: no visible subcommands, long-only flag ---
+
+:test::nosub() {
+  local longonly
+  local -a args=(
+    'longonly|:~string' "A long-only flag"
+  )
+  local -a usage=(
+    '#hidden' "Hidden command"
+  )
+  :usage "Multi-line description
+with a blank line
+
+and more text" "${@}"
+  "${usage[@]}"
+}

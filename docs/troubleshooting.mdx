@@ -1,0 +1,210 @@
+---
+description: "Solutions to common problems with argsh, native builtins, imports, and Docker."
+---
+
+# Troubleshooting
+
+## Native Builtins
+
+### Builtins not loading (ARGSH_BUILTIN=0)
+
+The `.so` loads silently — if it fails, argsh falls back to pure Bash without error. Check with:
+
+```bash
+source libraries/args.sh
+echo "ARGSH_BUILTIN=${ARGSH_BUILTIN}"
+```
+
+**Common causes:**
+
+| Cause | Fix |
+|-------|-----|
+| `.so` not found | Build with `cd builtin && cargo build --release`, then copy to a [search path](/development/fundamentals/builtins#loading) |
+| Wrong architecture | The `.so` is platform-specific (linux/amd64). Cross-compiled binaries won't load |
+| glibc mismatch | The `.so` requires the glibc version it was built against or newer. See [Compatibility](#glibc-compatibility) below |
+| Bash version mismatch | The `.so` targets Bash 5.x ABI. It will not load in Bash 4.x |
+| Stale `.so` | Rebuild after updating the builtin crate — a cached `.so` may reference symbols that no longer exist |
+
+To diagnose, try loading manually:
+
+```bash
+enable -f /path/to/libargsh.so :args
+# If this fails, bash prints the dlopen error (e.g., "GLIBC_2.39 not found")
+```
+
+### glibc Compatibility {#glibc-compatibility}
+
+The `.so` dynamically links against glibc. The rule is simple: **build glibc must be ≤ runtime glibc**. A `.so` built on Debian 12 (glibc 2.36) works on any system with glibc 2.36 or newer.
+
+The official release builds target **glibc 2.36** (Debian 12 / bookworm), which covers:
+
+| Distro | glibc | Bash | Supported |
+|--------|-------|------|-----------|
+| RHEL 8 | 2.28 | 4.4 | No (glibc too old + Bash 4.x) |
+| Debian 11 | 2.31 | 5.1 | No (glibc too old) |
+| RHEL 9 | 2.34 | 5.1 | No (glibc too old) |
+| Ubuntu 22.04 | 2.35 | 5.1 | No (glibc too old) |
+| **Debian 12** | **2.36** | **5.2** | **Yes** |
+| Ubuntu 24.04 | 2.39 | 5.2 | Yes |
+| Fedora 40+ | 2.39+ | 5.2+ | Yes |
+
+:::tip
+Building against an older glibc has **no security implications**. At runtime, the system's installed glibc (with all its security patches) handles execution. The build glibc only determines which symbols the `.so` references.
+:::
+
+If you see an error like:
+
+```
+/path/to/libargsh.so: /lib/x86_64-linux-gnu/libc.so.6: version `GLIBC_2.39' not found
+```
+
+Your runtime glibc is older than what the `.so` was built against. Either upgrade your system or rebuild the `.so` on a matching (or older) base.
+
+### Bash 4.x is not supported
+
+The `bash_builtins` Rust crate targets the Bash 5.x struct layout. Loading the `.so` in Bash 4.x will fail or crash because internal struct offsets differ between major versions. There is no workaround — use the pure-Bash fallback on Bash 4.x systems.
+
+Check your version:
+
+```bash
+echo "${BASH_VERSINFO[0]}.${BASH_VERSINFO[1]}"
+# Must be 5.0 or higher for native builtins
+```
+
+### Static linking is not possible for the .so
+
+The `.so` cannot be statically linked against glibc. Bash loads it via `dlopen()`, and a statically-linked glibc inside the `.so` would conflict with Bash's own dynamically-linked glibc (duplicate symbols, thread-local storage issues). The `.so` must always dynamically link to the same glibc that Bash uses.
+
+## Import System
+
+### "Library not found"
+
+The `import` function resolves modules using path prefixes:
+
+| Prefix | Resolves relative to | Example |
+|--------|----------------------|---------|
+| *(none)* | Script directory / `__ARGSH_LIB_DIR` | `import string` |
+| `@` | `PATH_BASE` (project root) | `import @libraries/string` |
+| `~` | `ARGSH_SOURCE` (entry point) | `import ~lib/utils` |
+
+For each resolved path, argsh tries extensions `""`, `".sh"`, `".bash"` in order.
+
+**Common causes:**
+
+- **`PATH_BASE` not set** — `@`-prefixed imports need it. Run from inside a git repo or set it manually.
+- **`ARGSH_SOURCE` is a bare name** — When `ARGSH_SOURCE=argsh` (no `/`), it's treated as an identifier, not a file path. The `~` prefix won't resolve to a directory.
+- **Wrong working directory** — Plain imports resolve relative to the script's location, not `pwd`.
+
+### "function 'x' not found in module 'y'" (builtin only)
+
+Selective imports (`import module { func1 func2 }`) are a builtin-only feature. If a requested function doesn't exist after sourcing the module, the import fails and **all** newly loaded functions are cleaned up. This is all-or-nothing — partial imports are not allowed.
+
+### Import in minified scripts
+
+In `argsh.min.sh`, all library functions are inlined. Calls to `import` will print "Library not found" to stderr but the script continues because the functions are already available. This is expected behavior.
+
+## Argument Parsing
+
+### Field definition errors
+
+| Error | Cause | Example |
+|-------|-------|---------|
+| `cannot have multiple types` | Both `:+` and `:~type` used | `flag\|f:+~int` |
+| `already flagged as boolean` | `:~type` after `:+` | `flag\|f:+~string` |
+| `field already flagged as required` | Duplicate `!` modifier | `flag\|f:!!` |
+| `unknown modifier: X` | Invalid character after `:` | `flag\|f:?` |
+
+Valid modifiers: `+` (boolean), `~` (type), `!` (required). They can be combined: `:~int!` means required integer.
+
+### "missing required argument" / "missing required flag"
+
+A positional marked as required (uninitialized variable) or a flag with `:!` was not provided. Exit code: 2.
+
+### "too many arguments"
+
+Extra positional arguments remain after all defined positionals are consumed. If your command accepts a variable number of arguments, declare the last positional as an array:
+
+```bash
+local -a files
+local -a args=(
+  'files' "Input files"
+)
+:args "Process files" "${@}"
+```
+
+### Type validation failures
+
+Type converters are strict:
+
+| Type | Accepts | Rejects |
+|------|---------|---------|
+| `int` | `-42`, `0`, `100` | `1.5`, `0x1A`, `1e2`, empty |
+| `float` | `3.14`, `-1.0`, `42` | `.5`, `5.`, `1e2`, empty |
+| `boolean` | Any value | *(never fails)* |
+| `file` | Existing file path | Missing file, directories |
+
+## Docker
+
+### "Docker build failed"
+
+The `argsh` CLI wraps commands in Docker. If the Docker build fails:
+
+```bash
+# See the actual error
+argsh docker
+
+# Skip Docker build if using a pre-built image
+ARGSH_DOCKER_IMAGE=ghcr.io/arg-sh/argsh:latest argsh test
+```
+
+### Tests hang in CI
+
+BATS 1.11+ can hang when forked processes inherit file descriptor 3 (the output-capture descriptor). Close it in subshells:
+
+```bash
+(some_command) >"${stdout}" 2>"${stderr}" 3>&-
+```
+
+### Container runs as wrong user
+
+The `docker::user` function creates temporary passwd/group files to map your host UID/GID into the container. If `PATH_BASE` is not set, the working directory defaults to `/workspace`.
+
+## Environment Setup
+
+### .envrc not loaded
+
+argsh uses [direnv](https://direnv.net/) to set up `PATH_BASE`, `PATH_BIN`, and add `.bin/` to `PATH`. If direnv is not installed or not hooked into your shell:
+
+```bash
+# Manual equivalent
+export PATH_BASE="$(git rev-parse --show-toplevel)"
+export PATH_BIN="${PATH_BASE}/.bin"
+export PATH="${PATH_BIN}:${PATH}"
+```
+
+### "This script must be run from within a git repository"
+
+The bootstrap and `.envrc` use `git rev-parse --show-toplevel` to find the project root. Run `git init` first, or set `PATH_BASE` manually.
+
+## Testing
+
+### Snapshot test failures
+
+Snapshots are stored in `test/snapshots/` and auto-created on first run. If output changes intentionally, delete the `.snap` file to regenerate:
+
+```bash
+rm test/snapshots/<name>.<file>.snap
+bats libraries/args.bats
+```
+
+### BATS hangs locally
+
+`set -euo pipefail` breaks BATS internals (`BATS_TEARDOWN_STARTED` becomes unbound). Never use it in `.bats` files. The test helper provides safe alternatives.
+
+## Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 1 | Validation failure (type check, file not found, runtime error) |
+| 2 | Usage error (missing required args, unknown flags, invalid field definition) |
