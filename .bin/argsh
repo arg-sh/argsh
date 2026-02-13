@@ -528,14 +528,27 @@ _coverage() {
 }
 
 ###
-### all (minify + lint + coverage + commit)
+### ci (minify + lint + coverage + commit)
 ###
-_all() {
+_ci() {
   local message="regenerate files"
   local -a args=(
     'message|m' "Commit message"
   )
   :args "Minify, lint, coverage, then commit regenerated files" "${@}"
+
+  if [[ -n "$(git -C "${PATH_BASE}" status --porcelain)" ]]; then
+    echo "Warning: repository has uncommitted changes." >&2
+    git -C "${PATH_BASE}" status --short >&2
+    echo >&2
+    if [[ -t 0 ]]; then
+      read -rp "Continue anyway? [y/N] " answer
+      [[ "${answer}" =~ ^[Yy] ]] || { echo "Aborted." >&2; return 1; }
+    else
+      echo "Non-interactive mode — aborting. Commit or stash changes first." >&2
+      return 1
+    fi
+  fi
 
   minify::argsh
   _lint
@@ -585,7 +598,7 @@ _main() {
   local -a usage
   usage=(
     -                           "Commands"
-    'all:-_all'                 "Minify, lint, coverage, commit regenerated files"
+    'ci:-_ci'                   "Minify, lint, coverage, commit regenerated files"
     'build:-_build'             "Build release binaries [all|builtin|minifier]"
     'lint:-_lint'               "Run linters [all|argsh|builtin|minifier]"
     'test:-_test'               "Run tests [all|argsh|builtin|minifier]"
