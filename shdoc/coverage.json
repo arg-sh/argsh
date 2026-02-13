@@ -30,9 +30,9 @@
     },
     {
       "file": "shdoc/src/render/json.rs",
-      "percent_covered": "91.04",
-      "covered_lines": "122",
-      "total_lines": "134",
+      "percent_covered": "90.00",
+      "covered_lines": "126",
+      "total_lines": "140",
       "excluded_lines": "0"
     },
     {
@@ -44,23 +44,16 @@
     },
     {
       "file": "shdoc/src/parser/bash.rs",
-      "percent_covered": "82.64",
-      "covered_lines": "376",
-      "total_lines": "455",
+      "percent_covered": "82.23",
+      "covered_lines": "384",
+      "total_lines": "467",
       "excluded_lines": "0"
     },
     {
       "file": "shdoc/src/render/markdown.rs",
-      "percent_covered": "79.33",
-      "covered_lines": "165",
-      "total_lines": "208",
-      "excluded_lines": "0"
-    },
-    {
-      "file": "shdoc/src/main.rs",
-      "percent_covered": "69.14",
-      "covered_lines": "112",
-      "total_lines": "162",
+      "percent_covered": "77.73",
+      "covered_lines": "185",
+      "total_lines": "238",
       "excluded_lines": "0"
     },
     {
@@ -71,6 +64,13 @@
       "excluded_lines": "0"
     },
     {
+      "file": "shdoc/src/main.rs",
+      "percent_covered": "63.08",
+      "covered_lines": "123",
+      "total_lines": "195",
+      "excluded_lines": "0"
+    },
+    {
       "file": "shdoc/src/parser/mod.rs",
       "percent_covered": "50.00",
       "covered_lines": "5",
@@ -78,12 +78,12 @@
       "excluded_lines": "0"
     }
   ],
-  "percent_covered": "84.85",
-  "covered_lines": 1445,
-  "total_lines": 1703,
+  "percent_covered": "83.41",
+  "covered_lines": 1488,
+  "total_lines": 1784,
   "excluded_lines": 0,
   "percent_low": 25,
   "percent_high": 75,
   "command": "cargo-test+llvm-cov",
-  "date": "2026-02-13 22:59:58"
+  "date": "2026-02-14 00:01:53"
 }
