@@ -222,6 +222,7 @@ coverage::builtin() {
   echo "Building with coverage instrumentation (via Docker)..."
   mkdir -p "${HOME}/.cargo/registry"
   docker run --rm \
+    --user "$(id -u):$(id -g)" \
     -v "${PATH_BASE}/builtin:${PATH_BASE}/builtin" \
     -v "${HOME}/.cargo/registry:/usr/local/cargo/registry" \
     -w "${PATH_BASE}/builtin" \
