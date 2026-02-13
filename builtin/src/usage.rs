@@ -511,7 +511,7 @@ pub fn usage_main(args: &[String]) -> i32 {
     0 // EXECUTION_SUCCESS
 }
 
-/// Check if a function name is a deferred :usage:: builtin (completion, man).
+/// Check if a function name is a deferred :usage:: builtin (completion, docgen).
 fn is_deferred_builtin(name: &str) -> bool {
     matches!(name, ":usage::completion" | ":usage::docgen")
 }
