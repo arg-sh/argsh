@@ -3,6 +3,7 @@
 set -euo pipefail
 
 : "${PATH_BASE:="$(git rev-parse --show-toplevel)"}"
+: "${PATH_BIN:="${PATH_BASE}/.bin"}"
 : "${ARGSH_SOURCE:="argsh"}"; export ARGSH_SOURCE
 : "${MIN_COVERAGE:="70"}"
 
@@ -85,15 +86,28 @@ _test() {
     BATS_LOAD="argsh.min.sh"
     export BATS_LOAD
   }
+  # Build latest .so before running builtin tests so Docker uses the
+  # mounted workspace copy instead of the stale image-baked one.
+  if [[ "${target}" == "all" || "${target}" == "builtin" ]] && command -v cargo &>/dev/null; then
+    cargo build --release --manifest-path "${PATH_BASE}/builtin/Cargo.toml"
+    rm -f "${PATH_BIN}/argsh.so" && cp "${PATH_BASE}/builtin/target/release/libargsh.so" "${PATH_BIN}/argsh.so"
+  fi
+
   case "${target}" in
     all)
-      ARGSH_BUILTIN_TEST=1 argsh::main test libraries .docker/test
+      ARGSH_BUILTIN_TEST=1 \
+      ARGSH_BUILTIN_PATH="/workspace/builtin/target/release/libargsh.so" \
+        argsh::main test libraries .docker/test
       if command -v cargo &>/dev/null; then
         test::minifier
       fi
       ;;
     argsh)    argsh::main test libraries .docker/test ;;
-    builtin)  ARGSH_BUILTIN_TEST=1 argsh::main test libraries .docker/test ;;
+    builtin)
+      ARGSH_BUILTIN_TEST=1 \
+      ARGSH_BUILTIN_PATH="/workspace/builtin/target/release/libargsh.so" \
+        argsh::main test libraries .docker/test
+      ;;
     minifier) test::minifier ;;
     *)
       echo "Unknown target: ${target}. Use: all, argsh, builtin, minifier" >&2
