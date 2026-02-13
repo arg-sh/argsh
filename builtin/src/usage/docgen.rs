@@ -81,9 +81,11 @@ pub fn usage_docgen_main(args: &[String]) -> i32 {
     let usage_pairs = if meta.len() > 1 { &meta[1..] } else { &[] as &[String] }; // coverage:off - defensive_check: deferred dispatch always provides title + usage_pairs
     let args_arr = shell::read_array("args");
 
+    // Full command path for display (e.g. "myapp sub" instead of just "sub").
+    // Excludes the trailing "docgen" entry from COMMANDNAME.
     let commandname = shell::get_commandname();
     let cmd_name = if commandname.len() > 1 {
-        commandname[commandname.len() - 2].clone()
+        commandname[..commandname.len() - 1].join(" ")
     } else {
         shell::get_script_name() // coverage:off - defensive_check: always called via :usage dispatch which sets COMMANDNAME
     };
@@ -198,9 +200,22 @@ fn generate_man_page<W: Write>(
 }
 
 /// Escape special troff characters.
+/// Also neutralizes lines starting with '.' or '\'' which roff interprets as macros.
 fn man_escape(s: &str) -> String {
-    s.replace('\\', "\\\\")
-     .replace('-', "\\-")
+    s.lines()
+        .map(|line| {
+            let escaped = line.replace('\\', "\\\\").replace('-', "\\-");
+            let trimmed = escaped.trim_start();
+            if trimmed.starts_with('.') || trimmed.starts_with('\'') {
+                let ws_len = escaped.len() - trimmed.len();
+                let (prefix, rest) = escaped.split_at(ws_len);
+                format!("{}\\&{}", prefix, rest)
+            } else {
+                escaped
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 // -- Markdown generation ------------------------------------------------------

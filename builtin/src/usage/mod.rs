@@ -315,7 +315,7 @@ fn is_deferred_builtin(name: &str) -> bool {
     matches!(name, ":usage::completion" | ":usage::docgen" | ":usage::mcp")
 }
 
-/// Defer a built-in special command (completion, docgen) via the usage array.
+/// Defer a built-in special command (completion, docgen, mcp) via the usage array.
 fn defer_builtin_command(cmd: &str, title: &str, usage_arr: &[String], cli: Vec<String>) {
     let builtin_name = format!(":usage::{}", cmd);
     let mut new_usage = vec![builtin_name];

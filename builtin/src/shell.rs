@@ -166,8 +166,9 @@ pub fn get_script_name() -> String {
     }
 }
 
-/// Get the full script path ($0 without basename stripping).
-/// Used by MCP to re-invoke the script as a subprocess.
+/// Get the raw value of $0 (without basename stripping).
+/// NOTE: may be a relative path or just a basename depending on how the script
+/// was invoked. Used by MCP to re-invoke the script as a subprocess.
 pub fn get_script_path() -> String {
     unsafe {
         let ptr = dollar_vars[0];

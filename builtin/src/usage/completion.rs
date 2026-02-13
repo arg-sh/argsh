@@ -7,6 +7,18 @@ use std::ffi::{c_char, c_int};
 use std::io::Write;
 use super::{extract_subcommands, extract_flags};
 
+/// Escape a string for safe inclusion in a bash single-quoted word list.
+fn bash_escape(s: &str) -> String {
+    s.replace('\'', "'\\''")
+}
+
+/// Escape a string for fish single-quoted strings.
+/// Fish single quotes don't support backslash escapes, so we end the quote,
+/// insert an escaped quote, and restart: 'don'"'"'t'
+fn fish_escape(s: &str) -> String {
+    s.replace('\'', "'\"'\"'")
+}
+
 // -- :usage::completion builtin registration ----------------------------------
 
 static USAGE_COMPLETION_LONG_DOC: [SyncPtr; 2] = [
@@ -75,10 +87,12 @@ pub fn usage_completion_main(args: &[String]) -> i32 {
     let usage_pairs = if meta.len() > 1 { &meta[1..] } else { &[] as &[String] };
     let args_arr = shell::read_array("args");
 
-    // Base command name (COMMANDNAME minus "completion" at the end)
+    // Base command name: use root command (COMMANDNAME[0]) for completion registration.
+    // Using the root ensures `complete -F _func cmd` targets the actual binary,
+    // even when completion is invoked from a nested subcommand context.
     let commandname = shell::get_commandname();
-    let cmd_name = if commandname.len() > 1 {
-        commandname[commandname.len() - 2].clone()
+    let cmd_name = if !commandname.is_empty() {
+        commandname[0].clone()
     } else {
         shell::get_script_name() // coverage:off - defensive_check: always called via :usage dispatch which sets COMMANDNAME
     };
@@ -128,12 +142,12 @@ fn generate_bash_completion<W: Write>(
     }).collect();
 
     let _ = writeln!(out, "    if [[ \"${{cur}}\" == -* ]]; then");
-    let _ = writeln!(out, "        COMPREPLY=($(compgen -W \"{}\" -- \"${{cur}}\"))", flag_words.join(" "));
+    let _ = writeln!(out, "        COMPREPLY=($(compgen -W '{}' -- \"${{cur}}\"))", bash_escape(&flag_words.join(" ")));
     let _ = writeln!(out, "    else");
 
     // Subcommands
     let cmd_words: Vec<&str> = cmds.iter().map(|c| c.name.as_str()).collect();
-    let _ = writeln!(out, "        COMPREPLY=($(compgen -W \"{}\" -- \"${{cur}}\"))", cmd_words.join(" "));
+    let _ = writeln!(out, "        COMPREPLY=($(compgen -W '{}' -- \"${{cur}}\"))", bash_escape(&cmd_words.join(" ")));
     let _ = writeln!(out, "    fi");
     let _ = writeln!(out, "}}");
     let _ = writeln!(out, "complete -o default -F {} {}", func_name, cmd_name);
@@ -217,14 +231,14 @@ fn generate_fish_completion<W: Write>(
 
     // Subcommands
     for cmd in &cmds {
-        let esc_desc = cmd.desc.replace('\'', "\\'");
+        let esc_desc = fish_escape(&cmd.desc);
         let _ = writeln!(out, "complete -c {} -n '__fish_use_subcommand' -a '{}' -d '{}'",
             cmd_name, cmd.name, esc_desc);
     }
 
     // Flags
     for flag in &flags {
-        let esc_desc = flag.desc.replace('\'', "\\'");
+        let esc_desc = fish_escape(&flag.desc);
         let mut parts = format!("complete -c {} -l '{}'", cmd_name, flag.name);
         if let Some(ref short) = flag.short {
             parts.push_str(&format!(" -s '{}'", short));

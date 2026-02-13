@@ -69,12 +69,31 @@ pub fn mcp_main(args: &[String]) -> i32 {
         } else {
             shell::get_script_name() // coverage:off - defensive_check: always called via :usage dispatch which sets COMMANDNAME
         };
+        // Derive executable and args for MCP config:
+        // command = script/binary name, args = intermediate subcommands + "mcp"
+        let script_name = if !commandname.is_empty() {
+            commandname[0].clone()
+        } else {
+            shell::get_script_name() // coverage:off - defensive_check
+        };
+        let mut mcp_args: Vec<String> = if commandname.len() > 2 {
+            commandname[1..commandname.len() - 1].to_vec()
+        } else {
+            Vec::new()
+        };
+        mcp_args.push("mcp".to_string());
+        let args_json = mcp_args
+            .iter()
+            .map(|s| format!("\"{}\"", s))
+            .collect::<Vec<_>>()
+            .join(",");
+
         println!("Start an MCP (Model Context Protocol) tool server over stdio.\n");
         println!("Usage: {} mcp\n", cmd_str);
         println!("The server exposes subcommands as tools via the MCP protocol.");
         println!("Configure your AI client to connect:\n");
         println!("  # .mcp.json");
-        println!("  {{\"mcpServers\": {{\"{}\":{{\"type\":\"stdio\",\"command\":\"./{}\",\"args\":[\"mcp\"]}}}}}}", cmd_str, cmd_str);
+        println!("  {{\"mcpServers\": {{\"{}\":{{\"type\":\"stdio\",\"command\":\"./{}\",\"args\":[{}]}}}}}}", cmd_str, script_name, args_json);
         return shared::HELP_EXIT;
     }
 
@@ -295,7 +314,7 @@ fn handle_tools_call<W: Write>(
     } else {
         stdout_text
     };
-    let text = text.trim();
+    let text = text.trim_end_matches('\n');
 
     let result = format!(
         "{{\"content\":[{{\"type\":\"text\",\"text\":\"{}\"}}],\"isError\":{}}}",
@@ -411,34 +430,74 @@ pub enum JsonValue {
 
 /// Extract a raw JSON field value (as a string) from a JSON object.
 /// Returns the raw JSON fragment for the given key.
+/// Only matches keys at the top level of the object (depth 1) to avoid
+/// false positives from nested objects with the same key name.
 fn extract_json_field(json: &str, key: &str) -> Option<String> {
-    // Search for "key": or "key" :
     let needle = format!("\"{}\"", key);
-    let pos = json.find(&needle)?;
-    let after_key = &json[pos + needle.len()..];
+    let needle_bytes = needle.as_bytes();
+    let bytes = json.as_bytes();
+    let len = bytes.len();
+    let needle_len = needle_bytes.len();
 
-    // Skip whitespace and colon
-    let after_colon = after_key.trim_start();
-    if !after_colon.starts_with(':') { // coverage:off - json_defensive: valid JSON always has colon after key
-        return None; // coverage:off
-    } // coverage:off
-    let value_start = after_colon[1..].trim_start();
+    let mut in_string = false;
+    let mut escape = false;
+    let mut depth: i32 = 0;
+    let mut i = 0;
 
-    // Determine value type and extract
+    while i < len {
+        let c = bytes[i];
+
+        if in_string {
+            if escape {
+                escape = false;
+            } else if c == b'\\' {
+                escape = true;
+            } else if c == b'"' {
+                in_string = false;
+            }
+            i += 1;
+            continue;
+        }
+
+        match c {
+            b'"' => {
+                // At depth 1, check if this is our key
+                if depth == 1 && i + needle_len <= len && json[i..i + needle_len] == *needle {
+                    let after_key = &json[i + needle_len..];
+                    let after_colon = after_key.trim_start();
+                    if let Some(rest) = after_colon.strip_prefix(':') {
+                        let value_start = rest.trim_start();
+                        return extract_value_at(value_start);
+                    }
+                }
+                in_string = true;
+            }
+            b'{' | b'[' => { depth += 1; }
+            b'}' | b']' => {
+                depth -= 1;
+                if depth <= 0 { return None; }
+            }
+            _ => {}
+        }
+
+        i += 1;
+    }
+
+    None
+}
+
+/// Extract a JSON value starting at the given position.
+fn extract_value_at(value_start: &str) -> Option<String> {
     if value_start.starts_with('"') {
-        // String value — find closing quote (handling escapes)
         let end = find_string_end(value_start)?;
         Some(value_start[..end + 1].to_string())
     } else if value_start.starts_with('{') {
-        // Object — find matching brace
         let end = find_matching_brace(value_start, '{', '}')?;
         Some(value_start[..end + 1].to_string())
     } else if value_start.starts_with('[') {
-        // Array — find matching bracket
         let end = find_matching_brace(value_start, '[', ']')?; // coverage:off - json_defensive: MCP protocol doesn't use array fields
         Some(value_start[..end + 1].to_string()) // coverage:off
     } else {
-        // Number, boolean, null — read until delimiter
         let end = value_start.find([',', '}', ']', '\n'])
             .unwrap_or(value_start.len());
         let raw = value_start[..end].trim();
@@ -599,43 +658,44 @@ pub fn parse_flat_json_object(json: &str) -> Vec<(String, JsonValue)> {
     pairs
 }
 
-/// Parse a single JSON value, returning the value and number of bytes consumed.
+/// Parse a single JSON value, returning the value and number of bytes consumed
+/// (relative to the original input, including any leading whitespace).
 fn parse_json_value(s: &str) -> (JsonValue, usize) {
-    let s = s.trim_start();
-    let trimmed_offset = s.as_ptr() as usize;
+    let original_len = s.len();
+    let trimmed = s.trim_start();
+    let offset = original_len - trimmed.len();
 
-    if s.starts_with('"') {
+    if trimmed.starts_with('"') {
         // String
-        if let Some(end) = find_string_end(s) {
-            let val = unescape_json_string(&s[1..end]);
-            return (JsonValue::Str(val), end + 1);
+        if let Some(end) = find_string_end(trimmed) {
+            let val = unescape_json_string(&trimmed[1..end]);
+            return (JsonValue::Str(val), offset + end + 1);
         } // coverage:off - json_defensive: find_string_end always succeeds for quoted values
-    } else if s.starts_with("true") {
-        return (JsonValue::Bool(true), 4);
-    } else if s.starts_with("false") {
-        return (JsonValue::Bool(false), 5);
-    } else if s.starts_with("null") {
-        return (JsonValue::Null, 4);
-    } else if s.starts_with('{') { // coverage:off - json_defensive: nested objects not used in MCP argument values
+    } else if trimmed.starts_with("true") {
+        return (JsonValue::Bool(true), offset + 4);
+    } else if trimmed.starts_with("false") {
+        return (JsonValue::Bool(false), offset + 5);
+    } else if trimmed.starts_with("null") {
+        return (JsonValue::Null, offset + 4);
+    } else if trimmed.starts_with('{') { // coverage:off - json_defensive: nested objects not used in MCP argument values
         // Nested object — skip over it // coverage:off
-        if let Some(end) = find_matching_brace(s, '{', '}') { // coverage:off
-            return (JsonValue::Str(s[..end + 1].to_string()), end + 1); // coverage:off
+        if let Some(end) = find_matching_brace(trimmed, '{', '}') { // coverage:off
+            return (JsonValue::Str(trimmed[..end + 1].to_string()), offset + end + 1); // coverage:off
         } // coverage:off
-    } else if s.starts_with('[') { // coverage:off - json_defensive: arrays not used in MCP argument values
+    } else if trimmed.starts_with('[') { // coverage:off - json_defensive: arrays not used in MCP argument values
         // Array — skip over it // coverage:off
-        if let Some(end) = find_matching_brace(s, '[', ']') { // coverage:off
-            return (JsonValue::Str(s[..end + 1].to_string()), end + 1); // coverage:off
+        if let Some(end) = find_matching_brace(trimmed, '[', ']') { // coverage:off
+            return (JsonValue::Str(trimmed[..end + 1].to_string()), offset + end + 1); // coverage:off
         } // coverage:off
     } else {
         // Number or other literal
-        let end = s.find(|c: char| c == ',' || c == '}' || c == ']' || c.is_whitespace())
-            .unwrap_or(s.len());
-        let raw = &s[..end];
+        let end = trimmed.find(|c: char| c == ',' || c == '}' || c == ']' || c.is_whitespace())
+            .unwrap_or(trimmed.len());
+        let raw = &trimmed[..end];
         if !raw.is_empty() {
-            return (JsonValue::Number(raw.to_string()), end);
+            return (JsonValue::Number(raw.to_string()), offset + end);
         }
     }
 
-    let _ = trimmed_offset; // suppress unused warning // coverage:off - json_defensive: fallback for malformed JSON
-    (JsonValue::Null, 1) // coverage:off
+    (JsonValue::Null, offset + 1) // coverage:off - json_defensive: fallback for malformed JSON
 }
