@@ -111,7 +111,7 @@ Run `bash bench/usage-depth.sh` to reproduce.
 
 > This project is in a very early stage.
 
-That beeing said, most of it is quite rough. But it's a start. The best time that you join the conversation and try to refine the concept.
+That being said, most of it is quite rough. But it's a start. The best time that you join the conversation and try to refine the concept.
 
 #### Short term goals
 

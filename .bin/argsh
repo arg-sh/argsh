@@ -611,9 +611,11 @@ _e2e() {
   out=$("${script}" --help 2>&1) || { echo "Script --help failed" >&2; return 1; }
   echo "  OK — help text works"
 
-  # Build MCP config
-  local mcp_config
-  mcp_config=$(printf '{"mcpServers":{"test-app":{"type":"stdio","command":"%s","args":["mcp"]}}}' "${script}")
+  # Build MCP config (JSON-escape the script path)
+  local mcp_config escaped_script
+  escaped_script="${script//\\/\\\\}"
+  escaped_script="${escaped_script//\"/\\\"}"
+  mcp_config=$(printf '{"mcpServers":{"test-app":{"type":"stdio","command":"%s","args":["mcp"]}}}' "${escaped_script}")
 
   echo ""
   echo "Running: claude --print --model ${model} --max-budget-usd ${budget}"

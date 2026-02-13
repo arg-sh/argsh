@@ -15,7 +15,7 @@ declare -g __BUILTIN_SKIP=""
 if [[ "${ARGSH_BUILTIN_TEST:-}" == "1" ]]; then
   if (( ARGSH_BUILTIN )); then
     # Builtins already loaded by args.sh (e.g., via ARGSH_BUILTIN_PATH in Docker)
-    unset -f :usage :args \
+    unset -f :usage :usage::help :args \
       is::array is::uninitialized is::set is::tty \
       to::int to::float to::boolean to::file to::string \
       args::field_name import import::source import::clear 2>/dev/null || true
@@ -34,7 +34,7 @@ if [[ "${ARGSH_BUILTIN_TEST:-}" == "1" ]]; then
       echo "ERROR: builtin .so failed to load: ${_so}" >&2
       exit 1
     fi
-    unset -f :usage :args \
+    unset -f :usage :usage::help :args \
       is::array is::uninitialized is::set is::tty \
       to::int to::float to::boolean to::file to::string \
       args::field_name import import::source import::clear 2>/dev/null || true

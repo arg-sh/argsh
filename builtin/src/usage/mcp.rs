@@ -93,8 +93,7 @@ pub fn mcp_main(args: &[String]) -> i32 {
         println!("The server exposes subcommands as tools via the MCP protocol.");
         println!("Configure your AI client to connect:\n");
         println!("  # .mcp.json");
-        let script_path = shell::get_script_path();
-        println!("  {{\"mcpServers\": {{\"{}\":{{\"type\":\"stdio\",\"command\":\"{}\",\"args\":[{}]}}}}}}", json_escape(&cmd_str), json_escape(&script_path), args_json);
+        println!("  {{\"mcpServers\": {{\"{}\":{{\"type\":\"stdio\",\"command\":\"./{}\",\"args\":[{}]}}}}}}", json_escape(&cmd_str), json_escape(&script_name), args_json);
         return shared::HELP_EXIT;
     }
 

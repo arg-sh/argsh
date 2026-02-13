@@ -16,7 +16,7 @@ if [[ "${ARGSH_BUILTIN_TEST:-}" == "1" ]]; then
     _so="${BATS_TEST_DIRNAME}/../builtin/target/release/libargsh.so"
     [[ -f "${_so}" ]] || _so="${ARGSH_BUILTIN_PATH:-}"
     if [[ ! -f "${_so}" ]]; then
-      echo "ERROR: builtin .so not found" >&2
+      echo "ERROR: builtin .so not found: ${_so}" >&2
       exit 1
     fi
     # shellcheck disable=SC2229
