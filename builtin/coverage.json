@@ -3,9 +3,9 @@
     {
       "file": "builtin/src/usage/mcp.rs",
       "percent_covered": "100.00",
-      "covered_lines": "396",
-      "total_lines": "396",
-      "excluded_lines": "81"
+      "covered_lines": "393",
+      "total_lines": "393",
+      "excluded_lines": "102"
     },
     {
       "file": "builtin/src/usage/completion.rs",
@@ -85,12 +85,12 @@
       "excluded_lines": "20"
     }
   ],
-  "percent_covered": "99.96",
-  "covered_lines": 2278,
-  "total_lines": 2279,
-  "excluded_lines": 203,
+  "percent_covered": "100.00",
+  "covered_lines": 2276,
+  "total_lines": 2276,
+  "excluded_lines": 224,
   "percent_low": 25,
   "percent_high": 75,
   "command": "bats+llvm-cov",
-  "date": "2026-02-13 19:46:49"
+  "date": "2026-02-13 20:09:58"
 }
