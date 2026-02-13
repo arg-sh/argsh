@@ -253,8 +253,8 @@ coverage::builtin() {
   "${llvm_tools}/llvm-cov" report \
     --instr-profile="${cov_dir}/coverage.profdata" \
     "${so_path}" \
-    --ignore-filename-regex='\.cargo/registry' \
-    --ignore-filename-regex='\.rustup/toolchains' \
+    --ignore-filename-regex='cargo/registry' \
+    --ignore-filename-regex='rustup/toolchains' \
     --ignore-filename-regex='^/rustc/'
 
   # Export JSON and generate builtin/coverage.json
@@ -262,8 +262,8 @@ coverage::builtin() {
   "${llvm_tools}/llvm-cov" export \
     --instr-profile="${cov_dir}/coverage.profdata" \
     "${so_path}" \
-    --ignore-filename-regex='\.cargo/registry' \
-    --ignore-filename-regex='\.rustup/toolchains' \
+    --ignore-filename-regex='cargo/registry' \
+    --ignore-filename-regex='rustup/toolchains' \
     --ignore-filename-regex='^/rustc/' \
     --summary-only > "${_cov_tmp}"
 
