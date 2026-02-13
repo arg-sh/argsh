@@ -76,7 +76,7 @@ cd builtin && cargo build --release
 The shared library is output to `builtin/target/release/libargsh.so`. Copy it as `argsh.so` to a directory in your search path.
 
 :::note
-The `.so` is compiled for the current platform. Cross-compilation requires the appropriate Rust target and compatible bash headers.
+The `.so` is compiled for the current platform. Cross-compilation requires the appropriate Rust target and compatible bash headers. See [Compatibility](#compatibility) for glibc and Bash version requirements.
 :::
 
 ## Loading
@@ -202,6 +202,30 @@ CI produces a second artifact, `argsh-so`, that embeds the `.so` as a base64 blo
 :::note
 The inline `.so` is platform-specific (linux/amd64). The regular `argsh` script with pure-Bash fallback remains the portable default.
 :::
+
+## Compatibility
+
+### Bash Version
+
+The `.so` targets the **Bash 5.x** ABI. The `bash_builtins` Rust crate depends on internal struct layouts (`SHELL_VAR`, `WORD_LIST`, `BUILTIN`) that differ between Bash major versions. Loading the `.so` in Bash 4.x will fail or crash.
+
+The pure-Bash fallback works on Bash 4.3+, so argsh itself supports older systems — only the native performance path requires Bash 5.x.
+
+### glibc
+
+The `.so` dynamically links against glibc. The rule: **build glibc ≤ runtime glibc**. Official release builds target glibc 2.36 (Debian 12 / bookworm).
+
+| Distro | glibc | Bash | Builtins |
+|--------|-------|------|----------|
+| RHEL 9 | 2.34 | 5.1 | No (glibc too old) |
+| Ubuntu 22.04 | 2.35 | 5.1 | No (glibc too old) |
+| **Debian 12** | **2.36** | **5.2** | **Yes** |
+| Ubuntu 24.04 | 2.39 | 5.2 | Yes |
+| Fedora 40+ | 2.39+ | 5.2+ | Yes |
+
+Building against old glibc has no security implications — the runtime system's glibc (with its patches) handles execution. The `.so` cannot be statically linked because `dlopen()` requires dynamic glibc linking.
+
+For more details and diagnostic steps, see the [Troubleshooting](/troubleshooting#native-builtins) page.
 
 ## Custom Types
 

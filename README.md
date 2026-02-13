@@ -109,28 +109,17 @@ Run `bash bench/usage-depth.sh` to reproduce.
 
 ### 🚧 State of this Project
 
-> This project is in a very early stage. It's not even alpha. It's more like a concept. It's not even a concept, it's more like a thought. It's not even a thought, it's more like a dream. It's not even a dream, it's more like a wish.
-> 
-> Quote by Copilot
+> This project is in a very early stage.
 
 That beeing said, most of it is quite rough. But it's a start. The best time that you join the conversation and try to refine the concept.
 
 #### Short term goals
 
-- [ ] Make `.bin/argsh` more generic for other projects to use
-- [ ] Clean up the `www/` folder from unused medusajs files
 - [ ] Design a logo
-- [ ] Provide a set of code snippets
-- [ ] A complete styleguide
-- [ ] Best practices (like error handling, logging, json, etc.)
-- [ ] Generate and easy integration of tests
-- [ ] Generate documentation
-- [ ] Easy use of bash debugger
-- [ ] Write a language server to lint and format bash code acording to the styleguide
+- [ ] Write a language server to lint and format bash code according to the styleguide
 - [ ] VSCode extension for the language server
-- [ ] Easy bootstrap, minimal dependencies, easy to implement
 - [ ] Convert [shdoc](https://github.com/reconquest/shdoc) to rust
-- [x] Convert [obfus](./bin/obfus) to rust or rewrite it in rust/shfmt, at least make it more robust (remove sed)
+- [ ] Bash debugger integration (e.g. with `bashdb`)
 
 &nbsp;
 

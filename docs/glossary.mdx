@@ -3,3 +3,177 @@ description: "Learn about the different terms related to argsh"
 ---
 
 # Glossary
+
+## Core
+
+**argsh**
+A framework for structured Bash scripting. Provides argument parsing, subcommand routing, type checking, documentation generation, and optional native builtins for performance.
+
+**`:args`**
+The argument parser. Reads field definitions from the `args` array, parses `"${@}"`, validates types, and sets shell variables. Replaces manual `getopts` / `case` boilerplate.
+
+**`:usage`**
+The subcommand router. Reads subcommand definitions from the `usage` array, dispatches to the matching function, and auto-generates help text. Supports nested subcommands with namespace resolution.
+
+**`args` array**
+A Bash array of pairs `(field_spec description)` that defines the positional arguments and flags a command accepts. Consumed by `:args`.
+
+**`usage` array**
+A Bash array of pairs `(command_spec description)` that defines the subcommands a script offers. Consumed by `:usage`.
+
+## Field Definitions
+
+**Field**
+A specification string in the `args` array that defines an argument. Format: `name|short:modifiers`. Examples: `'verbose|v:+'`, `'port|p:~int!'`, `'files'`.
+
+**Positional**
+A field without a pipe `|` character. Matched by position on the command line rather than by flag name. Array positionals consume all remaining arguments.
+
+**Flag**
+A field with a pipe `|` character (e.g., `name|n`). Matched by `--name` or `-n` on the command line.
+
+**Modifiers**
+Characters after `:` in a field spec that control parsing behavior:
+
+| Modifier | Meaning | Example |
+|----------|---------|---------|
+| `:+` | Boolean flag (no value, sets to `1`) | `verbose\|v:+` |
+| `:~type` | Type constraint for validation | `port\|p:~int` |
+| `:!` | Required (must be provided) | `env\|e:!` |
+
+Modifiers combine: `:~int!` means required integer.
+
+**Display name**
+The flag name as shown in help text and used on the command line (with dashes). Dashes are converted to underscores for the shell variable name: `my-flag` becomes `$my_flag`.
+
+**Hidden field**
+A field prefixed with `#`. Functional but excluded from help text and shell completions.
+
+**Group separator**
+An entry of `'-'` in the `args` or `usage` array. Renders as a section divider in help text.
+
+## Type System
+
+**Type converter**
+A function named `to::<type>` that validates and optionally transforms a value. Built-in types: `string`, `int`, `float`, `boolean`, `file`, `stdin`. Custom types are supported via user-defined `to::` functions.
+
+| Type | Validates | Example values |
+|------|-----------|----------------|
+| `string` | Always passes | Any |
+| `int` | Integer (`^-?[0-9]+$`) | `-42`, `0`, `100` |
+| `float` | Decimal (`^-?[0-9]+(\.[0-9]+)?$`) | `3.14`, `-1.0` |
+| `boolean` | Always passes; normalizes to `0`/`1` | `true` → `1`, `0` → `0` |
+| `file` | File exists (`-f`) | `/etc/hosts` |
+| `stdin` | Pass-through; `-` reads stdin | `-`, `value` |
+
+## Import System
+
+**`import`**
+Function (or builtin) for sourcing libraries with caching. Modules are sourced once per session unless cleared with `import::clear`.
+
+**Path prefixes**
+
+| Prefix | Resolves relative to | Example |
+|--------|----------------------|---------|
+| *(none)* | Script directory | `import string` |
+| `@` | `PATH_BASE` (project root) | `import @libraries/string` |
+| `~` | `ARGSH_SOURCE` (entry point) | `import ~lib/utils` |
+
+**Selective import** *(builtin only)*
+Import specific functions from a module: `import module { func1 func2 }`. All-or-nothing — if any function is missing, the entire import fails.
+
+## Native Builtins
+
+**Loadable builtin**
+A native function compiled into a shared library (`.so`) and loaded into Bash via `enable -f`. Runs as native code inside the Bash process without forking.
+
+**`.so` (libargsh.so)**
+The compiled shared object containing all argsh builtins. Built from Rust using the `bash_builtins` crate.
+
+**`ARGSH_BUILTIN`**
+Global integer: `1` if native builtins loaded successfully, `0` otherwise. Set by `args.sh` at source time.
+
+**`dlopen`**
+The C library call Bash uses internally to load `.so` files. Requires the `.so` to dynamically link against the same glibc as the host Bash.
+
+**`enable -f`**
+Bash builtin command that loads external loadable builtins from a shared library: `enable -f /path/to/lib.so builtin_name`.
+
+**Transparent fallback**
+When the `.so` is unavailable, argsh uses identical pure-Bash implementations. Scripts work the same way, just slower.
+
+## Project Structure
+
+**`PATH_BASE`**
+Project root directory. Set by `.envrc` via `git rev-parse --show-toplevel`.
+
+**`PATH_BIN`**
+Project binary directory (`${PATH_BASE}/.bin`). Contains the `argsh` script and optionally `argsh.so`.
+
+**`ARGSH_SOURCE`**
+Identifier or path for the currently executing script. Controls import resolution and is forwarded to Docker containers.
+
+**`ARGSH_BUILTIN_PATH`**
+Optional explicit path to `argsh.so`. Checked first in the builtin search order.
+
+**`.envrc`**
+A [direnv](https://direnv.net/) configuration file that sets up `PATH_BASE`, `PATH_BIN`, and adds `.bin/` to `PATH`.
+
+## Documentation Generation
+
+**`docgen`**
+Built-in subcommand for generating documentation from `:usage` and `:args` declarations. Available as `./script docgen <format>`.
+
+| Format | Output |
+|--------|--------|
+| `man` | Man page (troff) |
+| `md` | Markdown |
+| `rst` | reStructuredText |
+| `yaml` | Structured YAML |
+| `llm <provider>` | LLM tool schema (JSON) |
+
+**LLM tool schema**
+JSON representation of a CLI's structure for AI agents. Maps field definitions to JSON Schema properties. Providers: `claude` (Anthropic), `openai`, `gemini`, `kimi`.
+
+## Shell Completion
+
+**`completion`**
+Built-in subcommand that generates shell completion scripts. Available as `./script completion <shell>`. Supports `bash`, `zsh`, and `fish`.
+
+## AI Integration
+
+**MCP (Model Context Protocol)**
+A JSON-RPC 2.0 protocol over stdio for AI agents to discover and invoke tools. Available as `./script mcp`. Each `:usage` subcommand becomes an MCP tool with input schema derived from `:args` declarations.
+
+## Script Optimization
+
+**Minification**
+Bundling and compressing argsh scripts into a single file (`argsh.min.sh`). Removes comments, whitespace, and optionally obfuscates variable names.
+
+**`argsh-so`**
+A minified script variant with the `.so` embedded as a base64 blob. Single self-contained file with native performance — no external `.so` needed.
+
+**Obfuscation**
+Variable and function renaming during minification to reduce script size. Controlled via `# obfus ignore variable` and `# obfus ignore function` comments.
+
+## Namespace Resolution
+
+When `:usage` dispatches a subcommand without an explicit `:-` mapping, it resolves the function name in order:
+
+1. `<caller>::<cmd>` — caller's namespace (e.g., `main::deploy`)
+2. `argsh::<cmd>` — framework namespace (e.g., `argsh::deploy`)
+3. `<cmd>` — bare function name
+
+**Explicit mapping**
+Bypasses resolution: `'cmd:-full::function::path'` calls `full::function::path` directly.
+
+## Testing
+
+**BATS**
+[Bash Automated Testing System](https://github.com/bats-core/bats-core). The test framework used by argsh. Test files use `.bats` extension.
+
+**Snapshot testing**
+Tests that compare output against saved `.snap` files. Auto-created on first run, deleted to regenerate.
+
+**`ARGSH_BUILTIN_TEST`**
+Set to `1` to run tests with native builtins instead of pure-Bash implementations. Both modes must produce identical output.
