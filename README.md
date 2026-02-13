@@ -67,6 +67,11 @@ argsh ships with optional **Bash loadable builtins** compiled from Rust. When th
 | `is::array`, `is::uninitialized`, `is::set`, `is::tty` | Variable introspection |
 | `to::int`, `to::float`, `to::boolean`, `to::file`, `to::string` | Type converters |
 | `args::field_name` | Field name extraction |
+| `completion` | Automatically generated shell autocomplete (bash, zsh, fish) |
+| `man` | Automatically generated man pages |
+| `docs` | Documentation generation |
+| `tests` | Test runner |
+| `gh-pages` | GitHub Pages deployment |
 
 **Transparent fallback** — `args.sh` auto-detects the `.so` at load time. If found, builtins are enabled via `enable -f` and the pure-Bash function definitions are skipped. If not found, everything works as before with no change in behavior.
 
