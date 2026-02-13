@@ -7,6 +7,8 @@ hide_table_of_contents: true
 
 argsh ships with a set of pure-Bash libraries that you can source into your scripts. Each library is a single `.sh` file — no dependencies beyond Bash itself.
 
+Use the `import` function to load libraries into your scripts — see the [Import System](/glossary#import-system) in the glossary for path resolution rules and caching behavior.
+
 You can find the source code in the [GitHub repository](https://github.com/arg-sh/argsh/tree/main/libraries).
 
 ## Argument Parsing
@@ -40,14 +42,17 @@ Helpers for terminal interaction and formatted output.
 
 ## Utilities
 
-Error handling and other utilities.
+Error handling, version checking, and framework internals.
 
 | Library | Description |
 |---------|-------------|
 | [error](/libraries/error) | Error handling, stack traces, and exit management |
+| [bash](/libraries/bash) | Bash version verification (`bash::version`) |
+| [main](/libraries/main) | Shebang handler for argsh scripts (`argsh::shebang`) |
 
 ## 3rd Party Integrations
 
 | Library | Description |
 |---------|-------------|
 | [github](/libraries/github) | GitHub API helpers |
+| [docker](/libraries/docker) | Docker container user setup (`docker::user`) |
