@@ -1,0 +1,35 @@
+---
+description: "How to Write Documentation"
+---
+
+# How to Write Documentation
+
+In this document, you’ll learn about how generate documentation for your Bash scripts.
+
+## Introduction
+
+Documentation is an important part of software development. It helps you to communicate your ideas, to explain how your code works, and to help others to understand and use your code.
+
+We use a modified version of [shdoc](https://github.com/reconquest/shdoc) to generate documentation for our scripts. It is a simple and easy-to-use tool that generates documentation from comments in your script.
+
+:::note
+The argsh [library](../../libraries/overview) is generated with shdoc.
+:::
+
+## Writing Documentation
+
+Have a look at the [shdoc documentation](https://github.com/reconquest/shdoc) to learn how to write documentation for your scripts.
+
+## Generating Documentation
+
+To generate documentation for your scripts, you can use the `argsh doc` command. If you [installed argsh](../../getting-started#project-based) as executable, you can use it like this:
+
+```bash
+argsh docs scripts/*.sh ./docs
+```
+
+Use `argsh doc --help` to get more information about the available options.
+
+### Prefix
+
+You have the ability to add a prefix to each generated file. `argsh` will look into the output directory if there is a file named `_prefix.mdx` and use it as a prefix for the generated files.

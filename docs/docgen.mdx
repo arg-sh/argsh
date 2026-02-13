@@ -1,0 +1,221 @@
+---
+description: "Generate documentation from argsh-powered CLI tools"
+---
+
+# Documentation Generation
+
+argsh can export your CLI's structure as **man pages**, **Markdown**, **reStructuredText**, or **YAML**. All documentation is generated directly from your `:usage` and `:args` declarations — your code is the single source of truth.
+
+## How It Works
+
+Every script built with `:usage` gets a built-in `docgen` subcommand. No extra code or configuration:
+
+```bash
+./myscript docgen man
+./myscript docgen md
+./myscript docgen rst
+./myscript docgen yaml
+```
+
+Like `completion`, the `docgen` command is an **Additional Command** — always available without being listed in your `usage` array.
+
+## Available Formats
+
+| Format | Command | Output |
+|--------|---------|--------|
+| Man page | `docgen man` | troff format, viewable with `man` |
+| Markdown | `docgen md` | GitHub-flavored Markdown |
+| reStructuredText | `docgen rst` | Sphinx-compatible reST |
+| YAML | `docgen yaml` | Structured data for tooling |
+
+## Example
+
+Given this script:
+
+```bash
+#!/usr/bin/env bash
+source argsh
+
+main() {
+  local -a args=(
+    'verbose|v:+' "Enable verbose output"
+    'config|c'    "Config file path"
+  )
+  local -a usage=(
+    'serve'  "Start the server"
+    'build'  "Build the project"
+  )
+  :usage "My application server" "${@}"
+  "${usage[@]}"
+}
+
+main "${@}"
+```
+
+### Markdown Output
+
+`./myapp docgen md` produces:
+
+~~~markdown
+# myapp
+
+My application server
+
+## Synopsis
+
+```
+myapp [command] [options]
+```
+
+## Description
+
+My application server
+
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `serve` | Start the server |
+| `build` | Build the project |
+
+## Options
+
+| Flag | Description |
+|------|-------------|
+| `-v`, `--verbose` | Enable verbose output |
+| `-c`, `--config` *string* | Config file path |
+| `-h`, `--help` | Show this help message |
+~~~
+
+### Man Page Output
+
+`./myapp docgen man` produces troff that renders with `man`:
+
+```bash
+# View directly
+./myapp docgen man | man -l -
+
+# Save to man directory
+./myapp docgen man > /usr/local/share/man/man1/myapp.1
+```
+
+### YAML Output
+
+`./myapp docgen yaml` produces structured data:
+
+```yaml
+name: "myapp"
+description: "My application server"
+synopsis: "myapp [command] [options]"
+commands:
+  - name: "serve"
+    description: "Start the server"
+  - name: "build"
+    description: "Build the project"
+options:
+  - name: "verbose"
+    short: "v"
+    description: "Enable verbose output"
+    type: boolean
+  - name: "config"
+    short: "c"
+    description: "Config file path"
+    type: "string"
+  - name: "help"
+    short: "h"
+    description: "Show this help message"
+    type: boolean
+```
+
+### reStructuredText Output
+
+`./myapp docgen rst` produces Sphinx-compatible documentation:
+
+```rst
+myapp
+=====
+
+My application server
+
+Synopsis
+--------
+
+.. code-block:: bash
+
+   myapp [command] [options]
+
+Commands
+--------
+
+**serve**
+   Start the server
+
+**build**
+   Build the project
+
+Options
+-------
+
+**-v, --verbose**
+   Enable verbose output
+
+**-c, --config *string***
+   Config file path
+```
+
+## What Gets Documented
+
+| Source | Documented |
+|--------|-----------|
+| `:usage` title | Description and synopsis |
+| `usage` array entries | Commands section |
+| `args` array flags | Options section |
+| Hidden commands (`#` prefix) | Excluded |
+| Group separators (`-`) | Excluded |
+
+## CI/CD: Generate Docs on Release
+
+Generate documentation as part of your CI pipeline:
+
+```yaml
+# .github/workflows/docs.yml
+steps:
+  - name: Generate documentation
+    run: |
+      mkdir -p docs
+      ./myapp docgen md   > docs/myapp.md
+      ./myapp docgen man  > docs/myapp.1
+      ./myapp docgen yaml > docs/myapp.yaml
+      ./myapp docgen rst  > docs/myapp.rst
+
+  - name: Deploy to GitHub Pages
+    uses: peaceiris/actions-gh-pages@v3
+    with:
+      github_token: ${{ secrets.GITHUB_TOKEN }}
+      publish_dir: ./docs
+```
+
+## GitHub Pages with Markdown
+
+The Markdown output is directly compatible with GitHub Pages, MkDocs, Docusaurus, and other static site generators. Generate your docs and commit them:
+
+```bash
+./myapp docgen md > docs/cli-reference.md
+git add docs/cli-reference.md
+git commit -m "Update CLI reference"
+```
+
+## Help
+
+```
+$ ./myapp docgen --help
+Generate documentation in various formats.
+
+Usage: myapp docgen <format>
+
+Available formats:
+  man     Man page (troff format)
+  md      Markdown
+  rst     reStructuredText
+  yaml    YAML
+```

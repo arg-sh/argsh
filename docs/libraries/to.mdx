@@ -1,0 +1,139 @@
+import Link from "@docusaurus/Link";
+import ExternalLink from "@site/src/theme/Icon/Twitter";
+
+<Link to="https://github.com/arg-sh/argsh/blob/main/libraries/to.sh" alt="source code">
+Source code
+</Link>
+This file contains functions for converting a value to a specific type
+
+## Index
+
+* [to::string](#tostring)
+* [to::boolean](#toboolean)
+* [to::int](#toint)
+* [to::float](#tofloat)
+* [to::stdin](#tostdin)
+* [to::file](#tofile)
+
+### to::string
+
+Convert a value to a string
+
+#### Example
+
+```bash
+to::string 1 # 1
+```
+
+#### Arguments
+
+* **$1** (any): value
+
+#### Output on stdout
+
+* The value as a string
+
+### to::boolean
+
+Convert a value to a boolean
+
+#### Example
+
+```bash
+to::boolean "true"  # 1
+to::boolean "false" # 0
+to::boolean "hi"    # 1
+```
+
+#### Arguments
+
+* **$1** (any): value
+
+#### Output on stdout
+
+* The value as a boolean
+
+### to::int
+
+Convert a value to an integer
+
+#### Example
+
+```bash
+to::int "1" # 1
+to::int "a" # error
+```
+
+#### Arguments
+
+* **$1** (any): value
+
+#### Exit codes
+
+* **1**: If the value is not an integer
+
+#### Output on stdout
+
+* The value as an integer
+
+### to::float
+
+Convert a value to a float
+
+#### Example
+
+```bash
+to::float "1.1" # 1.1
+to::float "a"   # error
+```
+
+#### Arguments
+
+* **$1** (any): value
+
+#### Exit codes
+
+* **1**: If the value is not a float
+
+#### Output on stdout
+
+* The value as a float
+
+### to::stdin
+
+Convert the value '-' to stdin
+
+#### Example
+
+```bash
+to::stdin "a" # a
+to::stdin "-" # (stdin)
+```
+
+#### Arguments
+
+* **$1** (any): value
+
+#### Output on stdout
+
+* The value or stdin
+
+### to::file
+
+Check if a value is a file
+
+#### Example
+
+```bash
+to::file "a" # error
+to::file "file.txt" # file.txt
+```
+
+#### Arguments
+
+* **$1** (any): value
+
+#### Exit codes
+
+* **1**: If the value is not a file
+
