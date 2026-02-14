@@ -134,7 +134,7 @@ main::status() {
 main() {
   local cluster="${CLUSTER:-local}"
   local -a args=(
-    "cluster|c'    "Specific cluster"
+    'cluster|c'    "Specific cluster"
   )
   local -a usage=(
     'deploy|d' "Deploy the application"
