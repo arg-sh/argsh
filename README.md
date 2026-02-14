@@ -79,9 +79,9 @@ source argsh
 main() {
   local name age verbose
   local -a args=(
-    "name|n:!    Name of the person"
-    "age|a:int   Age in years"
-    "verbose|v:+ Enable verbose output"
+    'name|n:!'    "Name of the person"
+    'age|a:int'   "Age in years"
+    'verbose|v:+' "Enable verbose output"
   )
   :args "Greet someone" "${@}"
 
@@ -118,20 +118,25 @@ The `:args` builtin handles `--flag value`, `-f value`, `--flag=value`, `--no-fl
 source argsh
 
 main::deploy() {
+  local env
   local args=(
-    "env|e:!  Target environment"
+    'env|e:!'  "Target environment"
   )
   :args "Deploy the application" "${@}"
-  echo "Deploying to ${env}..."
+  echo "${cluster} -> Deploying ${env} environment..."
 }
 
 main::status() {
   :args "Show deployment status" "${@}"
-  echo "All systems operational."
+  echo "${cluster} -> All systems operational."
 }
 
 main() {
-  local usage=(
+  local cluster="${CLUSTER:-local}"
+  local -a args=(
+    "cluster|c'    "Specific cluster"
+  )
+  local -a usage=(
     'deploy|d' "Deploy the application"
     'status|s' "Show deployment status"
   )
@@ -144,7 +149,7 @@ main "${@}"
 
 ```console
 $ ./app deploy --env production
-Deploying to production...
+local -> Deploying production environment...
 
 $ ./app stat
 Invalid command: stat. Did you mean 'status'?
