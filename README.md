@@ -119,8 +119,10 @@ source argsh
 
 main::deploy() {
   local env
-  local args=(
+  local -a args=(
     'env|e:!'  "Target environment"
+    '-' "Globals options:"
+    "${args[@]}"
   )
   :args "Deploy the application" "${@}"
   echo "${cluster} -> Deploying ${env} environment..."
