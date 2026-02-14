@@ -947,6 +947,29 @@ source "${PATH_FIXTURES}/fmt.sh"
 }
 
 # -----------------------------------------------------------------------------
+# Second lookup: last segment of caller as prefix
+
+@test "usage: second lookup — last segment of caller resolves function" {
+  (
+    :test::second::parent child
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains "second-lookup::parent::child" stdout
+}
+
+@test "usage: first lookup takes priority over second lookup" {
+  (
+    :test::second::priority action
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains "first-lookup" stdout
+}
+
+# -----------------------------------------------------------------------------
 # Missing value for flag (covers args.sh line 490)
 
 @test "attrs: error: missing value for flag at end of args" {
