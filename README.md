@@ -77,7 +77,8 @@ argsh turns a plain Bash array into a full CLI — flags, types, defaults, valid
 source argsh
 
 main() {
-  local args=(
+  local name age verbose
+  local -a args=(
     "name|n:!    Name of the person"
     "age|a:int   Age in years"
     "verbose|v:+ Enable verbose output"
