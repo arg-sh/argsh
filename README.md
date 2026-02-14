@@ -125,11 +125,13 @@ main::deploy() {
     "${args[@]}"
   )
   :args "Deploy the application" "${@}"
+
   echo "${cluster} -> Deploying ${env} environment..."
 }
 
 main::status() {
   :args "Show deployment status" "${@}"
+
   echo "${cluster} -> All systems operational."
 }
 
@@ -143,6 +145,7 @@ main() {
     'status|s' "Show deployment status"
   )
   :usage "Application manager" "${@}"
+
   "${usage[@]}"
 }
 
