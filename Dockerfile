@@ -13,11 +13,15 @@ COPY shdoc/ .
 RUN cargo build --release
 
 # builtin — build Rust loadable builtins
+# lld is required because export_name attributes contain colons (e.g. ":args_struct")
+# which cause "syntax error in VERSION script" with GNU ld on arm64.
 FROM rust:1-slim-bookworm AS builtin-build
+RUN apt-get update && apt-get install -y --no-install-recommends lld && rm -rf /var/lib/apt/lists/*
 ARG RUSTFLAGS
 ARG CARGO_PROFILE_RELEASE_STRIP
 ARG CARGO_PROFILE_RELEASE_LTO
 ARG CARGO_PROFILE_RELEASE_PANIC
+ENV RUSTFLAGS="${RUSTFLAGS} -C link-arg=-fuse-ld=lld"
 WORKDIR /build
 COPY builtin/ .
 RUN cargo build --release
