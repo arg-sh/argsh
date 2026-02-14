@@ -226,8 +226,9 @@ jobs:
             tail -n +4 argsh.min.sh
             cat << 'EXITEOF'
 
+          status=${?}
           if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-            exit ${?}
+            exit "${status}"
           else
             echo "argsh-so: cannot be sourced, use as shebang or execute directly" >&2
             return 1
@@ -245,7 +246,7 @@ jobs:
               break
             fi
             prev_sz=${sz}
-            sed -i "s/ARGSH_PAYLOAD_OFFSET=[0-9A-Z]*/ARGSH_PAYLOAD_OFFSET=$((sz + 1))/" script-part.sh
+            sed -i "s/ARGSH_PAYLOAD_OFFSET=[0-9A-Z][0-9A-Z]*/ARGSH_PAYLOAD_OFFSET=$((sz + 1))/" script-part.sh
           done
           [ "${converged}" -eq 1 ] || { echo "Failed to stabilize ARGSH_PAYLOAD_OFFSET" >&2; exit 1; }
 
