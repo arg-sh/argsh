@@ -190,17 +190,33 @@ Measured with `bash bench/usage-depth.sh` — 50 iterations per cell.
 
 Each level parses 2 flags via `:usage`, then dispatches a subcommand. This reflects a typical CLI with nested commands where each level accepts its own options.
 
-## Inline `.so` Variant (`argsh-so`)
+## Self-Contained Variant (`argsh-so`)
 
-CI produces a second artifact, `argsh-so`, that embeds the `.so` as a base64 blob directly inside the minified argsh script. On startup it decodes the blob to a temp file, loads it via `enable -f`, then removes the temp file. This gives you a **single self-contained script** with native performance — no external `.so` needed.
+`argsh-so` is a **single self-contained executable** that bundles the native `.so` directly inside the script. The raw `.so` binary is appended after the script portion — on startup, `tail` extracts it to a temp file, `enable -f` loads it, and the temp file is removed. No external `.so` file, no download step.
+
+Each GitHub release provides one per architecture:
+
+```
+argsh-so-linux-amd64
+argsh-so-linux-arm64
+```
+
+Install it as your shebang interpreter:
 
 ```bash
-# Use the SO variant as your shebang
+# Download and install (example for amd64)
+curl -fsSL -o /usr/local/bin/argsh-so \
+  https://github.com/arg-sh/argsh/releases/latest/download/argsh-so-linux-amd64
+chmod +x /usr/local/bin/argsh-so
+
+# Use in your scripts
 #!/usr/bin/env argsh-so
 ```
 
+Because the file contains a binary payload after the script, it **cannot be `source`d** — only executed via shebang or `bash argsh-so`. For sourcing, use the regular `argsh` script with its external `.so` or pure-Bash fallback.
+
 :::note
-The inline `.so` is platform-specific (linux/amd64, linux/arm64). The regular `argsh` script with pure-Bash fallback remains the portable default.
+`argsh-so` is platform-specific. The regular `argsh` script with pure-Bash fallback remains the portable, architecture-independent default.
 :::
 
 ## Compatibility

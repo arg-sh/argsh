@@ -191,21 +191,20 @@ jobs:
         with:
           name: argsh
           path: .
-      - name: Compose argsh-so.min.sh
+      - name: Compose argsh-so
         run: |
-          so_b64=$(base64 -w0 binaries/libargsh.so)
+          # Build script portion with appended-binary loader
           {
             head -3 argsh.min.sh
-            echo '# ── Inline native builtins ──────────────────────────────────────────'
-            echo '# obfus ignore variable'
-            echo "__ARGSH_SO_B64='${so_b64}'"
+            echo '# ── Appended native builtins ─────────────────────────────────────────'
+            echo 'ARGSH_PAYLOAD_OFFSET=PLACEHOLDER'
             cat << 'SOEOF'
           # obfus ignore function
-          __argsh_load_inline_so() {
+          __argsh_load_appended_so() {
             local _t; _t="$(mktemp "${TMPDIR:-/tmp}/argsh.XXXXXX.so")"
             # shellcheck disable=SC2064
             trap "rm -f '${_t}'" EXIT
-            base64 -d <<< "${__ARGSH_SO_B64}" > "${_t}" || return 1
+            tail -c +$((ARGSH_PAYLOAD_OFFSET)) "${BASH_SOURCE[0]}" > "${_t}" || return 1
             # shellcheck disable=SC2229
             enable -f "${_t}" \
               :usage :usage::help :usage::completion :usage::docgen :usage::mcp :args \
@@ -218,23 +217,55 @@ jobs:
           }
           # obfus ignore variable
           declare -gi ARGSH_BUILTIN=0
-          if __argsh_load_inline_so; then
+          if __argsh_load_appended_so; then
             ARGSH_BUILTIN=1
           fi
-          unset -f __argsh_load_inline_so
-          unset __ARGSH_SO_B64
+          unset -f __argsh_load_appended_so
           SOEOF
             echo '# ────────────────────────────────────────────────────────────────────'
             tail -n +4 argsh.min.sh
-          } > argsh-so.min.sh
-          chmod +x argsh-so.min.sh
+            cat << 'EXITEOF'
+
+          status=${?}
+          if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+            exit "${status}"
+          else
+            echo "argsh-so: cannot be sourced, use as shebang or execute directly" >&2
+            return 1
+          fi
+          EXITEOF
+          } > script-part.sh
+
+          # Stabilize byte offset (loop until size converges)
+          converged=0
+          prev_sz=0
+          for i in $(seq 1 10); do
+            sz=$(wc -c < script-part.sh)
+            if [ "${sz}" -eq "${prev_sz}" ]; then
+              converged=1
+              break
+            fi
+            prev_sz=${sz}
+            sed -i "s/ARGSH_PAYLOAD_OFFSET=[0-9A-Z][0-9A-Z]*/ARGSH_PAYLOAD_OFFSET=$((sz + 1))/" script-part.sh
+          done
+          [ "${converged}" -eq 1 ] || { echo "Failed to stabilize ARGSH_PAYLOAD_OFFSET" >&2; exit 1; }
+
+          # Concatenate script + raw .so binary
+          cat script-part.sh binaries/libargsh.so > argsh-so
+          chmod +x argsh-so
+          rm script-part.sh
       - name: Smoke test
         if: matrix.arch == 'amd64'
         run: |
+          bash argsh-so --version
           bash -c '
-            source argsh-so.min.sh
-            (( ARGSH_BUILTIN )) || { echo "Builtins not loaded"; exit 1; }
-            echo "argsh-so: builtins loaded successfully (ARGSH_BUILTIN=${ARGSH_BUILTIN})"
+            offset=$(head -20 argsh-so | grep -oP "ARGSH_PAYLOAD_OFFSET=\K[0-9]+")
+            _t=$(mktemp /tmp/argsh-test.XXXXXX.so)
+            tail -c +$((offset)) argsh-so > "${_t}"
+            enable -f "${_t}" :args 2>/dev/null
+            type :args | grep -q "shell builtin" || { echo "Builtin :args not loaded"; rm -f "${_t}"; exit 1; }
+            echo "argsh-so: builtins loaded successfully"
+            rm -f "${_t}"
           '
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -243,7 +274,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
           path: |
-            argsh-so.min.sh
+            argsh-so
 
   docker:
     runs-on: ubuntu-latest
@@ -330,7 +361,7 @@ jobs:
             cp "artifacts/binaries-linux-${arch}/libargsh.so" "release/argsh-linux-${arch}.so"
             cp "artifacts/binaries-linux-${arch}/minifier"    "release/minifier-linux-${arch}"
             cp "artifacts/binaries-linux-${arch}/shdoc"       "release/shdoc-linux-${arch}"
-            cp "artifacts/argsh-so-linux-${arch}/argsh-so.min.sh" "release/argsh-so-linux-${arch}"
+            cp "artifacts/argsh-so-linux-${arch}/argsh-so" "release/argsh-so-linux-${arch}"
             chmod +x "release/minifier-linux-${arch}" "release/shdoc-linux-${arch}" "release/argsh-so-linux-${arch}"
           done
 
