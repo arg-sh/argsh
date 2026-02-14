@@ -88,6 +88,19 @@ argsh::builtin::install_dir() {
   return 1
 }
 
+# @description Detect the architecture for release asset naming.
+# Maps uname -m to the release suffix (e.g. x86_64 → amd64, aarch64 → arm64).
+# @stdout Architecture string (amd64, arm64)
+# @exitcode 1 If architecture is unsupported
+# @internal
+argsh::builtin::arch() {
+  case "$(uname -m)" in
+    x86_64)  echo "amd64" ;;
+    aarch64) echo "arm64" ;;
+    *) return 1 ;;
+  esac
+}
+
 # @description Download argsh.so from the latest GitHub release.
 # @arg $1 int Force download even if already installed (0|1, default 0)
 # @exitcode 0 Builtin downloaded and loaded successfully
@@ -95,7 +108,7 @@ argsh::builtin::install_dir() {
 # @internal
 # shellcheck disable=SC2120
 argsh::builtin::download() {
-  local _force="${1:-0}" _dir _dest _tag
+  local _force="${1:-0}" _dir _dest _tag _arch
 
   # Skip if already loaded (unless force)
   if (( ! _force )) && argsh::builtin::try 2>/dev/null; then
@@ -103,9 +116,16 @@ argsh::builtin::download() {
     return 0
   fi
 
-  # Check arch (only linux/amd64 for now)
-  [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]] || {
-    echo "argsh: builtins only available for linux/amd64 (got $(uname -s)/$(uname -m))" >&2
+  # Check OS (Linux only)
+  [[ "$(uname -s)" == "Linux" ]] || {
+    echo "argsh: builtins are only available for Linux (got $(uname -s))" >&2
+    return 1
+  }
+
+  # Detect architecture
+  _arch="$(argsh::builtin::arch)" || {
+    echo "argsh: unsupported architecture: $(uname -m)" >&2
+    echo "  Available: x86_64 (amd64), aarch64 (arm64)" >&2
     return 1
   }
 
@@ -128,10 +148,12 @@ argsh::builtin::download() {
     return 1
   }
 
-  echo "argsh: downloading argsh.so (${_tag})..." >&2
+  local _asset="argsh-linux-${_arch}.so"
+  echo "argsh: downloading ${_asset} (${_tag})..." >&2
   curl -fsSL -o "${_dest}" \
-    "https://github.com/arg-sh/argsh/releases/download/${_tag}/argsh.so" || {
+    "https://github.com/arg-sh/argsh/releases/download/${_tag}/${_asset}" || {
     echo "argsh: download failed" >&2
+    echo "  Asset ${_asset} may not exist for ${_tag}" >&2
     rm -f "${_dest}"
     return 1
   }
@@ -159,9 +181,11 @@ argsh::builtins() {
     update)  shift; argsh::builtin::_install --force "${@}" ;;
     *)
       # Print current state
-      local _loc
+      local _loc _arch
       _loc="$(argsh::builtin::location 2>/dev/null)" || _loc="not installed"
+      _arch="$(argsh::builtin::arch 2>/dev/null)" || _arch="unsupported"
       echo "argsh builtins: ${_loc}"
+      echo "  platform: linux/${_arch}"
       echo ""
       echo "Usage: argsh builtins install|update [--force] [--path DIR]"
       ;;

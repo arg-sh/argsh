@@ -76,7 +76,7 @@ cd builtin && cargo build --release
 The shared library is output to `builtin/target/release/libargsh.so`. Copy it as `argsh.so` to a directory in your search path.
 
 :::note
-The `.so` is compiled for the current platform. Cross-compilation requires the appropriate Rust target and compatible bash headers. See [Compatibility](#compatibility) for glibc and Bash version requirements.
+The `.so` is compiled for the current platform. Official releases provide binaries for `linux/amd64` and `linux/arm64`. See [Compatibility](#compatibility) for glibc and Bash version requirements.
 :::
 
 ## Loading
@@ -200,7 +200,7 @@ CI produces a second artifact, `argsh-so`, that embeds the `.so` as a base64 blo
 ```
 
 :::note
-The inline `.so` is platform-specific (linux/amd64). The regular `argsh` script with pure-Bash fallback remains the portable default.
+The inline `.so` is platform-specific (linux/amd64, linux/arm64). The regular `argsh` script with pure-Bash fallback remains the portable default.
 :::
 
 ## Compatibility
