@@ -235,11 +235,15 @@ jobs:
           EXITEOF
           } > script-part.sh
 
-          # Stabilize byte offset (iterate until value converges)
-          for _ in 1 2 3; do
+          # Stabilize byte offset (loop until size converges)
+          prev_sz=0
+          for i in $(seq 1 10); do
             sz=$(wc -c < script-part.sh)
+            [ "${sz}" -ne "${prev_sz}" ] || break
+            prev_sz=${sz}
             sed -i "s/ARGSH_PAYLOAD_OFFSET=[0-9A-Z]*/ARGSH_PAYLOAD_OFFSET=$((sz + 1))/" script-part.sh
           done
+          [ "${i}" -lt 10 ] || { echo "Failed to stabilize ARGSH_PAYLOAD_OFFSET" >&2; exit 1; }
 
           # Concatenate script + raw .so binary
           cat script-part.sh binaries/libargsh.so > argsh-so

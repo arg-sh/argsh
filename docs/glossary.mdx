@@ -151,7 +151,7 @@ A JSON-RPC 2.0 protocol over stdio for AI agents to discover and invoke tools. A
 Bundling and compressing argsh scripts into a single file (`argsh.min.sh`). Removes comments, whitespace, and optionally obfuscates variable names.
 
 **`argsh-so`**
-A minified script variant with the `.so` embedded as a base64 blob. Single self-contained file with native performance — no external `.so` needed.
+A self-contained executable with the native `.so` appended as a raw binary payload. Extracted at runtime via `tail` at a known byte offset. Shebang-only — cannot be sourced. See [Self-Contained Variant](/development/fundamentals/builtins#self-contained-variant-argsh-so).
 
 **Obfuscation**
 Variable and function renaming during minification to reduce script size. Controlled via `# obfus ignore variable` and `# obfus ignore function` comments.
