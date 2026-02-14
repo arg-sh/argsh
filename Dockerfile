@@ -22,6 +22,12 @@ WORKDIR /build
 COPY builtin/ .
 RUN cargo build --release
 
+# artifacts — extract just the Rust binaries (used by CI for multi-arch release)
+FROM scratch AS artifacts
+COPY --from=minifier-build /build/target/release/minifier /minifier
+COPY --from=shdoc-build /build/target/release/shdoc /shdoc
+COPY --from=builtin-build /build/target/release/libargsh.so /libargsh.so
+
 # coverage
 FROM kcov/kcov
 

@@ -20,7 +20,7 @@ echo "ARGSH_BUILTIN=${ARGSH_BUILTIN}"
 | Cause | Fix |
 |-------|-----|
 | `.so` not found | Build with `cd builtin && cargo build --release`, then copy to a [search path](/development/fundamentals/builtins#loading) |
-| Wrong architecture | The `.so` is platform-specific (linux/amd64). Cross-compiled binaries won't load |
+| Wrong architecture | The `.so` is platform-specific (linux/amd64, linux/arm64). Download the correct variant for your platform |
 | glibc mismatch | The `.so` requires the glibc version it was built against or newer. See [Compatibility](#glibc-compatibility) below |
 | Bash version mismatch | The `.so` targets Bash 5.x ABI. It will not load in Bash 4.x |
 | Stale `.so` | Rebuild after updating the builtin crate — a cached `.so` may reference symbols that no longer exist |
