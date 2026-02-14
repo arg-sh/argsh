@@ -206,7 +206,12 @@ jobs:
             trap "rm -f '${_t}'" EXIT
             tail -c +$((ARGSH_PAYLOAD_OFFSET)) "${BASH_SOURCE[0]}" > "${_t}" || return 1
             # shellcheck disable=SC2229
-            enable -f "${_t}" "${__ARGSH_BUILTINS[@]}" 2>/dev/null || return 1
+            enable -f "${_t}" \
+              :usage :usage::help :usage::completion :usage::docgen :usage::mcp :args \
+              is::array is::uninitialized is::set is::tty \
+              args::field_name to::int to::float to::boolean to::file to::string \
+              import import::clear \
+              2>/dev/null || return 1
             rm -f "${_t}"
             return 0
           }
@@ -219,7 +224,15 @@ jobs:
           SOEOF
             echo '# ────────────────────────────────────────────────────────────────────'
             tail -n +4 argsh.min.sh
-            printf '\nexit ${?}\n'
+            cat << 'EXITEOF'
+
+          if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+            exit ${?}
+          else
+            echo "argsh-so: cannot be sourced, use as shebang or execute directly" >&2
+            return 1
+          fi
+          EXITEOF
           } > script-part.sh
 
           # Stabilize byte offset (iterate until value converges)
