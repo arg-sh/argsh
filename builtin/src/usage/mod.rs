@@ -260,8 +260,9 @@ pub fn usage_main(args: &[String]) -> i32 {
     } else {
         // Resolution order:
         // 1) caller::func (FUNCNAME[0] since builtins don't push to FUNCNAME)
-        // 2) argsh::func
-        // 3) func (bare)
+        // 2) last_segment::func (last :: segment of caller)
+        // 3) argsh::func
+        // 4) func (bare)
         let caller = shell::get_funcname(0);
 
         let mut resolved = false;
@@ -273,6 +274,20 @@ pub fn usage_main(args: &[String]) -> i32 {
                 resolved = true;
             }
         } // coverage:off - LLVM artifact: closing brace gets 0 count despite block executing
+
+        // Second lookup: try last segment of caller as prefix
+        if !resolved {
+            if let Some(ref caller_name) = caller {
+                if let Some(pos) = caller_name.rfind("::") {
+                    let segment = &caller_name[pos + 2..];
+                    let seg_prefixed = format!("{}::{}", segment, func);
+                    if shell::function_exists(&seg_prefixed) {
+                        func = seg_prefixed;
+                        resolved = true;
+                    }
+                }
+            }
+        }
 
         if !resolved {
             let argsh_prefixed = format!("argsh::{}", func);

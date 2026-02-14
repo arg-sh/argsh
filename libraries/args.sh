@@ -110,9 +110,10 @@ if ! (( ARGSH_BUILTIN )); then
 #   'name|alias:-func::name' -> explicit function mapping
 #
 # Namespace resolution (when no ":-" mapping is given):
-#   1) <caller>::<cmd>  -- caller is the function that invoked :usage
-#   2) argsh::<cmd>     -- framework namespace
-#   3) <cmd>            -- bare function name
+#   1) <caller>::<cmd>       -- full caller prefix (e.g. main::status::foo)
+#   2) <last_segment>::<cmd> -- last :: segment of caller (e.g. status::foo)
+#   3) argsh::<cmd>          -- framework namespace
+#   4) <cmd>                 -- bare function name
 #   If none match, an error is raised.
 #
 # When an explicit ":-" mapping is given, the function must exist exactly.
@@ -274,8 +275,9 @@ if ! (( ARGSH_BUILTIN )); then
   # When an explicit mapping is given via ":-", func is already fully qualified.
   # Otherwise (no ":-"), resolution order:
   # 1) <caller>::${func} where <caller> is the function that invoked :usage
-  # 2) argsh::${func}
-  # 3) ${func} as bare function name
+  # 2) <last_segment>::${func} where <last_segment> is the part after the last :: in <caller>
+  # 3) argsh::${func}
+  # 4) ${func} as bare function name
   # else -> error
   local explicit=0
   [[ "${field}" != *":-"* ]] || explicit=1
@@ -294,6 +296,8 @@ if ! (( ARGSH_BUILTIN )); then
     local caller="${FUNCNAME[1]:-}"
     if [[ -n "${caller}" ]] && declare -F -- "${caller}::${func}" >/dev/null 2>&1; then
       func="${caller}::${func}"
+    elif [[ "${caller}" == *"::"* ]] && declare -F -- "${caller##*::}::${func}" >/dev/null 2>&1; then
+      func="${caller##*::}::${func}"
     elif declare -F -- "argsh::${func}" >/dev/null 2>&1; then
       func="argsh::${func}"
     elif declare -F -- "${func}" >/dev/null 2>&1; then

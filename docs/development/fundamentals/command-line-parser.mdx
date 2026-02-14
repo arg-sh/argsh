@@ -99,9 +99,45 @@ local -a usage=(
 - `command2` is called with `script command2` or `script cmd2`
 - `command3` is called with `script uhh` or `script ahh`
 
+The `:-` syntax (`name:-func`) maps the command to an **explicit function** — it bypasses the automatic resolution described below and requires the function to exist exactly as specified.
+
 :::note
 We are using the `usage` array as a function call. `:usage` populates the `usage` array with the command name and rest of the arguments. This is why we can use the `usage` array as a function call.
 :::
+
+### Function Resolution
+
+When no explicit `:-` mapping is given, `:usage` resolves the function name using a fallback chain based on the calling function's name:
+
+1. **`<caller>::<cmd>`** — full caller prefix (e.g., `main::status::foo`)
+2. **`<last_segment>::<cmd>`** — last `::` segment of the caller (e.g., `status::foo`)
+3. **`argsh::<cmd>`** — framework namespace
+4. **`<cmd>`** — bare function name
+
+The caller is determined from `FUNCNAME` — it's the function that invoked `:usage`.
+
+```bash
+main::status() {
+  local -a usage=(
+    'foo' "Show foo status"
+  )
+  :usage "Status" "${@}"
+  "${usage[@]}"
+}
+
+# Resolution order for "foo" when called from main::status:
+#   1) main::status::foo  ← first lookup (full prefix)
+#   2) status::foo        ← second lookup (last segment)
+#   3) argsh::foo
+#   4) foo
+
+# Either of these will work:
+main::status::foo() { echo "first lookup"; }
+# or
+status::foo() { echo "second lookup"; }
+```
+
+The second lookup is useful when you want shorter function names for nested subcommands. Instead of the fully qualified `main::status::foo`, you can define `status::foo`. If both exist, the full prefix (first lookup) takes priority.
 
 ### Subcommands
 

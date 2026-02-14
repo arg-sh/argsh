@@ -105,6 +105,43 @@ start() {
   echo "nested::sub::action"
 }
 
+# --- second lookup: last segment of caller as prefix ---
+
+# Test: when caller is :test::second::parent, subcommand "child" resolves:
+#   1) :test::second::parent::child — not defined
+#   2) parent::child — defined (second lookup)
+:test::second::parent() {
+  local -a usage=(
+    'child' "Do child"
+  )
+  :usage "Second lookup test" "${@}"
+  "${usage[@]}"
+}
+
+# Second lookup match: last segment "parent" + "::child"
+parent::child() {
+  echo "second-lookup::parent::child"
+}
+
+# Test: first lookup takes priority over second lookup
+:test::second::priority() {
+  local -a usage=(
+    'action' "Do action"
+  )
+  :usage "Priority test" "${@}"
+  "${usage[@]}"
+}
+
+# First lookup (full caller prefix) — should win
+:test::second::priority::action() {
+  echo "first-lookup"
+}
+
+# Second lookup (last segment) — should NOT be reached
+priority::action() {
+  echo "second-lookup"
+}
+
 # --- coverage: no visible subcommands, long-only flag ---
 
 :test::nosub() {

@@ -25,3 +25,5 @@ www/**/.yarn/*
 build/**
 **/dist
 **/stats
+
+/test.sh

@@ -160,11 +160,14 @@ Variable and function renaming during minification to reduce script size. Contro
 
 When `:usage` dispatches a subcommand without an explicit `:-` mapping, it resolves the function name in order:
 
-1. `<caller>::<cmd>` — caller's namespace (e.g., `main::deploy`)
-2. `argsh::<cmd>` — framework namespace (e.g., `argsh::deploy`)
-3. `<cmd>` — bare function name
+1. `<caller>::<cmd>` — full caller prefix (e.g., `main::status::foo`)
+2. `<last_segment>::<cmd>` — last `::` segment of caller (e.g., `status::foo`)
+3. `argsh::<cmd>` — framework namespace (e.g., `argsh::foo`)
+4. `<cmd>` — bare function name
 
-**Explicit mapping**
+The second lookup (step 2) allows shorter function names for nested subcommands — define `status::foo` instead of the fully qualified `main::status::foo`.
+
+**Explicit mapping (`:-`)**
 Bypasses resolution: `'cmd:-full::function::path'` calls `full::function::path` directly.
 
 ## Testing
