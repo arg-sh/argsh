@@ -18,7 +18,7 @@ The MCP server speaks JSON-RPC 2.0 over stdio. When an AI agent connects, it:
 
 1. **Discovers tools** — each leaf subcommand becomes a tool with a JSON Schema derived from its own `:args` declarations. Nested commands are fully traversed.
 2. **Invokes tools** — the agent calls a tool, argsh maps the JSON arguments back to CLI flags and re-invokes your script as a subprocess
-3. **Returns results** — stdout becomes the tool result, stderr is streamed as log notifications
+3. **Returns results** — stdout becomes the tool result, stderr is emitted as log notifications after execution
 4. **Exposes resources** — help text and version info are available as MCP resources
 5. **Offers prompts** — reusable prompt templates for common invocations
 
@@ -298,7 +298,7 @@ In clients that support it, these appear as slash commands.
 
 ## Logging
 
-During tool execution, stderr lines are streamed as MCP log notifications (`notifications/message`). This provides progress feedback for long-running commands without polluting the tool result.
+After tool execution, stderr lines are emitted as MCP log notifications (`notifications/message`). This provides progress feedback for long-running commands without polluting the tool result.
 
 ## Protocol Details
 

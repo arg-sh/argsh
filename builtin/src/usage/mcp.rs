@@ -438,6 +438,10 @@ pub(crate) fn handle_prompts_get<W: Write>(writer: &mut W, id: &Option<String>, 
     match name.as_deref() {
         Some("run_subcommand") => {
             let subcmd = extract_json_string(&args_obj, "subcommand").unwrap_or_default();
+            if subcmd.is_empty() {
+                write_jsonrpc_error(writer, id, -32602, "Missing required argument: subcommand");
+                return;
+            }
             let extra = extract_json_string(&args_obj, "args").unwrap_or_default();
             let content = if extra.is_empty() {
                 format!("Run the '{}' subcommand of {}", subcmd, cmd_name)
@@ -551,11 +555,8 @@ fn handle_tools_call_v2<W: Write>(
     // Check for @json annotation — emit structuredContent if stdout is valid JSON
     let has_json_annot = leaf.annotations.iter().any(|a| a == "json");
     let structured_json = if has_json_annot && !is_error {
-        // Validate that stdout is valid JSON by checking basic structure
         let trimmed = text.trim();
-        if (trimmed.starts_with('{') && trimmed.ends_with('}'))
-            || (trimmed.starts_with('[') && trimmed.ends_with(']'))
-        {
+        if is_likely_valid_json(trimmed) {
             Some(trimmed.to_string())
         } else {
             None
@@ -723,6 +724,55 @@ fn execute_tool(script_path: &str, cli_args: &[String]) -> (i32, String, String)
             Err(e) => (1, String::new(), format!("Failed to execute: {}", e)), // coverage:off - exec_error: script path comes from $0 which always exists
         }
     }
+}
+
+// -- JSON validation ----------------------------------------------------------
+
+/// Check if a string is likely valid JSON (object or array) by verifying
+/// balanced braces/brackets while respecting string literals.
+pub fn is_likely_valid_json(s: &str) -> bool {
+    let trimmed = s.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    let bytes = trimmed.as_bytes();
+    let first = bytes[0];
+    let last = bytes[bytes.len() - 1];
+    if !((first == b'{' && last == b'}') || (first == b'[' && last == b']')) {
+        return false;
+    }
+    // Check balanced braces/brackets while tracking string context
+    let mut depth: i32 = 0;
+    let mut in_string = false;
+    let mut escape = false;
+    for &b in bytes {
+        if in_string {
+            if escape {
+                escape = false;
+                continue;
+            }
+            if b == b'\\' {
+                escape = true;
+                continue;
+            }
+            if b == b'"' {
+                in_string = false;
+            }
+            continue;
+        }
+        match b {
+            b'"' => in_string = true,
+            b'{' | b'[' => depth += 1,
+            b'}' | b']' => {
+                depth -= 1;
+                if depth < 0 {
+                    return false;
+                }
+            }
+            _ => {}
+        }
+    }
+    depth == 0 && !in_string
 }
 
 // -- Minimal JSON parsing -----------------------------------------------------

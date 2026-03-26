@@ -210,6 +210,7 @@ pub fn usage_main(args: &[String]) -> i32 {
     for i in (0..usage_arr.len()).step_by(2) {
         let entry = &usage_arr[i];
         let entry_cmd_part = entry.split(':').next().unwrap_or(entry);
+        let entry_cmd_part = entry_cmd_part.split('@').next().unwrap_or(entry_cmd_part);
         let entry_clean = entry_cmd_part.strip_prefix('#').unwrap_or(entry_cmd_part);
 
         for alias in entry_clean.split('|') {
@@ -305,6 +306,7 @@ pub fn usage_main(args: &[String]) -> i32 {
     // Check if the resolved function is a deferred :usage:: builtin
     if is_deferred_builtin(&func) {
         let cmd_name = found_field.split(['|', ':']).next().unwrap_or(&found_field);
+        let cmd_name = cmd_name.split('@').next().unwrap_or(cmd_name);
         shell::append_commandname(cmd_name);
         let mut new_usage = vec![func];
         new_usage.extend(cli);
@@ -317,6 +319,7 @@ pub fn usage_main(args: &[String]) -> i32 {
 
     // Append to COMMANDNAME
     let cmd_name = found_field.split(['|', ':']).next().unwrap_or(&found_field);
+    let cmd_name = cmd_name.split('@').next().unwrap_or(cmd_name);
     shell::append_commandname(cmd_name);
 
     // Set usage = (func remaining_args...)
@@ -393,8 +396,9 @@ fn usage_help_text(title: &str, usage_arr: &[String], args_arr: &[String]) {
             continue;
         }
 
-        // Command name (before | or :)
-        let name = entry.split(['|', ':']).next().unwrap_or(entry);
+        // Command name (before | or : or @)
+        let raw_name = entry.split(['|', ':']).next().unwrap_or(entry);
+        let name = raw_name.split('@').next().unwrap_or(raw_name);
         let _ = writeln!(out, "  {:width$} {}", name, desc, width = fw);
     }
 
@@ -502,7 +506,8 @@ pub fn extract_subcommands(usage_pairs: &[String]) -> Vec<SubCmd> {
             continue;
         }
 
-        let name = entry.split(['|', ':']).next().unwrap_or(entry);
+        let raw_name = entry.split(['|', ':']).next().unwrap_or(entry);
+        let name = raw_name.split('@').next().unwrap_or(raw_name);
         cmds.push(SubCmd {
             name: name.to_string(),
             desc: desc.to_string(),
@@ -1501,6 +1506,83 @@ mod tests {
         assert!(output.contains("\"outputSchema\":{\"type\":\"object\"}"));
         assert!(output.contains("\"title\":\"Start the server\""));
         assert!(output.contains("\"title\":\"Get status\""));
+    }
+
+    #[test]
+    fn test_mcp_is_likely_valid_json_object() {
+        assert!(mcp::is_likely_valid_json(r#"{"key":"value"}"#));
+    }
+
+    #[test]
+    fn test_mcp_is_likely_valid_json_array() {
+        assert!(mcp::is_likely_valid_json(r#"[1,2,3]"#));
+    }
+
+    #[test]
+    fn test_mcp_is_likely_valid_json_nested() {
+        assert!(mcp::is_likely_valid_json(r#"{"a":{"b":[1,2]}}"#));
+    }
+
+    #[test]
+    fn test_mcp_is_likely_valid_json_empty_object() {
+        assert!(mcp::is_likely_valid_json("{}"));
+    }
+
+    #[test]
+    fn test_mcp_is_likely_valid_json_empty_array() {
+        assert!(mcp::is_likely_valid_json("[]"));
+    }
+
+    #[test]
+    fn test_mcp_is_likely_valid_json_with_whitespace() {
+        assert!(mcp::is_likely_valid_json("  { \"key\": \"value\" }  "));
+    }
+
+    #[test]
+    fn test_mcp_is_likely_valid_json_unbalanced_brace() {
+        assert!(!mcp::is_likely_valid_json("{\"key\":\"value\""));
+    }
+
+    #[test]
+    fn test_mcp_is_likely_valid_json_extra_close() {
+        assert!(!mcp::is_likely_valid_json("{}}"));
+    }
+
+    #[test]
+    fn test_mcp_is_likely_valid_json_braces_in_string() {
+        assert!(mcp::is_likely_valid_json(r#"{"msg":"hello {world}"}"#));
+    }
+
+    #[test]
+    fn test_mcp_is_likely_valid_json_not_json() {
+        assert!(!mcp::is_likely_valid_json("hello world"));
+    }
+
+    #[test]
+    fn test_mcp_is_likely_valid_json_empty() {
+        assert!(!mcp::is_likely_valid_json(""));
+    }
+
+    #[test]
+    fn test_mcp_is_likely_valid_json_starts_with_brace_but_invalid() {
+        // Starts with { ends with } but unbalanced inside
+        assert!(!mcp::is_likely_valid_json(r#"{ "a": ] }"#));
+    }
+
+    #[test]
+    fn test_mcp_is_likely_valid_json_unterminated_string() {
+        assert!(!mcp::is_likely_valid_json(r#"{"key":"value}"#));
+    }
+
+    #[test]
+    fn test_mcp_prompts_get_run_subcommand_missing_arg() {
+        let mut buf = Vec::new();
+        let id = Some("1".to_string());
+        let params = r#"{"name":"run_subcommand","arguments":{}}"#;
+        mcp::handle_prompts_get(&mut buf, &id, params, "myapp");
+        let output = String::from_utf8(buf).unwrap();
+        assert!(output.contains("-32602"));
+        assert!(output.contains("Missing required argument: subcommand"));
     }
 
     #[test]

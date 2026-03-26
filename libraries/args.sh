@@ -147,6 +147,7 @@ if ! (( ARGSH_BUILTIN )); then
   local -a _sug_aliases=()
   for (( i=0; i < ${#entries[@]}; i+=2 )); do
     alias_str="${entries[i]/:*}"
+    alias_str="${alias_str/@*/}"
     alias_str="${alias_str#\#}"
     IFS='|' read -ra _sug_aliases <<< "${alias_str}"
     for a in "${_sug_aliases[@]}"; do
@@ -241,7 +242,9 @@ if ! (( ARGSH_BUILTIN )); then
 
   local func
   for (( i=0; i < ${#usage[@]}; i+=2 )); do
-    IFS='|' read -ra _aliases <<< "${usage[i]/:*}"
+    local _entry_cmd="${usage[i]/:*}"
+    _entry_cmd="${_entry_cmd/@*/}"
+    IFS='|' read -ra _aliases <<< "${_entry_cmd}"
     for alias in "${_aliases[@]}"; do
       alias="${alias#\#}"
       [[ "${cmd}" == "${alias}" ]] || continue
@@ -314,7 +317,8 @@ if ! (( ARGSH_BUILTIN )); then
   fi
 
   # obfus ignore variable
-  COMMANDNAME+=("${field/[|:]*}")
+  local _cmd_name="${field/[|:]*}"
+  COMMANDNAME+=("${_cmd_name/@*/}")
   # obfus ignore variable
   usage=("${func}" "${cli[@]}")
 }
@@ -337,7 +341,8 @@ if ! (( ARGSH_BUILTIN )); then
       echo "${usage[i+1]}"
       continue
     }
-    printf "  %-${ARGSH_FIELD_WIDTH}s %s\n" "${usage[i]/[:|]*}" "${usage[i+1]}"
+    local _disp_name="${usage[i]/[:|]*}"
+    printf "  %-${ARGSH_FIELD_WIDTH}s %s\n" "${_disp_name/@*/}" "${usage[i+1]}"
   done
   :args::text_flags
   echo
