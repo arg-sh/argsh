@@ -30,7 +30,7 @@ main() {
 serve() {
   local port
   local -a args=(
-    'port|p:int' "Port number"
+    'port|p:~int' "Port number"
   )
   :args "Start the server" "${@}"
   echo "serving on port ${port:-8080}"
@@ -59,7 +59,7 @@ cluster() {
 cluster::up() {
   local nodes
   local -a args=(
-    'nodes|n:int' "Number of nodes"
+    'nodes|n:~int' "Number of nodes"
   )
   :args "Start cluster" "${@}"
   echo "starting ${nodes:-3} nodes"
