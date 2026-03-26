@@ -1,0 +1,26 @@
+domain: minifier
+version: "1.0"
+description: Shell script minifier and bundler CLI tool
+
+overview: |
+  The minifier is a Rust CLI tool that processes Bash scripts to produce
+  minified, bundled output. It handles source discovery (discover.rs),
+  import flattening (flatten.rs), code joining (join.rs), comment/whitespace
+  stripping (strip.rs), quote handling (quote.rs), variable obfuscation
+  (obfuscate.rs), and final bundling (bundle.rs). Uses clap for CLI args,
+  regex for pattern matching, and anyhow for error handling.
+
+key_paths:
+  source: minifier/src/
+  tests: minifier/tests/integration.rs
+  config: minifier/Cargo.toml
+
+build_commands:
+  build: "cargo build --release --manifest-path minifier/Cargo.toml"
+  test: "cargo test --manifest-path minifier/Cargo.toml"
+
+coding_standards:
+  - "(Populate after first /improve cycle)"
+
+critical_patterns: {}
+  # Populated by improve-agent after review cycles

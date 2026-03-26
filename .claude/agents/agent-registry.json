@@ -1,0 +1,212 @@
+{
+  "version": "1.0.0",
+  "description": "Agent registry - maps agents to domains, capabilities, and tools",
+  "agents": [
+    {
+      "name": "build-agent",
+      "description": "File implementation and modification specialist",
+      "file": ".claude/agents/build-agent.md",
+      "model": "sonnet",
+      "capabilities": [
+        "build",
+        "implement"
+      ],
+      "tools": [
+        "Glob",
+        "Grep",
+        "Read",
+        "Edit",
+        "Write",
+        "Bash",
+        "Task",
+        "TodoWrite"
+      ],
+      "readOnly": false
+    },
+    {
+      "name": "scout-agent",
+      "description": "Read-only codebase exploration and research agent",
+      "file": ".claude/agents/scout-agent.md",
+      "model": "sonnet",
+      "capabilities": [
+        "analyze",
+        "explain"
+      ],
+      "tools": [
+        "Glob",
+        "Grep",
+        "Read",
+        "Task",
+        "WebFetch",
+        "WebSearch"
+      ],
+      "readOnly": true
+    },
+    {
+      "name": "review-agent",
+      "description": "Code review and quality analysis specialist",
+      "file": ".claude/agents/review-agent.md",
+      "model": "sonnet",
+      "capabilities": [
+        "analyze"
+      ],
+      "tools": [
+        "Glob",
+        "Grep",
+        "Read",
+        "Task",
+        "WebFetch"
+      ],
+      "readOnly": true
+    }
+  ],
+  "_domainAgentTemplate": {
+    "description": "Template for domain-specific agents. For each domain discovered in experts/, agents are created following this pattern. The {domain} placeholder is replaced with the actual domain name.",
+    "agents": [
+      {
+        "name": "{domain}-plan-agent",
+        "description": "Plans implementation for {domain} tasks",
+        "file": ".claude/agents/experts/{domain}/{domain}-plan-agent.md",
+        "model": "sonnet",
+        "capabilities": [
+          "plan"
+        ],
+        "tools": [
+          "Read",
+          "Glob",
+          "Grep",
+          "WebFetch"
+        ],
+        "readOnly": true,
+        "expertDomain": "{domain}"
+      },
+      {
+        "name": "{domain}-build-agent",
+        "description": "Builds implementations for {domain}",
+        "file": ".claude/agents/experts/{domain}/{domain}-build-agent.md",
+        "model": "sonnet",
+        "capabilities": [
+          "build",
+          "implement"
+        ],
+        "tools": [
+          "Read",
+          "Write",
+          "Edit",
+          "Glob",
+          "Grep",
+          "Bash",
+          "TodoWrite"
+        ],
+        "readOnly": false,
+        "expertDomain": "{domain}"
+      },
+      {
+        "name": "{domain}-improve-agent",
+        "description": "Reviews and improves {domain} domain expertise",
+        "file": ".claude/agents/experts/{domain}/{domain}-improve-agent.md",
+        "model": "sonnet",
+        "capabilities": [
+          "improve",
+          "learn"
+        ],
+        "tools": [
+          "Read",
+          "Glob",
+          "Grep",
+          "Edit"
+        ],
+        "readOnly": false,
+        "expertDomain": "{domain}"
+      },
+      {
+        "name": "{domain}-question-agent",
+        "description": "Answers questions about {domain}",
+        "file": ".claude/agents/experts/{domain}/{domain}-question-agent.md",
+        "model": "haiku",
+        "capabilities": [
+          "answer",
+          "explain"
+        ],
+        "tools": [
+          "Read",
+          "Glob",
+          "Grep",
+          "WebFetch"
+        ],
+        "readOnly": true,
+        "expertDomain": "{domain}"
+      }
+    ]
+  },
+  "capabilityIndex": {
+    "analyze": [
+      "scout-agent",
+      "review-agent"
+    ],
+    "answer": [],
+    "build": [
+      "build-agent"
+    ],
+    "explain": [
+      "scout-agent"
+    ],
+    "implement": [
+      "build-agent"
+    ],
+    "improve": [],
+    "learn": [],
+    "plan": []
+  },
+  "modelIndex": {
+    "sonnet": [
+      "build-agent",
+      "scout-agent",
+      "review-agent"
+    ]
+  },
+  "domainIndex": {
+    "_note": "Populated per-project. Each domain maps to its 4 agents: {domain}-plan-agent, {domain}-build-agent, {domain}-improve-agent, {domain}-question-agent"
+  },
+  "toolMatrix": {
+    "Bash": [
+      "build-agent"
+    ],
+    "Edit": [
+      "build-agent"
+    ],
+    "Glob": [
+      "build-agent",
+      "scout-agent",
+      "review-agent"
+    ],
+    "Grep": [
+      "build-agent",
+      "scout-agent",
+      "review-agent"
+    ],
+    "Read": [
+      "build-agent",
+      "scout-agent",
+      "review-agent"
+    ],
+    "Task": [
+      "build-agent",
+      "scout-agent",
+      "review-agent"
+    ],
+    "TodoWrite": [
+      "build-agent"
+    ],
+    "WebFetch": [
+      "scout-agent",
+      "review-agent"
+    ],
+    "WebSearch": [
+      "scout-agent"
+    ],
+    "Write": [
+      "build-agent"
+    ]
+  }
+}

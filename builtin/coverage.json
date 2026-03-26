@@ -79,18 +79,18 @@
     },
     {
       "file": "builtin/src/usage/mcp.rs",
-      "percent_covered": "63.45",
+      "percent_covered": "62.58",
       "covered_lines": "408",
-      "total_lines": "643",
+      "total_lines": "652",
       "excluded_lines": "105"
     }
   ],
-  "percent_covered": "90.33",
+  "percent_covered": "90.05",
   "covered_lines": 2652,
-  "total_lines": 2936,
+  "total_lines": 2945,
   "excluded_lines": 229,
   "percent_low": 25,
   "percent_high": 75,
   "command": "bats+llvm-cov",
-  "date": "2026-03-26 16:22:18"
+  "date": "2026-03-26 16:46:09"
 }

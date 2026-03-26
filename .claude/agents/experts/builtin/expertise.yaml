@@ -1,0 +1,27 @@
+domain: builtin
+version: "1.0"
+description: Loadable Bash builtins (.so) — args parsing, import, usage/completion/MCP
+
+overview: |
+  The builtin domain is a Rust cdylib that compiles to a shared object (.so)
+  loaded into Bash via `enable -f`. It provides high-performance native
+  implementations of argsh core functions: argument parsing (args.rs),
+  module importing (import.rs), field handling (field.rs), type checking (is.rs),
+  type conversion (to.rs), shell utilities (shell.rs), and usage generation
+  including completions and MCP support (usage/ module).
+  Uses the bash-builtins crate for Bash FFI integration.
+
+key_paths:
+  source: builtin/src/
+  tests: builtin/src/ (inline tests)
+  config: builtin/Cargo.toml
+
+build_commands:
+  build: "cargo build --release --manifest-path builtin/Cargo.toml"
+  test: "cargo test --manifest-path builtin/Cargo.toml"
+
+coding_standards:
+  - "(Populate after first /improve cycle)"
+
+critical_patterns: {}
+  # Populated by improve-agent after review cycles

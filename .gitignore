@@ -26,4 +26,12 @@ build/**
 **/dist
 **/stats
 
-/test.sh
+/test.sh.claude/settings.local.json
+.claude/domain-map.conf
+.claude/domains.md
+.claude/hooks/
+.claude/settings.json
+.claude/teammates.md
+.claude/template.md
+.claude/tuning.conf
+CLAUDE.md

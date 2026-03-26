@@ -1,0 +1,26 @@
+domain: devops
+version: "1.0"
+description: CI/CD pipelines, Docker images, bootstrap installer, and deployment configs
+
+overview: |
+  The devops domain covers the build and deployment infrastructure for argsh.
+  The multi-stage Dockerfile builds all three Rust tools (minifier, shdoc, builtin),
+  installs bats-core for testing, shellcheck for linting, jq and gettext-base
+  as utilities, and produces a final image with the argsh runtime.
+  CI workflows handle docs deployment via GitHub Actions triggering gh-pages.
+  The bootstrap directory provides an interactive installer for end users.
+
+key_paths:
+  source: Dockerfile
+  tests: .docker/test/
+  config: .github/workflows/
+
+build_commands:
+  build: "docker build ."
+  test: "docker build --target artifacts ."
+
+coding_standards:
+  - "(Populate after first /improve cycle)"
+
+critical_patterns: {}
+  # Populated by improve-agent after review cycles

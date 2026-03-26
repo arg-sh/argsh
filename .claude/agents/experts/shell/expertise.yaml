@@ -1,0 +1,27 @@
+domain: shell
+version: "1.0"
+description: Core Bash libraries (args, import, string, array, etc.) and runtime
+
+overview: |
+  The shell domain contains the Bash libraries that form the core of argsh.
+  Libraries provide structured utilities for argument parsing (args.sh),
+  module importing (import.sh), string manipulation (string.sh), arrays (array.sh),
+  formatting (fmt.sh), error handling (error.sh), type checking (is.sh),
+  type conversion (to.sh), binary handling (binary.sh), and Docker helpers (docker.sh).
+  Tests use the bats-core framework. The minified runtime (argsh.min.sh) is the
+  distributable artifact.
+
+key_paths:
+  source: libraries/*.sh
+  tests: libraries/*.bats
+  config: argsh.min.tmpl
+
+build_commands:
+  build: "docker build --target artifacts ."
+  test: "bats libraries/*.bats"
+
+coding_standards:
+  - "(Populate after first /improve cycle)"
+
+critical_patterns: {}
+  # Populated by improve-agent after review cycles
