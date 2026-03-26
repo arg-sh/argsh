@@ -1,0 +1,6 @@
+# Ephemeral session files (regenerated per session)
+session-domains.txt
+session-edits.log
+
+# Keep blocked-domains.txt (shared with team for review)
+# Keep specs/ directory (plan outputs)
