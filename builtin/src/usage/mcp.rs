@@ -99,6 +99,7 @@ pub fn mcp_main(args: &[String]) -> i32 {
         println!("Configure your AI client to connect:\n");
         println!("  # .mcp.json");
         println!("  {{\"mcpServers\": {{\"{}\":{{\"type\":\"stdio\",\"command\":\"./{}\",\"args\":[{}]}}}}}}", json_escape(&cmd_str), json_escape(&script_name), args_json);
+        println!("\nFor HTTP transport, use an MCP stdio-to-HTTP bridge.");
         return shared::HELP_EXIT;
     }
 
@@ -129,6 +130,7 @@ pub fn mcp_main(args: &[String]) -> i32 {
             full_path: Vec::new(),
             desc: title.lines().next().unwrap_or(title).trim().to_string(),
             flags: top_flags,
+            annotations: Vec::new(),
         }]
     } else {
         leaves.iter().map(|leaf| {
@@ -140,6 +142,7 @@ pub fn mcp_main(args: &[String]) -> i32 {
                 full_path: leaf.full_path.clone(),
                 desc: leaf.desc.clone(),
                 flags: leaf.flags.clone(),
+                annotations: leaf.annotations.clone(),
             }
         }).collect()
     };
@@ -181,6 +184,23 @@ pub fn mcp_main(args: &[String]) -> i32 {
                     &script_path, &leaf_tools,
                 );
             }
+            Some("resources/list") => {
+                handle_resources_list(&mut writer, &id, &cmd_name);
+            }
+            Some("resources/read") => {
+                let params = extract_json_field(&line, "params").unwrap_or_default();
+                handle_resources_read(&mut writer, &id, &params, &cmd_name, title, &leaf_tools);
+            }
+            Some("prompts/list") => {
+                handle_prompts_list(&mut writer, &id);
+            }
+            Some("prompts/get") => {
+                let params = extract_json_field(&line, "params").unwrap_or_default();
+                handle_prompts_get(&mut writer, &id, &params, &cmd_name);
+            }
+            Some("logging/setLevel") => {
+                write_jsonrpc_response(&mut writer, &id, "{}");
+            }
             Some(_) => {
                 // Unknown method
                 write_jsonrpc_error(&mut writer, &id, -32601, "Method not found");
@@ -201,7 +221,7 @@ pub fn mcp_main(args: &[String]) -> i32 {
 // -- JSON-RPC helpers ---------------------------------------------------------
 
 /// Write a JSON-RPC success response.
-fn write_jsonrpc_response<W: Write>(writer: &mut W, id: &Option<String>, result: &str) {
+pub(crate) fn write_jsonrpc_response<W: Write>(writer: &mut W, id: &Option<String>, result: &str) {
     let id_str = id.as_deref().unwrap_or("null");
     let _ = writeln!(writer, "{{\"jsonrpc\":\"2.0\",\"id\":{},\"result\":{}}}", id_str, result);
 }
@@ -222,7 +242,7 @@ fn write_jsonrpc_error<W: Write>(writer: &mut W, id: &Option<String>, code: i32,
 fn handle_initialize<W: Write>(writer: &mut W, id: &Option<String>, cmd_name: &str) {
     let version = shell::get_scalar("ARGSH_VERSION").unwrap_or_default();
     let result = format!(
-        "{{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{{\"tools\":{{}}}},\"serverInfo\":{{\"name\":\"{}\",\"version\":\"{}\"}}}}",
+        "{{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{{\"tools\":{{\"listChanged\":false}},\"resources\":{{}},\"prompts\":{{}},\"logging\":{{}}}},\"serverInfo\":{{\"name\":\"{}\",\"version\":\"{}\"}}}}",
         json_escape(cmd_name),
         json_escape(&version)
     );
@@ -235,15 +255,16 @@ fn handle_ping<W: Write>(writer: &mut W, id: &Option<String>) {
 }
 
 /// Owned leaf tool data extracted from the command tree.
-struct LeafTool {
-    tool_name: String,
-    full_path: Vec<String>,
-    desc: String,
-    flags: Vec<FlagInfo>,
+pub(crate) struct LeafTool {
+    pub(crate) tool_name: String,
+    pub(crate) full_path: Vec<String>,
+    pub(crate) desc: String,
+    pub(crate) flags: Vec<FlagInfo>,
+    pub(crate) annotations: Vec<String>,
 }
 
 /// Handle `tools/list` request (v2 — tree-aware, per-leaf flags).
-fn handle_tools_list_v2<W: Write>(
+pub(crate) fn handle_tools_list_v2<W: Write>(
     writer: &mut W,
     id: &Option<String>,
     _title: &str,
@@ -255,7 +276,7 @@ fn handle_tools_list_v2<W: Write>(
         if i > 0 {
             tools.push(',');
         }
-        tools.push_str(&format_tool(&leaf.tool_name, &leaf.desc, &leaf.flags));
+        tools.push_str(&format_tool(&leaf.tool_name, &leaf.desc, &leaf.flags, &leaf.annotations));
     }
 
     tools.push_str("]}");
@@ -281,6 +302,7 @@ fn handle_tools_list<W: Write>(
             &sanitize_tool_name(cmd_name),
             first_line,
             flags,
+            &[],
         ));
     } else {
         for (i, cmd) in subcmds.iter().enumerate() {
@@ -289,7 +311,7 @@ fn handle_tools_list<W: Write>(
             }
             let tool_name = sanitize_tool_name(&format!("{}_{}", cmd_name, cmd.name));
             let desc = if cmd.desc.is_empty() { first_line } else { &cmd.desc }; // coverage:off - empty_desc: test subcmds always have descriptions
-            tools.push_str(&format_tool(&tool_name, desc, flags));
+            tools.push_str(&format_tool(&tool_name, desc, flags, &[]));
         }
     }
 
@@ -298,38 +320,179 @@ fn handle_tools_list<W: Write>(
 }
 
 /// Format a single MCP tool definition.
-fn format_tool(name: &str, description: &str, flags: &[FlagInfo]) -> String {
+pub(crate) fn format_tool(name: &str, description: &str, flags: &[FlagInfo], annotations: &[String]) -> String {
     let mut s = String::from("{");
     s.push_str(&format!("\"name\":\"{}\",", json_escape(name)));
+    s.push_str(&format!("\"title\":\"{}\",", json_escape(description)));
     s.push_str(&format!("\"description\":\"{}\",", json_escape(description)));
-    s.push_str("\"inputSchema\":{\"type\":\"object\",\"properties\":{");
 
-    for (i, flag) in flags.iter().enumerate() {
-        if i > 0 {
-            s.push(',');
+    // inputSchema — use minimal schema when no flags are present
+    if flags.is_empty() {
+        s.push_str("\"inputSchema\":{\"type\":\"object\",\"additionalProperties\":false}");
+    } else {
+        s.push_str("\"inputSchema\":{\"type\":\"object\",\"properties\":{");
+
+        for (i, flag) in flags.iter().enumerate() {
+            if i > 0 {
+                s.push(',');
+            }
+            let json_type = argsh_type_to_json(&flag.type_name, flag.is_boolean);
+            s.push_str(&format!(
+                "\"{}\":{{\"type\":\"{}\",\"description\":\"{}\"}}",
+                json_escape(&flag.name),
+                json_type,
+                json_escape(&flag.desc)
+            ));
         }
-        let json_type = argsh_type_to_json(&flag.type_name, flag.is_boolean);
-        s.push_str(&format!(
-            "\"{}\":{{\"type\":\"{}\",\"description\":\"{}\"}}",
-            json_escape(&flag.name),
-            json_type,
-            json_escape(&flag.desc)
-        ));
+
+        s.push_str("},\"required\":[");
+        let mut first = true;
+        for flag in flags {
+            if flag.required { // coverage:off - required_flags: test fixtures don't use required flags
+                if !first { // coverage:off
+                    s.push(','); // coverage:off
+                } // coverage:off
+                s.push_str(&format!("\"{}\"", json_escape(&flag.name))); // coverage:off
+                first = false; // coverage:off
+            } // coverage:off
+        }
+        s.push_str("],\"additionalProperties\":false}");
     }
 
-    s.push_str("},\"required\":[");
-    let mut first = true;
-    for flag in flags {
-        if flag.required { // coverage:off - required_flags: test fixtures don't use required flags
-            if !first { // coverage:off
-                s.push(','); // coverage:off
-            } // coverage:off
-            s.push_str(&format!("\"{}\"", json_escape(&flag.name))); // coverage:off
-            first = false; // coverage:off
-        } // coverage:off
+    // outputSchema for @json annotated tools
+    if annotations.iter().any(|a| a == "json") {
+        s.push_str(",\"outputSchema\":{}");
     }
-    s.push_str("]}}");
+
+    // Tool annotations (MCP hints)
+    let mut hints: Vec<String> = Vec::new();
+    for annot in annotations {
+        match annot.as_str() {
+            "readonly" => hints.push("\"readOnlyHint\":true".to_string()),
+            "destructive" => hints.push("\"destructiveHint\":true".to_string()),
+            "idempotent" => hints.push("\"idempotentHint\":true".to_string()),
+            "openworld" => hints.push("\"openWorldHint\":true".to_string()),
+            "json" => {} // handled via outputSchema above
+            _ => {} // coverage:off - unknown annotations silently ignored
+        }
+    }
+    if !hints.is_empty() {
+        s.push_str(&format!(",\"annotations\":{{{}}}", hints.join(",")));
+    }
+
+    s.push('}');
     s
+}
+
+/// Handle `resources/list` request.
+pub(crate) fn handle_resources_list<W: Write>(writer: &mut W, id: &Option<String>, cmd_name: &str) {
+    let result = format!(
+        "{{\"resources\":[{{\"uri\":\"script:///help\",\"name\":\"Help\",\"description\":\"Help output for {}\",\"mimeType\":\"text/plain\"}},{{\"uri\":\"script:///version\",\"name\":\"Version\",\"description\":\"argsh version\",\"mimeType\":\"text/plain\"}}]}}",
+        json_escape(cmd_name)
+    );
+    write_jsonrpc_response(writer, id, &result);
+}
+
+/// Handle `resources/read` request.
+/// Generates help text in-process from the already-parsed metadata to avoid
+/// re-executing the script (which could have side effects).
+pub(crate) fn handle_resources_read<W: Write>(
+    writer: &mut W,
+    id: &Option<String>,
+    params: &str,
+    cmd_name: &str,
+    title: &str,
+    leaf_tools: &[LeafTool],
+) {
+    let uri = extract_json_string(params, "uri");
+    match uri.as_deref() {
+        Some("script:///help") => {
+            let first_line = title.lines().next().unwrap_or(title).trim();
+            let mut help = format!("{}\n\nAvailable commands:\n", first_line);
+            for tool in leaf_tools {
+                help.push_str(&format!("  {:20} {}\n", tool.full_path.join(" "), tool.desc));
+            }
+            help.push_str(&format!("\nUse \"{} <command> --help\" for more information.", cmd_name));
+            let result = format!(
+                "{{\"contents\":[{{\"uri\":\"script:///help\",\"mimeType\":\"text/plain\",\"text\":\"{}\"}}]}}",
+                json_escape(&help)
+            );
+            write_jsonrpc_response(writer, id, &result);
+        }
+        Some("script:///version") => {
+            let version = shell::get_scalar("ARGSH_VERSION").unwrap_or_default();
+            let result = format!(
+                "{{\"contents\":[{{\"uri\":\"script:///version\",\"mimeType\":\"text/plain\",\"text\":\"{}\"}}]}}",
+                json_escape(&version)
+            );
+            write_jsonrpc_response(writer, id, &result);
+        }
+        _ => {
+            write_jsonrpc_error(writer, id, -32602, "Unknown resource URI");
+        }
+    }
+}
+
+/// Handle `prompts/list` request.
+pub(crate) fn handle_prompts_list<W: Write>(writer: &mut W, id: &Option<String>) {
+    let mut prompts = String::from("{\"prompts\":[");
+
+    // run_subcommand prompt
+    prompts.push_str("{\"name\":\"run_subcommand\",\"description\":\"Run a specific subcommand\",\"arguments\":[");
+    prompts.push_str("{\"name\":\"subcommand\",\"description\":\"The subcommand to run\",\"required\":true},");
+    prompts.push_str("{\"name\":\"args\",\"description\":\"Additional arguments\",\"required\":false}");
+    prompts.push_str("]},");
+
+    // get_help prompt
+    prompts.push_str("{\"name\":\"get_help\",\"description\":\"Show help for a subcommand\",\"arguments\":[");
+    prompts.push_str("{\"name\":\"subcommand\",\"description\":\"The subcommand to get help for\",\"required\":false}");
+    prompts.push_str("]}");
+
+    prompts.push_str("]}");
+    write_jsonrpc_response(writer, id, &prompts);
+}
+
+/// Handle `prompts/get` request.
+pub(crate) fn handle_prompts_get<W: Write>(writer: &mut W, id: &Option<String>, params: &str, cmd_name: &str) {
+    let name = extract_json_string(params, "name");
+    let args_obj = extract_json_field(params, "arguments").unwrap_or_default();
+
+    match name.as_deref() {
+        Some("run_subcommand") => {
+            let subcmd = extract_json_string(&args_obj, "subcommand").unwrap_or_default();
+            if subcmd.is_empty() {
+                write_jsonrpc_error(writer, id, -32602, "Missing required argument: subcommand");
+                return;
+            }
+            let extra = extract_json_string(&args_obj, "args").unwrap_or_default();
+            let content = if extra.is_empty() {
+                format!("Run the '{}' subcommand of {}", subcmd, cmd_name)
+            } else {
+                format!("Run the '{}' subcommand of {}. With arguments: {}", subcmd, cmd_name, extra)
+            };
+            let result = format!(
+                "{{\"description\":\"Run a subcommand\",\"messages\":[{{\"role\":\"user\",\"content\":{{\"type\":\"text\",\"text\":\"{}\"}}}}]}}",
+                json_escape(&content)
+            );
+            write_jsonrpc_response(writer, id, &result);
+        }
+        Some("get_help") => {
+            let subcmd = extract_json_string(&args_obj, "subcommand").unwrap_or_default();
+            let content = if subcmd.is_empty() {
+                format!("Show the full help output for {}", cmd_name)
+            } else {
+                format!("Show help for the '{}' subcommand of {}", subcmd, cmd_name)
+            };
+            let result = format!(
+                "{{\"description\":\"Get help\",\"messages\":[{{\"role\":\"user\",\"content\":{{\"type\":\"text\",\"text\":\"{}\"}}}}]}}",
+                json_escape(&content)
+            );
+            write_jsonrpc_response(writer, id, &result);
+        }
+        _ => {
+            write_jsonrpc_error(writer, id, -32602, "Unknown prompt");
+        }
+    }
 }
 
 /// Handle `tools/call` request (v2 — tree-aware, per-leaf flags and full command paths).
@@ -391,6 +554,17 @@ fn handle_tools_call_v2<W: Write>(
     // Execute
     let (exit_code, stdout_text, stderr_text) = execute_tool(script_path, &cli_args);
 
+    // Emit stderr lines as log notifications (Feature 9: Logging)
+    for stderr_line in stderr_text.lines() {
+        if !stderr_line.is_empty() {
+            let notification = format!(
+                "{{\"jsonrpc\":\"2.0\",\"method\":\"notifications/message\",\"params\":{{\"level\":\"info\",\"logger\":\"{}\",\"data\":\"{}\"}}}}",
+                json_escape(&leaf.tool_name), json_escape(stderr_line)
+            );
+            let _ = writeln!(writer, "{}", notification);
+        }
+    }
+
     // Format response
     let is_error = exit_code != 0;
     let text = if is_error && !stderr_text.is_empty() { // coverage:off - error_path: test fixtures always succeed
@@ -400,11 +574,33 @@ fn handle_tools_call_v2<W: Write>(
     };
     let text = text.trim_end_matches('\n');
 
-    let result = format!(
-        "{{\"content\":[{{\"type\":\"text\",\"text\":\"{}\"}}],\"isError\":{}}}",
-        json_escape(text),
-        is_error
-    );
+    // Check for @json annotation — emit structuredContent if stdout is valid JSON
+    let has_json_annot = leaf.annotations.iter().any(|a| a == "json");
+    let structured_json = if has_json_annot && !is_error {
+        let trimmed = text.trim();
+        if is_likely_valid_json(trimmed) {
+            Some(trimmed.to_string())
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let result = if let Some(ref json_content) = structured_json {
+        format!(
+            "{{\"content\":[{{\"type\":\"text\",\"text\":\"{}\"}}],\"structuredContent\":{},\"isError\":{}}}",
+            json_escape(text),
+            json_content,
+            is_error
+        )
+    } else {
+        format!(
+            "{{\"content\":[{{\"type\":\"text\",\"text\":\"{}\"}}],\"isError\":{}}}",
+            json_escape(text),
+            is_error
+        )
+    };
     write_jsonrpc_response(writer, id, &result);
 }
 
@@ -552,6 +748,80 @@ fn execute_tool(script_path: &str, cli_args: &[String]) -> (i32, String, String)
     }
 }
 
+// -- JSON validation ----------------------------------------------------------
+
+/// Validate that a string is well-formed JSON by checking structure with a
+/// stack-based bracket matcher and basic token validation. Verifies that:
+/// - Braces/brackets are properly nested and matched
+/// - Strings are terminated
+/// - Colons are followed by a value (not immediately by `}` or `]`)
+/// - No stray characters after the root value
+pub fn is_likely_valid_json(s: &str) -> bool {
+    let trimmed = s.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    if !trimmed.starts_with('{') && !trimmed.starts_with('[') {
+        return false;
+    }
+    let mut stack: Vec<u8> = Vec::new();
+    let mut in_string = false;
+    let mut escape = false;
+    let mut root_closed_at: Option<usize> = None;
+    let mut expect_value = false; // true after `:` — next non-whitespace must be a value
+    let bytes = trimmed.as_bytes();
+
+    for (i, &b) in bytes.iter().enumerate() {
+        if in_string {
+            if escape {
+                escape = false;
+                continue;
+            }
+            if b == b'\\' {
+                escape = true;
+                continue;
+            }
+            if b == b'"' {
+                in_string = false;
+                expect_value = false;
+            }
+            continue;
+        }
+        match b {
+            b'"' => {
+                in_string = true;
+                expect_value = false;
+            }
+            b'{' | b'[' => {
+                stack.push(b);
+                expect_value = false;
+            }
+            b'}' => {
+                if expect_value { return false; } // colon followed by }
+                if stack.last() != Some(&b'{') { return false; }
+                stack.pop();
+                if stack.is_empty() { root_closed_at = Some(i); }
+            }
+            b']' => {
+                if expect_value { return false; } // colon followed by ]
+                if stack.last() != Some(&b'[') { return false; }
+                stack.pop();
+                if stack.is_empty() { root_closed_at = Some(i); }
+            }
+            b':' => {
+                expect_value = true; // next non-ws must be a value
+            }
+            b' ' | b'\t' | b'\n' | b'\r' => {} // whitespace doesn't clear expect_value
+            _ => {
+                // Any other token (number, true, false, null chars) counts as value
+                expect_value = false;
+            }
+        }
+    }
+
+    stack.is_empty() && !in_string && !expect_value && root_closed_at == Some(bytes.len() - 1)
+}
+
 // -- Minimal JSON parsing -----------------------------------------------------
 //
 // CLI flags are always flat key-value pairs (no nesting, no arrays).
@@ -570,7 +840,7 @@ pub enum JsonValue {
 /// Returns the raw JSON fragment for the given key.
 /// Only matches keys at the top level of the object (depth 1) to avoid
 /// false positives from nested objects with the same key name.
-fn extract_json_field(json: &str, key: &str) -> Option<String> {
+pub(crate) fn extract_json_field(json: &str, key: &str) -> Option<String> {
     let needle = format!("\"{}\"", key);
     let needle_bytes = needle.as_bytes();
     let bytes = json.as_bytes();
@@ -648,7 +918,7 @@ fn extract_value_at(value_start: &str) -> Option<String> {
 }
 
 /// Extract a JSON string field (unquoted).
-fn extract_json_string(json: &str, key: &str) -> Option<String> {
+pub(crate) fn extract_json_string(json: &str, key: &str) -> Option<String> {
     let raw = extract_json_field(json, key)?;
     if raw.starts_with('"') && raw.ends_with('"') && raw.len() >= 2 {
         Some(unescape_json_string(&raw[1..raw.len() - 1]))
@@ -858,3 +1128,8 @@ fn parse_json_value(s: &str) -> (JsonValue, usize) {
 
     (JsonValue::Null, offset + 1) // coverage:off - json_defensive: fallback for malformed JSON
 }
+
+// Unit tests for MCP pure functions live in mod.rs::tests to avoid linker
+// errors from bash FFI symbols. The test binary can't resolve bash-builtins
+// FFI when a #[cfg(test)] module exists in this file. Functions that use
+// shell::* or execute_tool are tested via BATS integration tests.

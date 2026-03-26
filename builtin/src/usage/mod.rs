@@ -210,6 +210,7 @@ pub fn usage_main(args: &[String]) -> i32 {
     for i in (0..usage_arr.len()).step_by(2) {
         let entry = &usage_arr[i];
         let entry_cmd_part = entry.split(':').next().unwrap_or(entry);
+        let entry_cmd_part = entry_cmd_part.split('@').next().unwrap_or(entry_cmd_part);
         let entry_clean = entry_cmd_part.strip_prefix('#').unwrap_or(entry_cmd_part);
 
         for alias in entry_clean.split('|') {
@@ -305,6 +306,7 @@ pub fn usage_main(args: &[String]) -> i32 {
     // Check if the resolved function is a deferred :usage:: builtin
     if is_deferred_builtin(&func) {
         let cmd_name = found_field.split(['|', ':']).next().unwrap_or(&found_field);
+        let cmd_name = cmd_name.split('@').next().unwrap_or(cmd_name);
         shell::append_commandname(cmd_name);
         let mut new_usage = vec![func];
         new_usage.extend(cli);
@@ -317,6 +319,7 @@ pub fn usage_main(args: &[String]) -> i32 {
 
     // Append to COMMANDNAME
     let cmd_name = found_field.split(['|', ':']).next().unwrap_or(&found_field);
+    let cmd_name = cmd_name.split('@').next().unwrap_or(cmd_name);
     shell::append_commandname(cmd_name);
 
     // Set usage = (func remaining_args...)
@@ -393,8 +396,9 @@ fn usage_help_text(title: &str, usage_arr: &[String], args_arr: &[String]) {
             continue;
         }
 
-        // Command name (before | or :)
-        let name = entry.split(['|', ':']).next().unwrap_or(entry);
+        // Command name (before | or : or @)
+        let raw_name = entry.split(['|', ':']).next().unwrap_or(entry);
+        let name = raw_name.split('@').next().unwrap_or(raw_name);
         let _ = writeln!(out, "  {:width$} {}", name, desc, width = fw);
     }
 
@@ -502,7 +506,8 @@ pub fn extract_subcommands(usage_pairs: &[String]) -> Vec<SubCmd> {
             continue;
         }
 
-        let name = entry.split(['|', ':']).next().unwrap_or(entry);
+        let raw_name = entry.split(['|', ':']).next().unwrap_or(entry);
+        let name = raw_name.split('@').next().unwrap_or(raw_name);
         cmds.push(SubCmd {
             name: name.to_string(),
             desc: desc.to_string(),
@@ -595,6 +600,26 @@ pub struct CommandNode {
     pub flags: Vec<FlagInfo>,   // per-command flags from args array (excludes help)
     pub children: Vec<CommandNode>, // nested subcommands
     pub hidden: bool,           // #-prefixed entries
+    pub annotations: Vec<String>, // e.g. ["readonly", "json"] from @readonly, @json suffixes
+}
+
+/// Parse `@` annotations from a usage entry name.
+///
+/// Format: `name@readonly`, `name@destructive@json` (multiple annotations).
+/// Returns (entry_without_annotations, annotations_vec).
+pub fn parse_entry_annotations(entry: &str) -> (String, Vec<String>) {
+    if let Some(at_pos) = entry.find('@') {
+        let name_part = entry[..at_pos].to_string();
+        let annot_part = &entry[at_pos + 1..];
+        let annotations: Vec<String> = annot_part
+            .split('@')
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
+            .collect();
+        (name_part, annotations)
+    } else {
+        (entry.to_string(), Vec::new())
+    }
 }
 
 /// Build a command tree by recursively discovering subcommands.
@@ -622,12 +647,15 @@ pub fn build_command_tree(
         let hidden = entry.starts_with('#');
         let entry_clean = entry.strip_prefix('#').unwrap_or(entry);
 
+        // Extract annotations from @ suffix (e.g. "serve@readonly" -> ["readonly"])
+        let (entry_no_annot, annotations) = parse_entry_annotations(entry_clean);
+
         // Extract command name (before | or :)
-        let entry_cmd_part = entry_clean.split(':').next().unwrap_or(entry_clean);
+        let entry_cmd_part = entry_no_annot.split(':').next().unwrap_or(&entry_no_annot);
         let name = entry_cmd_part.split('|').next().unwrap_or(entry_cmd_part);
 
         // Resolve function name using the same logic as :usage dispatch
-        let func_name = resolve_function_name(entry_clean, name, caller);
+        let func_name = resolve_function_name(&entry_no_annot, name, caller);
         let func_name = match func_name {
             Some(f) => f,
             None => {
@@ -639,6 +667,7 @@ pub fn build_command_tree(
                     flags: parent_flags.clone(),
                     children: Vec::new(),
                     hidden,
+                    annotations: annotations.clone(),
                 });
                 continue;
             }
@@ -657,6 +686,7 @@ pub fn build_command_tree(
                     flags: parent_flags.clone(),
                     children: Vec::new(),
                     hidden,
+                    annotations: annotations.clone(),
                 });
                 continue;
             }
@@ -691,6 +721,7 @@ pub fn build_command_tree(
                 flags: own_flags,
                 children: Vec::new(),
                 hidden,
+                annotations: annotations.clone(),
             });
         } else {
             // Recurse into children
@@ -713,6 +744,7 @@ pub fn build_command_tree(
                 flags: own_flags,
                 children,
                 hidden,
+                annotations: annotations.clone(),
             });
         }
     }
@@ -1150,6 +1182,7 @@ mod tests {
                 flags: Vec::new(),
                 children: Vec::new(),
                 hidden: false,
+                annotations: Vec::new(),
             },
             CommandNode {
                 name: "build".to_string(),
@@ -1158,6 +1191,7 @@ mod tests {
                 flags: Vec::new(),
                 children: Vec::new(),
                 hidden: false,
+                annotations: Vec::new(),
             },
         ];
         let leaves = flatten_leaves(&nodes);
@@ -1182,6 +1216,7 @@ mod tests {
                         flags: Vec::new(),
                         children: Vec::new(),
                         hidden: false,
+                        annotations: Vec::new(),
                     },
                     CommandNode {
                         name: "down".to_string(),
@@ -1190,9 +1225,11 @@ mod tests {
                         flags: Vec::new(),
                         children: Vec::new(),
                         hidden: false,
+                        annotations: Vec::new(),
                     },
                 ],
                 hidden: false,
+                annotations: Vec::new(),
             },
         ];
         let leaves = flatten_leaves(&nodes);
@@ -1211,6 +1248,7 @@ mod tests {
                 flags: Vec::new(),
                 children: Vec::new(),
                 hidden: false,
+                annotations: Vec::new(),
             },
             CommandNode {
                 name: "hidden".to_string(),
@@ -1219,6 +1257,7 @@ mod tests {
                 flags: Vec::new(),
                 children: Vec::new(),
                 hidden: true,
+                annotations: Vec::new(),
             },
         ];
         let leaves = flatten_leaves(&nodes);
@@ -1236,6 +1275,7 @@ mod tests {
                 flags: Vec::new(),
                 children: Vec::new(),
                 hidden: false,
+                annotations: Vec::new(),
             },
             CommandNode {
                 name: "cluster".to_string(),
@@ -1250,9 +1290,11 @@ mod tests {
                         flags: Vec::new(),
                         children: Vec::new(),
                         hidden: false,
+                        annotations: Vec::new(),
                     },
                 ],
                 hidden: false,
+                annotations: Vec::new(),
             },
         ];
         let all = flatten_all(&nodes);
@@ -1260,5 +1302,359 @@ mod tests {
         assert_eq!(all[0].name, "serve");
         assert_eq!(all[1].name, "cluster");
         assert_eq!(all[2].name, "up");
+    }
+
+    #[test]
+    fn test_parse_entry_annotations_none() {
+        let (name, annots) = parse_entry_annotations("serve");
+        assert_eq!(name, "serve");
+        assert!(annots.is_empty());
+    }
+
+    #[test]
+    fn test_parse_entry_annotations_single() {
+        let (name, annots) = parse_entry_annotations("serve@readonly");
+        assert_eq!(name, "serve");
+        assert_eq!(annots, vec!["readonly"]);
+    }
+
+    #[test]
+    fn test_parse_entry_annotations_multiple() {
+        let (name, annots) = parse_entry_annotations("build@destructive@json");
+        assert_eq!(name, "build");
+        assert_eq!(annots, vec!["destructive", "json"]);
+    }
+
+    #[test]
+    fn test_parse_entry_annotations_with_alias() {
+        let (name, annots) = parse_entry_annotations("serve|s@readonly");
+        assert_eq!(name, "serve|s");
+        assert_eq!(annots, vec!["readonly"]);
+    }
+
+    #[test]
+    fn test_parse_entry_annotations_with_explicit_mapping() {
+        let (name, annots) = parse_entry_annotations("serve:-my_serve@readonly");
+        assert_eq!(name, "serve:-my_serve");
+        assert_eq!(annots, vec!["readonly"]);
+    }
+
+    // -- MCP pure function tests (live here to avoid bash FFI linker errors) --
+
+    #[test]
+    fn test_mcp_format_tool_no_flags_no_annotations() {
+        let result = mcp::format_tool("my_tool", "A test tool", &[], &[]);
+        assert!(result.contains("\"name\":\"my_tool\""));
+        assert!(result.contains("\"title\":\"A test tool\""));
+        assert!(result.contains("\"description\":\"A test tool\""));
+        assert!(result.contains("\"additionalProperties\":false"));
+        assert!(!result.contains("\"properties\""));
+        assert!(!result.contains("\"required\""));
+        assert!(!result.contains("\"annotations\""));
+        assert!(!result.contains("\"outputSchema\""));
+    }
+
+    #[test]
+    fn test_mcp_format_tool_with_flags() {
+        let flags = vec![FlagInfo {
+            name: "port".to_string(),
+            short: Some("p".to_string()),
+            desc: "Port number".to_string(),
+            is_boolean: false,
+            type_name: "int".to_string(),
+            required: false,
+        }];
+        let result = mcp::format_tool("serve", "Start server", &flags, &[]);
+        assert!(result.contains("\"port\":{\"type\":\"integer\""));
+        assert!(result.contains("\"additionalProperties\":false"));
+        assert!(result.contains("\"title\":\"Start server\""));
+    }
+
+    #[test]
+    fn test_mcp_format_tool_readonly_annotation() {
+        let result = mcp::format_tool("serve", "desc", &[], &["readonly".to_string()]);
+        assert!(result.contains("\"annotations\":{\"readOnlyHint\":true}"));
+    }
+
+    #[test]
+    fn test_mcp_format_tool_destructive_annotation() {
+        let result = mcp::format_tool("build", "desc", &[], &["destructive".to_string()]);
+        assert!(result.contains("\"annotations\":{\"destructiveHint\":true}"));
+    }
+
+    #[test]
+    fn test_mcp_format_tool_idempotent_annotation() {
+        let result = mcp::format_tool("up", "desc", &[], &["idempotent".to_string()]);
+        assert!(result.contains("\"annotations\":{\"idempotentHint\":true}"));
+    }
+
+    #[test]
+    fn test_mcp_format_tool_openworld_annotation() {
+        let result = mcp::format_tool("search", "desc", &[], &["openworld".to_string()]);
+        assert!(result.contains("\"annotations\":{\"openWorldHint\":true}"));
+    }
+
+    #[test]
+    fn test_mcp_format_tool_json_annotation() {
+        let result = mcp::format_tool("status", "desc", &[], &["json".to_string()]);
+        assert!(result.contains("\"outputSchema\":{}"));
+        assert!(!result.contains("\"annotations\""));
+    }
+
+    #[test]
+    fn test_mcp_format_tool_multiple_annotations() {
+        let annots = vec!["readonly".to_string(), "json".to_string()];
+        let result = mcp::format_tool("status", "desc", &[], &annots);
+        assert!(result.contains("\"outputSchema\":{}"));
+        assert!(result.contains("\"annotations\":{\"readOnlyHint\":true}"));
+    }
+
+    #[test]
+    fn test_mcp_prompts_list() {
+        let mut buf = Vec::new();
+        let id = Some("1".to_string());
+        mcp::handle_prompts_list(&mut buf, &id);
+        let output = String::from_utf8(buf).unwrap();
+        assert!(output.contains("\"run_subcommand\""));
+        assert!(output.contains("\"get_help\""));
+    }
+
+    #[test]
+    fn test_mcp_prompts_get_run_subcommand() {
+        let mut buf = Vec::new();
+        let id = Some("1".to_string());
+        let params = r#"{"name":"run_subcommand","arguments":{"subcommand":"serve","args":"--port 8080"}}"#;
+        mcp::handle_prompts_get(&mut buf, &id, params, "myapp");
+        let output = String::from_utf8(buf).unwrap();
+        assert!(output.contains("Run the 'serve' subcommand of myapp"));
+        assert!(output.contains("With arguments: --port 8080"));
+    }
+
+    #[test]
+    fn test_mcp_prompts_get_help_no_subcmd() {
+        let mut buf = Vec::new();
+        let id = Some("1".to_string());
+        let params = r#"{"name":"get_help","arguments":{}}"#;
+        mcp::handle_prompts_get(&mut buf, &id, params, "myapp");
+        let output = String::from_utf8(buf).unwrap();
+        assert!(output.contains("Show the full help output for myapp"));
+    }
+
+    #[test]
+    fn test_mcp_prompts_get_help_with_subcmd() {
+        let mut buf = Vec::new();
+        let id = Some("1".to_string());
+        let params = r#"{"name":"get_help","arguments":{"subcommand":"serve"}}"#;
+        mcp::handle_prompts_get(&mut buf, &id, params, "myapp");
+        let output = String::from_utf8(buf).unwrap();
+        assert!(output.contains("Show help for the 'serve' subcommand of myapp"));
+    }
+
+    #[test]
+    fn test_mcp_prompts_get_unknown() {
+        let mut buf = Vec::new();
+        let id = Some("1".to_string());
+        let params = r#"{"name":"nonexistent","arguments":{}}"#;
+        mcp::handle_prompts_get(&mut buf, &id, params, "myapp");
+        let output = String::from_utf8(buf).unwrap();
+        assert!(output.contains("Unknown prompt"));
+    }
+
+    #[test]
+    fn test_mcp_resources_list() {
+        let mut buf = Vec::new();
+        let id = Some("1".to_string());
+        mcp::handle_resources_list(&mut buf, &id, "myapp");
+        let output = String::from_utf8(buf).unwrap();
+        assert!(output.contains("script:///help"));
+        assert!(output.contains("script:///version"));
+        assert!(output.contains("Help output for myapp"));
+    }
+
+    #[test]
+    fn test_mcp_write_jsonrpc_response() {
+        let mut buf = Vec::new();
+        let id = Some("1".to_string());
+        mcp::write_jsonrpc_response(&mut buf, &id, "{}");
+        let output = String::from_utf8(buf).unwrap();
+        assert!(output.contains("\"result\":{}"));
+    }
+
+    #[test]
+    fn test_mcp_tools_list_v2_with_annotations() {
+        let mut buf = Vec::new();
+        let id = Some("1".to_string());
+        let leaf_tools = vec![
+            mcp::LeafTool {
+                tool_name: "myapp_serve".to_string(),
+                full_path: vec!["serve".to_string()],
+                desc: "Start the server".to_string(),
+                flags: Vec::new(),
+                annotations: vec!["readonly".to_string()],
+            },
+            mcp::LeafTool {
+                tool_name: "myapp_status".to_string(),
+                full_path: vec!["status".to_string()],
+                desc: "Get status".to_string(),
+                flags: Vec::new(),
+                annotations: vec!["json".to_string()],
+            },
+        ];
+        mcp::handle_tools_list_v2(&mut buf, &id, "My app", &leaf_tools);
+        let output = String::from_utf8(buf).unwrap();
+        assert!(output.contains("\"readOnlyHint\":true"));
+        assert!(output.contains("\"outputSchema\":{}"));
+        assert!(output.contains("\"title\":\"Start the server\""));
+        assert!(output.contains("\"title\":\"Get status\""));
+    }
+
+    #[test]
+    fn test_mcp_is_likely_valid_json_object() {
+        assert!(mcp::is_likely_valid_json(r#"{"key":"value"}"#));
+    }
+
+    #[test]
+    fn test_mcp_is_likely_valid_json_array() {
+        assert!(mcp::is_likely_valid_json(r#"[1,2,3]"#));
+    }
+
+    #[test]
+    fn test_mcp_is_likely_valid_json_nested() {
+        assert!(mcp::is_likely_valid_json(r#"{"a":{"b":[1,2]}}"#));
+    }
+
+    #[test]
+    fn test_mcp_is_likely_valid_json_empty_object() {
+        assert!(mcp::is_likely_valid_json("{}"));
+    }
+
+    #[test]
+    fn test_mcp_is_likely_valid_json_empty_array() {
+        assert!(mcp::is_likely_valid_json("[]"));
+    }
+
+    #[test]
+    fn test_mcp_is_likely_valid_json_with_whitespace() {
+        assert!(mcp::is_likely_valid_json("  { \"key\": \"value\" }  "));
+    }
+
+    #[test]
+    fn test_mcp_is_likely_valid_json_unbalanced_brace() {
+        assert!(!mcp::is_likely_valid_json("{\"key\":\"value\""));
+    }
+
+    #[test]
+    fn test_mcp_is_likely_valid_json_extra_close() {
+        assert!(!mcp::is_likely_valid_json("{}}"));
+    }
+
+    #[test]
+    fn test_mcp_is_likely_valid_json_braces_in_string() {
+        assert!(mcp::is_likely_valid_json(r#"{"msg":"hello {world}"}"#));
+    }
+
+    #[test]
+    fn test_mcp_is_likely_valid_json_not_json() {
+        assert!(!mcp::is_likely_valid_json("hello world"));
+    }
+
+    #[test]
+    fn test_mcp_is_likely_valid_json_empty() {
+        assert!(!mcp::is_likely_valid_json(""));
+    }
+
+    #[test]
+    fn test_mcp_is_likely_valid_json_starts_with_brace_but_invalid() {
+        // Starts with { ends with } but unbalanced inside
+        assert!(!mcp::is_likely_valid_json(r#"{ "a": ] }"#));
+    }
+
+    #[test]
+    fn test_mcp_is_likely_valid_json_unterminated_string() {
+        assert!(!mcp::is_likely_valid_json(r#"{"key":"value}"#));
+    }
+
+    #[test]
+    fn test_mcp_prompts_get_run_subcommand_missing_arg() {
+        let mut buf = Vec::new();
+        let id = Some("1".to_string());
+        let params = r#"{"name":"run_subcommand","arguments":{}}"#;
+        mcp::handle_prompts_get(&mut buf, &id, params, "myapp");
+        let output = String::from_utf8(buf).unwrap();
+        assert!(output.contains("-32602"));
+        assert!(output.contains("Missing required argument: subcommand"));
+    }
+
+    #[test]
+    fn test_mcp_extract_json_field_nested() {
+        let json = r#"{"jsonrpc":"2.0","method":"prompts/get","params":{"name":"get_help","arguments":{"subcommand":"serve"}}}"#;
+        let params = mcp::extract_json_field(json, "params").unwrap();
+        assert!(params.contains("\"name\":\"get_help\""));
+        let name = mcp::extract_json_string(&params, "name").unwrap();
+        assert_eq!(name, "get_help");
+        let args = mcp::extract_json_field(&params, "arguments").unwrap();
+        let subcmd = mcp::extract_json_string(&args, "subcommand").unwrap();
+        assert_eq!(subcmd, "serve");
+    }
+
+    #[test]
+    fn test_mcp_resources_read_help() {
+        let mut buf = Vec::new();
+        let id = Some("1".to_string());
+        let tools = vec![
+            mcp::LeafTool {
+                tool_name: "app_serve".to_string(),
+                full_path: vec!["serve".to_string()],
+                desc: "Start server".to_string(),
+                flags: vec![],
+                annotations: vec![],
+            },
+            mcp::LeafTool {
+                tool_name: "app_build".to_string(),
+                full_path: vec!["build".to_string()],
+                desc: "Build project".to_string(),
+                flags: vec![],
+                annotations: vec![],
+            },
+        ];
+        mcp::handle_resources_read(
+            &mut buf, &id,
+            r#"{"uri":"script:///help"}"#,
+            "app", "My app", &tools,
+        );
+        let output = String::from_utf8(buf).unwrap();
+        assert!(output.contains("My app"));
+        assert!(output.contains("serve"));
+        assert!(output.contains("build"));
+    }
+
+    #[test]
+    fn test_mcp_resources_read_version() {
+        let mut buf = Vec::new();
+        let id = Some("1".to_string());
+        let tools = vec![];
+        mcp::handle_resources_read(
+            &mut buf, &id,
+            r#"{"uri":"script:///version"}"#,
+            "app", "My app", &tools,
+        );
+        let output = String::from_utf8(buf).unwrap();
+        assert!(output.contains("\"result\""));
+        assert!(output.contains("script:///version"));
+    }
+
+    #[test]
+    fn test_mcp_resources_read_unknown_uri() {
+        let mut buf = Vec::new();
+        let id = Some("1".to_string());
+        let tools = vec![];
+        mcp::handle_resources_read(
+            &mut buf, &id,
+            r#"{"uri":"script:///nonexistent"}"#,
+            "app", "My app", &tools,
+        );
+        let output = String::from_utf8(buf).unwrap();
+        assert!(output.contains("-32602"));
+        assert!(output.contains("Unknown resource URI"));
     }
 }

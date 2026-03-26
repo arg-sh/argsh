@@ -225,8 +225,9 @@ pub fn suggest_command(input: &str, usage_arr: &[String]) -> Option<String> {
 
     for i in (0..usage_arr.len()).step_by(2) {
         let entry = &usage_arr[i];
-        // Strip hidden prefix
+        // Strip hidden prefix and @ annotations
         let entry_cmd_part = entry.split(':').next().unwrap_or(entry);
+        let entry_cmd_part = entry_cmd_part.split('@').next().unwrap_or(entry_cmd_part);
         let entry_clean = entry_cmd_part.strip_prefix('#').unwrap_or(entry_cmd_part);
 
         for alias in entry_clean.split('|') {

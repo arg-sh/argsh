@@ -1,0 +1,26 @@
+domain: shdoc
+version: "1.0"
+description: Documentation generator for shell scripts (markdown, HTML, JSON output)
+
+overview: |
+  Shdoc is a Rust CLI tool that generates documentation from shell scripts
+  and Rust source files. It has a parser module that handles Bash (bash.rs)
+  and Rust (rust.rs) source parsing with a merge step (merge.rs) to combine
+  documentation from both. The model (model.rs) defines the doc structure,
+  toc.rs generates tables of contents, and the render module outputs to
+  markdown, HTML, or JSON. Uses clap, regex, anyhow, and glob.
+
+key_paths:
+  source: shdoc/src/
+  tests: shdoc/tests/
+  config: shdoc/Cargo.toml
+
+build_commands:
+  build: "cargo build --release --manifest-path shdoc/Cargo.toml"
+  test: "cargo test --manifest-path shdoc/Cargo.toml"
+
+coding_standards:
+  - "(Populate after first /improve cycle)"
+
+critical_patterns: {}
+  # Populated by improve-agent after review cycles

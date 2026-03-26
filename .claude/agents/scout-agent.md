@@ -1,0 +1,1 @@
+../cuite/agents/scout-agent.md
