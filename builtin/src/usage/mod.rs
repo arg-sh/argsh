@@ -671,11 +671,12 @@ pub fn build_command_tree(
             parent_flags.clone()
         } else {
             // Merge parent flags with own flags (own flags take precedence)
-            let mut merged = parent_flags.clone();
             let own = extract_flags_for_llm(&sub_args);
-            for f in own {
+            let mut merged = own;
+            // Add parent flags that aren't overridden by child
+            for f in parent_flags.iter() {
                 if !merged.iter().any(|existing| existing.name == f.name) {
-                    merged.push(f);
+                    merged.push(f.clone());
                 }
             }
             merged
@@ -770,7 +771,7 @@ fn get_function_body(func_name: &str) -> Option<String> {
     if !func_name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == ':' || c == '-') {
         return None; // coverage:off - defensive_check: function names from usage arrays are always valid
     }
-    shell::exec_capture(&format!("declare -f {}", func_name), "__argsh_r")
+    shell::exec_capture(&format!("declare -f -- {}", func_name), "__argsh_r")
 }
 
 /// Parse a shell array from a `declare -f` function body.
@@ -789,18 +790,24 @@ pub fn parse_shell_array_from_body(body: &str, array_name: &str) -> Vec<String> 
     // where there are extra variable names between `-a` and the target array.
 
     let needle_local = format!("{}=(", array_name);
+    let needle_append = format!("{}+=(", array_name);
 
     let mut start_pos = None;
-    for (idx, _) in body.match_indices(&needle_local) {
-        // Verify this looks like a local -a or direct assignment context
-        let prefix = &body[..idx];
-        let last_line_start = prefix.rfind('\n').map(|p| p + 1).unwrap_or(0);
-        let line_prefix = &body[last_line_start..idx];
-        // Accept: "    local -a usage=", "    local -a verbose args=", "    args+=", etc.
-        if line_prefix.contains("local") || line_prefix.trim_start().is_empty()
-            || line_prefix.trim_start().starts_with(array_name)
-        {
-            start_pos = Some(idx + needle_local.len());
+    for needle in &[&needle_local, &needle_append] {
+        for (idx, matched) in body.match_indices(needle.as_str()) {
+            // Verify this looks like a local -a or direct assignment context
+            let prefix = &body[..idx];
+            let last_line_start = prefix.rfind('\n').map(|p| p + 1).unwrap_or(0);
+            let line_prefix = &body[last_line_start..idx];
+            // Accept: "    local -a usage=", "    local -a verbose args=", "    args+=", etc.
+            if line_prefix.contains("local") || line_prefix.trim_start().is_empty()
+                || line_prefix.trim_start().starts_with(array_name)
+            {
+                start_pos = Some(idx + matched.len());
+                break;
+            }
+        }
+        if start_pos.is_some() {
             break;
         }
     }
@@ -1119,6 +1126,18 @@ mod tests {
 }"#;
         let result = parse_shell_array_from_body(body, "args");
         assert_eq!(result, vec!["verbose|v:+", "Enable verbose", "config|c", "Config file"]);
+    }
+
+    #[test]
+    fn test_parse_shell_array_from_body_append_syntax() {
+        let body = r#"deploy ()
+{
+    local target;
+    args+=('target|t' "Deploy target");
+    :args "Deploy the app" "${@}"
+}"#;
+        let result = parse_shell_array_from_body(body, "args");
+        assert_eq!(result, vec!["target|t", "Deploy target"]);
     }
 
     #[test]

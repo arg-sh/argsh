@@ -214,6 +214,29 @@ fn generate_man_page<W: Write>(
             let _ = writeln!(out, "{}", man_escape(&flag.desc));
         }
     }
+
+    // Per-command options
+    for node in &all_nodes {
+        if !node.flags.is_empty() {
+            let _ = writeln!(out, ".SS {} options", node.full_path.join(" "));
+            for flag in &node.flags {
+                let _ = writeln!(out, ".TP");
+                if let Some(ref short) = flag.short {
+                    if flag.is_boolean {
+                        let _ = writeln!(out, ".BR \\-{} \", \" \\-\\-{}", short, flag.name);
+                    } else {
+                        let _ = writeln!(out, ".BR \\-{} \", \" \\-\\-{} \" \" \\fI{}\\fR",
+                            short, flag.name, flag.type_name);
+                    }
+                } else if flag.is_boolean {
+                    let _ = writeln!(out, ".BR \\-\\-{}", flag.name);
+                } else {
+                    let _ = writeln!(out, ".BR \\-\\-{} \" \" \\fI{}\\fR", flag.name, flag.type_name);
+                }
+                let _ = writeln!(out, "{}", man_escape(&flag.desc));
+            }
+        }
+    }
 }
 
 /// Escape special troff characters.
@@ -308,6 +331,26 @@ fn generate_markdown<W: Write>(
         }
         let _ = writeln!(out);
     }
+
+    // Per-command options
+    for node in &all_nodes {
+        if !node.flags.is_empty() {
+            let _ = writeln!(out, "### {} options\n", node.full_path.join(" "));
+            let _ = writeln!(out, "| Flag | Description |");
+            let _ = writeln!(out, "|------|-------------|");
+            for flag in &node.flags {
+                let mut flag_str = format!("`--{}`", flag.name);
+                if let Some(ref short) = flag.short {
+                    flag_str = format!("`-{}`, {}", short, flag_str);
+                }
+                if !flag.is_boolean {
+                    flag_str.push_str(&format!(" *{}*", flag.type_name));
+                }
+                let _ = writeln!(out, "| {} | {} |", flag_str, flag.desc);
+            }
+            let _ = writeln!(out);
+        }
+    }
 }
 
 // -- reStructuredText generation ----------------------------------------------
@@ -386,6 +429,26 @@ fn generate_rst<W: Write>(
             let _ = writeln!(out, "   {}\n", flag.desc);
         }
     }
+
+    // Per-command options
+    for node in &all_nodes {
+        if !node.flags.is_empty() {
+            let section_title = format!("{} options", node.full_path.join(" "));
+            let _ = writeln!(out, "{}", section_title);
+            let _ = writeln!(out, "{}\n", "~".repeat(section_title.len()));
+            for flag in &node.flags {
+                let mut flag_str = format!("--{}", flag.name);
+                if let Some(ref short) = flag.short {
+                    flag_str = format!("-{}, {}", short, flag_str);
+                }
+                if !flag.is_boolean {
+                    flag_str.push_str(&format!(" *{}*", flag.type_name));
+                }
+                let _ = writeln!(out, "**{}**", flag_str);
+                let _ = writeln!(out, "   {}\n", flag.desc);
+            }
+        }
+    }
 }
 
 // -- YAML generation ----------------------------------------------------------
@@ -450,6 +513,28 @@ fn generate_yaml<W: Write>(
                 let _ = writeln!(out, "    type: boolean");
             } else {
                 let _ = writeln!(out, "    type: \"{}\"", yaml_escape(&flag.type_name));
+            }
+        }
+    }
+
+    // Per-command options
+    let nodes_with_flags: Vec<_> = all_nodes.iter().filter(|n| !n.flags.is_empty()).collect();
+    if !nodes_with_flags.is_empty() {
+        let _ = writeln!(out, "command_options:");
+        for node in nodes_with_flags {
+            let _ = writeln!(out, "  - command: \"{}\"", yaml_escape(&node.full_path.join(" ")));
+            let _ = writeln!(out, "    options:");
+            for flag in &node.flags {
+                let _ = writeln!(out, "      - name: \"{}\"", yaml_escape(&flag.name));
+                if let Some(ref short) = flag.short {
+                    let _ = writeln!(out, "        short: \"{}\"", yaml_escape(short));
+                }
+                let _ = writeln!(out, "        description: \"{}\"", yaml_escape(&flag.desc));
+                if flag.is_boolean {
+                    let _ = writeln!(out, "        type: boolean");
+                } else {
+                    let _ = writeln!(out, "        type: \"{}\"", yaml_escape(&flag.type_name));
+                }
             }
         }
     }
