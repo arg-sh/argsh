@@ -79,6 +79,24 @@ fi
   contains "^out" stdout
 }
 
+@test "plain import ignores bare ARGSH_SOURCE identifier" {
+  (
+    export ARGSH_SOURCE="argsh"
+    import "string"
+    string::random
+  ) >"${stdout}" 2>"${stderr}" 3>&- || status="${?}"
+
+  if [[ "${BATS_LOAD}" == "argsh.min.sh" ]]; then
+    assert "${status}" -eq 0
+    not_empty stdout
+    contains "Library not found" stderr
+  else
+    assert "${status}" -eq 0
+    is_empty stderr
+    not_empty stdout
+  fi
+}
+
 @test "using import cache and can clear it" {
   (
     # shellcheck disable=SC2031
