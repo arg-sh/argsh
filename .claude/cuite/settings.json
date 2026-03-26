@@ -1,0 +1,88 @@
+{
+  "permissions": {
+    "allow": [
+      "Read",
+      "Glob",
+      "Grep",
+      "Task",
+      "TodoWrite",
+      "AskUserQuestion",
+      "Bash",
+      "Write",
+      "Edit",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:stackoverflow.com)",
+      "WebFetch(domain:developer.mozilla.org)",
+      "WebFetch(domain:registry.npmjs.org)",
+      "WebFetch(domain:crates.io)",
+      "WebFetch(domain:pypi.org)",
+      "WebFetch(domain:pkg.go.dev)",
+      "WebFetch(domain:hub.docker.com)",
+      "WebFetch(domain:docs.rs)",
+      "WebFetch(domain:doc.rust-lang.org)",
+      "WebFetch(domain:docs.python.org)",
+      "WebFetch(domain:nodejs.org)",
+      "WebFetch(domain:kubernetes.io)"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/session-context.sh"
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "matcher": "build|plan|improve|question|Explore",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/inject-expertise.sh"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|Bash|WebFetch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/scope-enforcement.sh"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/track-learnings.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/validate-intent.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "WebFetch|WebSearch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/detect-injection.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,424 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2034 disable=SC2120 disable=SC1091
+: "${ARGSH_SOURCE:="${BASH_SOURCE[0]}"}"
+: "${PATH_BASE:="$(git rev-parse --show-toplevel 2>/dev/null)"}"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/argsh.min.sh"
+
+CUITE_VERSION="1.0.0"
+: "${CUITE_REMOTE:=cuite}"
+: "${CUITE_BRANCH:=main}"
+: "${CUITE_REPO:=https://github.com/fentas/cuite.git}"
+: "${CUITE_PREFIX:=".claude/cuite"}"
+: "${CLAUDE_DIR=".claude"}"
+
+_tty() { [[ -t 1 ]] && printf '\033[%sm' "${1}" || true; }
+info()  { echo -e "$(_tty '0;34')→$(_tty 0) ${*}"; }
+ok()    { echo -e "$(_tty '0;32')✓$(_tty 0) ${*}"; }
+warn()  { echo -e "$(_tty '0;33')!$(_tty 0) ${*}"; }
+err()   { echo -e "$(_tty '0;31')✗$(_tty 0) ${*}" >&2; }
+
+# Single source of truth: link-path → target (relative to link parent).
+declare -A LINKS=(
+  # core agents
+  ["${CLAUDE_DIR}/agents/templates"]="../cuite/agents/templates"
+  ["${CLAUDE_DIR}/agents/build-agent.md"]="../cuite/agents/build-agent.md"
+  ["${CLAUDE_DIR}/agents/review-agent.md"]="../cuite/agents/review-agent.md"
+  ["${CLAUDE_DIR}/agents/security-agent.md"]="../cuite/agents/security-agent.md"
+  ["${CLAUDE_DIR}/agents/scout-agent.md"]="../cuite/agents/scout-agent.md"
+  # experts
+  ["${CLAUDE_DIR}/agents/experts/agent-teams-blueprint.md"]="../../cuite/agents/experts/agent-teams-blueprint.md"
+  # docs
+  ["${CLAUDE_DIR}/template.md"]="cuite/template.md"
+  ["${CLAUDE_DIR}/teammates.md"]="cuite/teammates.md"
+)
+
+# Directories where files are symlinked individually (not the directory itself).
+# This allows users to add custom hooks/commands alongside framework ones.
+# Format: target-dir (under CUITE_PREFIX) → link-dir (under CLAUDE_DIR)
+declare -A FILE_LINK_DIRS=(
+  ["hooks"]="hooks"
+  ["commands"]="commands"
+)
+
+declare -A STARTERS=(
+  ["${CLAUDE_DIR}/settings.json"]="${CUITE_PREFIX}/settings.json"
+  ["${CLAUDE_DIR}/domain-map.conf"]="${CUITE_PREFIX}/domain-map.conf"
+  ["${CLAUDE_DIR}/domains.md"]="${CUITE_PREFIX}/domains.md"
+  ["${CLAUDE_DIR}/settings.local.json"]="${CUITE_PREFIX}/settings.local.json"
+  ["CLAUDE.md"]="${CUITE_PREFIX}/CLAUDE.md"
+  ["${CLAUDE_DIR}/tuning.conf"]="${CUITE_PREFIX}/tuning.conf"
+  ["${CLAUDE_DIR}/agents/agent-registry.json"]="${CUITE_PREFIX}/agents/agent-registry.json"
+)
+
+cuite::init() {
+  :args "Initialize cuite framework (remote + subtree + symlinks)" "${@}"
+
+  info "Initializing cuite framework..."
+  echo ""
+
+  # 1. Remote
+  if git remote get-url "${CUITE_REMOTE}" &>/dev/null; then
+    warn "Remote '${CUITE_REMOTE}' already exists"
+  else
+    git remote add "${CUITE_REMOTE}" "${CUITE_REPO}"
+    ok "Remote '${CUITE_REMOTE}' added"
+  fi
+
+  # 2. Subtree
+  if [[ -d "${CUITE_PREFIX}" ]]; then
+    warn "${CUITE_PREFIX} already exists — skipping subtree add"
+  else
+    git subtree add --prefix "${CUITE_PREFIX}" "${CUITE_REMOTE}" "${CUITE_BRANCH}" --squash
+    ok "Subtree added at ${CUITE_PREFIX}"
+  fi
+
+  # 3. Symlinks
+  cuite::link
+
+  # 4. Starter files (only if absent)
+  local dest src
+  for dest in "${!STARTERS[@]}"; do
+    src="${STARTERS[${dest}]}"
+    if [[ ! -f "${dest}" ]]; then
+      mkdir -p "$(dirname "${dest}")"
+      cp "${src}" "${dest}"
+      ok "Created ${dest}"
+    else
+      warn "${dest} already exists — skipping"
+    fi
+  done
+
+  # 5. Cache dir
+  mkdir -p "${CLAUDE_DIR}/.cache"
+  [[ ! -f "${CUITE_PREFIX}/.cache/.gitignore" ]] || \
+    cp "${CUITE_PREFIX}/.cache/.gitignore" "${CLAUDE_DIR}/.cache/.gitignore"
+
+  # 6. Gitignore
+  if ! grep -q 'settings.local.json' .gitignore 2>/dev/null; then
+    echo '.claude/settings.local.json' >> .gitignore
+    ok "Added settings.local.json to .gitignore"
+  fi
+
+  echo ""
+  info "Done! Next steps:"
+  echo "  1. Run 'cuite envrc'                 — set up direnv (optional, adds cuite to PATH)"
+  echo "  2. Run /cuite-init                   — auto-detect domains and generate everything"
+  echo "  Or manually:"
+  echo "  3. Edit CLAUDE.md                    — project structure table"
+  echo "  4. Edit .claude/domains.md           — domain registry (keywords, paths, commands)"
+  echo "  5. Edit .claude/domain-map.conf      — path-to-domain mappings"
+  echo "  6. Edit .claude/tuning.conf           — behavioral knobs (git, security, review)"
+  echo "  7. Edit .claude/settings.json        — WebFetch whitelist domains"
+}
+
+cuite::link() {
+  :args "Create/refresh all symlinks from .claude/ to .claude/cuite/" "${@}"
+
+  info "Refreshing symlinks..."
+  mkdir -p "${CLAUDE_DIR}/agents/experts" "${CLAUDE_DIR}/.cache"
+
+  local link target _count=0
+
+  # Static links (agents, docs, etc.)
+  for link in "${!LINKS[@]}"; do
+    target="${LINKS[${link}]}"
+    mkdir -p "$(dirname "${link}")"
+    ln -sfn "${target}" "${link}"
+    ((_count++)) || true
+  done
+
+  # File-level links for hooks/ and commands/ directories.
+  # Migrate: if the directory is a symlink from the old layout, replace it.
+  local src_dir link_dir file
+  for src_dir in "${!FILE_LINK_DIRS[@]}"; do
+    link_dir="${CLAUDE_DIR}/${FILE_LINK_DIRS[${src_dir}]}"
+
+    # Migration: old directory symlink → real directory
+    if [[ -L "${link_dir}" ]]; then
+      rm "${link_dir}"
+      info "  Migrated ${link_dir} from directory symlink to file-level links"
+    fi
+    mkdir -p "${link_dir}"
+
+    # Symlink each file: .claude/hooks/foo.sh → ../cuite/hooks/foo.sh
+    for file in "${CUITE_PREFIX}/${src_dir}"/*; do
+      [[ -f "${file}" ]] || continue
+      local fname
+      fname=$(basename "${file}")
+      ln -sfn "../cuite/${src_dir}/${fname}" "${link_dir}/${fname}"
+      ((_count++)) || true
+    done
+  done
+
+  [[ ! -f "${CUITE_PREFIX}/.cache/.gitignore" ]] || \
+    cp "${CUITE_PREFIX}/.cache/.gitignore" "${CLAUDE_DIR}/.cache/.gitignore"
+
+  ok "Symlinks refreshed (${_count} links)"
+}
+
+###
+### updates
+###
+
+cuite::pull() {
+  :args "Pull framework updates and refresh symlinks" "${@}"
+
+  info "Pulling framework updates..."
+  git subtree pull --prefix "${CUITE_PREFIX}" "${CUITE_REMOTE}" "${CUITE_BRANCH}" --squash
+  echo ""
+  cuite::link
+  echo ""
+  info "Checking settings..."
+  cuite::settings --quiet
+}
+
+cuite::push() {
+  :args "Push framework changes back to cuite repo" "${@}"
+
+  info "Pushing framework changes to ${CUITE_REMOTE}/${CUITE_BRANCH}..."
+  echo "  Only files under ${CUITE_PREFIX}/ will be pushed."
+  echo ""
+  git subtree push --prefix "${CUITE_PREFIX}" "${CUITE_REMOTE}" "${CUITE_BRANCH}"
+  ok "Push complete"
+}
+
+###
+### maintenance
+###
+
+cuite::settings() {
+  local quiet
+  local -a args=(
+    'quiet|q:+' "Only warn if outdated, no interactive prompt"
+  )
+  :args "Compare/sync project settings.json hooks with framework" "${@}"
+
+  if [[ ! -f "${CLAUDE_DIR}/settings.json" ]]; then
+    err "Missing ${CLAUDE_DIR}/settings.json"; return 1
+  fi
+  if [[ ! -f "${CUITE_PREFIX}/settings.json" ]]; then
+    err "Missing ${CUITE_PREFIX}/settings.json (framework template)"; return 1
+  fi
+  command -v jq &>/dev/null || {
+    err "jq is required for settings comparison"
+    echo "  Install: sudo apt install jq  /  brew install jq"
+    return 1
+  }
+
+  local project_hooks framework_hooks
+  project_hooks=$(jq -S '.hooks // {}' "${CLAUDE_DIR}/settings.json")
+  framework_hooks=$(jq -S '.hooks // {}' "${CUITE_PREFIX}/settings.json")
+
+  if [[ "${project_hooks}" == "${framework_hooks}" ]]; then
+    ok "Hooks section is up to date"
+    return 0
+  fi
+
+  warn "Hooks differ between project and framework"
+
+  if (( quiet )); then
+    echo "  Run 'cuite settings' to review and sync."
+    return 0
+  fi
+
+  echo ""
+  echo "Diff (project vs framework hooks):"
+  diff --color=auto <(echo "${project_hooks}") <(echo "${framework_hooks}") || true
+  echo ""
+  echo "Your project permissions (preserved during sync):"
+  jq -r '.permissions.allow[]' "${CLAUDE_DIR}/settings.json" 2>/dev/null | sed 's/^/  /'
+  echo ""
+
+  read -rp "Update project hooks from framework? [y/N] " answer
+  if [[ "${answer}" =~ ^[Yy]$ ]]; then
+    jq --argjson hooks "${framework_hooks}" '.hooks = $hooks' \
+      "${CLAUDE_DIR}/settings.json" > "${CLAUDE_DIR}/settings.json.tmp"
+    mv "${CLAUDE_DIR}/settings.json.tmp" "${CLAUDE_DIR}/settings.json"
+    ok "Hooks updated from framework"
+  else
+    info "Skipped."
+  fi
+}
+
+cuite::status() {
+  :args "Show framework status (remote, symlinks, domains)" "${@}"
+
+  echo ""
+  echo "cuite v${CUITE_VERSION} — framework status"
+  echo "================================"
+  echo ""
+
+  # Remote
+  if git remote get-url "${CUITE_REMOTE}" &>/dev/null; then
+    ok "Remote: $(git remote get-url "${CUITE_REMOTE}")"
+  else
+    err "Remote '${CUITE_REMOTE}' not configured"
+  fi
+
+  # Subtree
+  if [[ -d "${CUITE_PREFIX}" ]]; then
+    ok "Subtree: ${CUITE_PREFIX}"
+    echo "  Last: $(git log -1 --format='%h %s (%cr)' -- "${CUITE_PREFIX}/" 2>/dev/null || echo unknown)"
+  else
+    err "Subtree not found at ${CUITE_PREFIX}"
+  fi
+
+  # Symlinks
+  echo ""
+  info "Symlinks:"
+  local link target _ok=0 _broken=0
+
+  # Static links
+  for link in $(printf '%s\n' "${!LINKS[@]}" | sort); do
+    target="${LINKS[${link}]}"
+    if [[ -L "${link}" ]] && [[ "$(readlink "${link}")" == "${target}" ]]; then
+      ok "  ${link#"${CLAUDE_DIR}"/} → ${target}"
+      ((_ok++)) || true
+    elif [[ -L "${link}" ]]; then
+      warn "  ${link#"${CLAUDE_DIR}"/} → $(readlink "${link}")  (expected: ${target})"
+      ((_broken++)) || true
+    else
+      err "  ${link#"${CLAUDE_DIR}"/} — not a symlink"
+      ((_broken++)) || true
+    fi
+  done
+
+  # File-level links (hooks, commands)
+  local src_dir link_dir file fname expected
+  for src_dir in $(printf '%s\n' "${!FILE_LINK_DIRS[@]}" | sort); do
+    link_dir="${CLAUDE_DIR}/${FILE_LINK_DIRS[${src_dir}]}"
+    if [[ -L "${link_dir}" ]]; then
+      warn "  ${src_dir}/ is a directory symlink (run 'cuite link' to migrate)"
+      ((_broken++)) || true
+      continue
+    fi
+    for file in "${CUITE_PREFIX}/${src_dir}"/*; do
+      [[ -f "${file}" ]] || continue
+      fname=$(basename "${file}")
+      link="${link_dir}/${fname}"
+      expected="../cuite/${src_dir}/${fname}"
+      if [[ -L "${link}" ]] && [[ "$(readlink "${link}")" == "${expected}" ]]; then
+        ok "  ${src_dir}/${fname} → ${expected}"
+        ((_ok++)) || true
+      elif [[ -L "${link}" ]]; then
+        warn "  ${src_dir}/${fname} → $(readlink "${link}")  (expected: ${expected})"
+        ((_broken++)) || true
+      else
+        err "  ${src_dir}/${fname} — not a symlink"
+        ((_broken++)) || true
+      fi
+    done
+  done
+  echo "  (${_ok} ok, ${_broken} need fixing)"
+
+  # Project files
+  echo ""
+  info "Project files:"
+  local f
+  for f in settings.json domain-map.conf domains.md tuning.conf settings.local.json; do
+    if [[ -f "${CLAUDE_DIR}/${f}" && ! -L "${CLAUDE_DIR}/${f}" ]]; then
+      ok "  ${f}"
+    elif [[ -L "${CLAUDE_DIR}/${f}" ]]; then
+      warn "  ${f}  (symlink — should be a real file)"
+    else
+      err "  ${f}  (missing)"
+    fi
+  done
+
+  # Domains
+  echo ""
+  info "Domains:"
+  local _dc=0 dir name
+  for dir in "${CLAUDE_DIR}/agents/experts"/*/; do
+    [[ -d "${dir}" ]] || continue
+    name=$(basename "${dir}")
+    [[ -f "${dir}/expertise.yaml" || -f "${dir}/tips.md" ]] || continue
+    ok "  ${name}"
+    ((_dc++)) || true
+  done
+  (( _dc > 0 )) || echo "  (none — run agent-teams-blueprint.md)"
+
+  # Settings sync check
+  echo ""
+  command -v jq &>/dev/null && { cuite::settings --quiet 2>/dev/null || true; } \
+    || warn "Install jq for settings comparison"
+}
+
+cuite::log() {
+  local count="20"
+  local -a args=(
+    'count' "Number of commits to show"
+  )
+  :args "Show cuite-related commits" "${@}"
+
+  git log --oneline --graph -- "${CUITE_PREFIX}/" | head -"${count}"
+}
+
+cuite::diff() {
+  :args "Show uncommitted changes in cuite subtree" "${@}"
+
+  git diff HEAD -- "${CUITE_PREFIX}/"
+}
+
+cuite::envrc() {
+  :args "Create or update .envrc to add cuite bin to PATH" "${@}"
+
+  local envrc="${PATH_BASE}/.envrc"
+  local marker="# cuite"
+  local block
+  read -r -d '' block <<'ENVRC' || true
+# cuite
+: "${CUITE_BIN:="$(git rev-parse --show-toplevel)/.claude/cuite/bin"}"
+PATH_add "${CUITE_BIN}"
+# /cuite
+ENVRC
+
+  if [[ ! -f "${envrc}" ]]; then
+    cat > "${envrc}" <<'EOF'
+#!/usr/bin/env bash
+set -eu -o pipefail
+
+EOF
+    echo "${block}" >> "${envrc}"
+    ok "Created ${envrc}"
+  elif grep -q "${marker}" "${envrc}"; then
+    warn "cuite block already exists in ${envrc} — skipping"
+    return 0
+  else
+    echo "" >> "${envrc}"
+    echo "${block}" >> "${envrc}"
+    ok "Appended cuite PATH to ${envrc}"
+  fi
+
+  if command -v direnv &>/dev/null; then
+    info "Run 'direnv allow' to activate"
+  else
+    warn "direnv not installed — install it to auto-load .envrc"
+    echo "  https://direnv.net/docs/installation.html"
+  fi
+}
+
+# ═════════════════════════════════════════════════════════════
+# Main dispatcher
+# ═════════════════════════════════════════════════════════════
+
+cuite() {
+  local -a usage=(
+    - "Setup"
+    'init'     "Initialize cuite (remote + subtree + symlinks)"
+    'link'     "Refresh symlinks"
+    'envrc'    "Create/update .envrc for direnv (adds cuite to PATH)"
+    - "Updates"
+    'pull'     "Pull framework updates"
+    'push'     "Push framework changes back"
+    - "Maintenance"
+    'settings' "Compare/sync settings hooks"
+    'status'   "Show framework status"
+    'log'      "Show cuite-related commits"
+    'diff'     "Show uncommitted framework changes"
+  )
+  :usage "Claude sUITE Framework Manager v${CUITE_VERSION}" "${@}"
+  "${usage[@]}"
+}
+
+[[ "${BASH_SOURCE[0]}" != "${0}" ]] || cuite "${@}"
