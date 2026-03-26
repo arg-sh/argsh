@@ -730,22 +730,26 @@ fn execute_tool(script_path: &str, cli_args: &[String]) -> (i32, String, String)
 
 /// Check if a string is likely valid JSON (object or array) by verifying
 /// balanced braces/brackets while respecting string literals.
+/// Validate that a string is well-formed JSON by checking structure with a
+/// stack-based bracket matcher. Verifies that braces/brackets are properly
+/// nested and matched (not just balanced), strings are terminated, and there
+/// are no stray characters after the root value.
 pub fn is_likely_valid_json(s: &str) -> bool {
     let trimmed = s.trim();
     if trimmed.is_empty() {
         return false;
     }
-    let bytes = trimmed.as_bytes();
-    let first = bytes[0];
-    let last = bytes[bytes.len() - 1];
-    if !((first == b'{' && last == b'}') || (first == b'[' && last == b']')) {
+    if !trimmed.starts_with('{') && !trimmed.starts_with('[') {
         return false;
     }
-    // Check balanced braces/brackets while tracking string context
-    let mut depth: i32 = 0;
+    // Stack-based matching: push openers, pop on matching closer
+    let mut stack: Vec<u8> = Vec::new();
     let mut in_string = false;
     let mut escape = false;
-    for &b in bytes {
+    let mut root_closed_at: Option<usize> = None;
+    let bytes = trimmed.as_bytes();
+
+    for (i, &b) in bytes.iter().enumerate() {
         if in_string {
             if escape {
                 escape = false;
@@ -762,17 +766,31 @@ pub fn is_likely_valid_json(s: &str) -> bool {
         }
         match b {
             b'"' => in_string = true,
-            b'{' | b'[' => depth += 1,
-            b'}' | b']' => {
-                depth -= 1;
-                if depth < 0 {
-                    return false;
+            b'{' | b'[' => stack.push(b),
+            b'}' => {
+                if stack.last() != Some(&b'{') {
+                    return false; // mismatched: expected { but got something else
+                }
+                stack.pop();
+                if stack.is_empty() {
+                    root_closed_at = Some(i);
+                }
+            }
+            b']' => {
+                if stack.last() != Some(&b'[') {
+                    return false; // mismatched: expected [ but got something else
+                }
+                stack.pop();
+                if stack.is_empty() {
+                    root_closed_at = Some(i);
                 }
             }
             _ => {}
         }
     }
-    depth == 0 && !in_string
+
+    // Valid if: stack is empty, not in a string, and root closed at the last char
+    stack.is_empty() && !in_string && root_closed_at == Some(bytes.len() - 1)
 }
 
 // -- Minimal JSON parsing -----------------------------------------------------
