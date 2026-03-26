@@ -584,6 +584,394 @@ pub fn extract_flags_for_llm(args_arr: &[String]) -> Vec<FlagInfo> {
     flags
 }
 
+// -- Command tree walker ------------------------------------------------------
+
+/// A node in the command tree. Each node represents a subcommand (or the root).
+#[allow(dead_code)]
+pub struct CommandNode {
+    pub name: String,           // subcommand name (e.g. "up")
+    pub desc: String,           // description
+    pub full_path: Vec<String>, // full command path (e.g. ["cluster", "up"])
+    pub flags: Vec<FlagInfo>,   // per-command flags from args array (excludes help)
+    pub children: Vec<CommandNode>, // nested subcommands
+    pub hidden: bool,           // #-prefixed entries
+}
+
+/// Build a command tree by recursively discovering subcommands.
+///
+/// Starts from the top-level `usage_pairs` and for each subcommand, resolves
+/// the actual function name, retrieves its body via `declare -f`, and parses
+/// nested `usage` and `args` arrays from the function body text.
+pub fn build_command_tree(
+    usage_pairs: &[String],
+    parent_args: &[String],
+    caller: Option<&str>,
+) -> Vec<CommandNode> {
+    let parent_flags = extract_flags_for_llm(parent_args);
+    let mut nodes = Vec::new();
+
+    for i in (0..usage_pairs.len()).step_by(2) {
+        let entry = &usage_pairs[i];
+        let desc = usage_pairs.get(i + 1).map(|s| s.as_str()).unwrap_or("");
+
+        // Skip group separators
+        if entry == "-" {
+            continue;
+        }
+
+        let hidden = entry.starts_with('#');
+        let entry_clean = entry.strip_prefix('#').unwrap_or(entry);
+
+        // Extract command name (before | or :)
+        let entry_cmd_part = entry_clean.split(':').next().unwrap_or(entry_clean);
+        let name = entry_cmd_part.split('|').next().unwrap_or(entry_cmd_part);
+
+        // Resolve function name using the same logic as :usage dispatch
+        let func_name = resolve_function_name(entry_clean, name, caller);
+        let func_name = match func_name {
+            Some(f) => f,
+            None => {
+                // Can't resolve — treat as leaf with parent flags
+                nodes.push(CommandNode {
+                    name: name.to_string(),
+                    desc: desc.to_string(),
+                    full_path: vec![name.to_string()],
+                    flags: parent_flags.clone(),
+                    children: Vec::new(),
+                    hidden,
+                });
+                continue;
+            }
+        };
+
+        // Get function body via declare -f
+        let body = get_function_body(&func_name);
+        let body = match body {
+            Some(b) => b,
+            None => {
+                // No body — treat as leaf with parent flags
+                nodes.push(CommandNode {
+                    name: name.to_string(),
+                    desc: desc.to_string(),
+                    full_path: vec![name.to_string()],
+                    flags: parent_flags.clone(),
+                    children: Vec::new(),
+                    hidden,
+                });
+                continue;
+            }
+        };
+
+        // Parse usage and args arrays from the function body
+        let sub_usage = parse_shell_array_from_body(&body, "usage");
+        let sub_args = parse_shell_array_from_body(&body, "args");
+
+        // Determine flags for this node: its own args if present, else inherit parent
+        let own_flags = if sub_args.is_empty() {
+            parent_flags.clone()
+        } else {
+            // Merge parent flags with own flags (own flags take precedence)
+            let own = extract_flags_for_llm(&sub_args);
+            let mut merged = own;
+            // Add parent flags that aren't overridden by child
+            for f in parent_flags.iter() {
+                if !merged.iter().any(|existing| existing.name == f.name) {
+                    merged.push(f.clone());
+                }
+            }
+            merged
+        };
+
+        if sub_usage.is_empty() {
+            // Leaf node
+            nodes.push(CommandNode {
+                name: name.to_string(),
+                desc: desc.to_string(),
+                full_path: vec![name.to_string()],
+                flags: own_flags,
+                children: Vec::new(),
+                hidden,
+            });
+        } else {
+            // Recurse into children
+            let children = build_command_tree(&sub_usage, &sub_args, Some(&func_name));
+            // Fix up children full_path to include this node's name
+            let children: Vec<CommandNode> = children
+                .into_iter()
+                .map(|mut child| {
+                    let mut path = vec![name.to_string()];
+                    path.extend(child.full_path);
+                    child.full_path = path;
+                    child
+                })
+                .collect();
+
+            nodes.push(CommandNode {
+                name: name.to_string(),
+                desc: desc.to_string(),
+                full_path: vec![name.to_string()],
+                flags: own_flags,
+                children,
+                hidden,
+            });
+        }
+    }
+
+    nodes
+}
+
+/// Resolve a function name using the same resolution logic as :usage dispatch.
+fn resolve_function_name(entry: &str, name: &str, caller: Option<&str>) -> Option<String> {
+    // Check for explicit :- mapping
+    if entry.contains(":-") {
+        let func = entry.split(":-").nth(1).unwrap_or("");
+        let func = func.strip_prefix('#').unwrap_or(func).to_string();
+        if shell::function_exists(&func) {
+            return Some(func);
+        }
+        return None;
+    }
+
+    // Resolution order:
+    // 1) caller::func
+    // 2) last_segment::func
+    // 3) argsh::func
+    // 4) func (bare)
+    if let Some(caller_name) = caller {
+        let prefixed = format!("{}::{}", caller_name, name);
+        if shell::function_exists(&prefixed) {
+            return Some(prefixed);
+        }
+
+        // Last segment of caller
+        if let Some(pos) = caller_name.rfind("::") {
+            let segment = &caller_name[pos + 2..];
+            let seg_prefixed = format!("{}::{}", segment, name);
+            if shell::function_exists(&seg_prefixed) {
+                return Some(seg_prefixed);
+            }
+        }
+    }
+
+    let argsh_prefixed = format!("argsh::{}", name);
+    if shell::function_exists(&argsh_prefixed) {
+        return Some(argsh_prefixed);
+    }
+
+    if shell::function_exists(name) {
+        return Some(name.to_string());
+    }
+
+    None
+}
+
+/// Get a function's body text via `declare -f`.
+fn get_function_body(func_name: &str) -> Option<String> {
+    // Validate function name to prevent injection
+    if !func_name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == ':' || c == '-') {
+        return None; // coverage:off - defensive_check: function names from usage arrays are always valid
+    }
+    shell::exec_capture(&format!("declare -f -- {}", func_name), "__argsh_r")
+}
+
+/// Parse a shell array from a `declare -f` function body.
+///
+/// Extracts the content of `local -a {name}=(...)` from the indented function
+/// body that bash's `declare -f` produces. Returns alternating key-value pairs.
+pub fn parse_shell_array_from_body(body: &str, array_name: &str) -> Vec<String> {
+    // Look for patterns like:
+    //     local -a usage=('cmd1' "desc1" 'cmd2' "desc2")
+    // or multi-line:
+    //     local -a usage=(
+    //         'cmd1' "desc1"
+    //         'cmd2' "desc2"
+    //     )
+    // Also handle `args+=(...)`-style appends and `local -a verbose args=(...)`
+    // where there are extra variable names between `-a` and the target array.
+
+    let needle_local = format!("{}=(", array_name);
+    let needle_append = format!("{}+=(", array_name);
+
+    let mut start_pos = None;
+    for needle in &[&needle_local, &needle_append] {
+        for (idx, matched) in body.match_indices(needle.as_str()) {
+            // Verify this looks like a local -a or direct assignment context
+            let prefix = &body[..idx];
+            let last_line_start = prefix.rfind('\n').map(|p| p + 1).unwrap_or(0);
+            let line_prefix = &body[last_line_start..idx];
+            // Accept: "    local -a usage=", "    local -a verbose args=", "    args+=", etc.
+            if line_prefix.contains("local") || line_prefix.trim_start().is_empty()
+                || line_prefix.trim_start().starts_with(array_name)
+            {
+                start_pos = Some(idx + matched.len());
+                break;
+            }
+        }
+        if start_pos.is_some() {
+            break;
+        }
+    }
+
+    let start = match start_pos {
+        Some(p) => p,
+        None => return Vec::new(),
+    };
+
+    // Find matching closing paren
+    let rest = &body[start..];
+    let mut depth = 1;
+    let mut end = 0;
+    let bytes = rest.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'(' => depth += 1,
+            b')' => {
+                depth -= 1;
+                if depth == 0 {
+                    end = i;
+                    break;
+                }
+            }
+            b'\'' => {
+                // Skip single-quoted string
+                i += 1;
+                while i < bytes.len() && bytes[i] != b'\'' {
+                    i += 1;
+                }
+            }
+            b'"' => {
+                // Skip double-quoted string
+                i += 1;
+                while i < bytes.len() {
+                    if bytes[i] == b'\\' {
+                        i += 1; // skip escaped char
+                    } else if bytes[i] == b'"' {
+                        break;
+                    }
+                    i += 1;
+                }
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+
+    if depth != 0 {
+        return Vec::new(); // coverage:off - defensive_check: unmatched paren in declare -f output
+    }
+
+    let content = &rest[..end];
+    parse_shell_words(content)
+}
+
+/// Parse shell words from array content (handles single and double-quoted strings).
+fn parse_shell_words(content: &str) -> Vec<String> {
+    let mut words = Vec::new();
+    let bytes = content.as_bytes();
+    let mut i = 0;
+
+    while i < bytes.len() {
+        // Skip whitespace
+        while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t' || bytes[i] == b'\n' || bytes[i] == b'\r') {
+            i += 1;
+        }
+        if i >= bytes.len() {
+            break;
+        }
+
+        if bytes[i] == b'\'' {
+            // Single-quoted string
+            i += 1;
+            let start = i;
+            while i < bytes.len() && bytes[i] != b'\'' {
+                i += 1;
+            }
+            words.push(String::from_utf8_lossy(&bytes[start..i]).to_string());
+            if i < bytes.len() {
+                i += 1; // skip closing quote
+            }
+        } else if bytes[i] == b'"' {
+            // Double-quoted string
+            i += 1;
+            let mut word = String::new();
+            while i < bytes.len() && bytes[i] != b'"' {
+                if bytes[i] == b'\\' && i + 1 < bytes.len() {
+                    // Handle escape
+                    i += 1;
+                    word.push(bytes[i] as char);
+                } else {
+                    word.push(bytes[i] as char);
+                }
+                i += 1;
+            }
+            words.push(word);
+            if i < bytes.len() {
+                i += 1; // skip closing quote
+            }
+        } else if bytes[i] != b'#' {
+            // Unquoted word (stop at whitespace)
+            let start = i;
+            while i < bytes.len() && bytes[i] != b' ' && bytes[i] != b'\t' && bytes[i] != b'\n' && bytes[i] != b'\r' {
+                i += 1;
+            }
+            words.push(String::from_utf8_lossy(&bytes[start..i]).to_string());
+        } else {
+            // Comment — skip rest of line
+            while i < bytes.len() && bytes[i] != b'\n' {
+                i += 1;
+            }
+        }
+    }
+
+    words
+}
+
+/// Flatten a command tree to leaf nodes only (nodes with no children).
+/// Skips hidden nodes.
+pub fn flatten_leaves(nodes: &[CommandNode]) -> Vec<&CommandNode> {
+    let mut leaves = Vec::new();
+    for node in nodes {
+        if node.hidden {
+            continue;
+        }
+        if node.children.is_empty() {
+            leaves.push(node);
+        } else {
+            leaves.extend(flatten_leaves(&node.children));
+        }
+    }
+    leaves
+}
+
+/// Flatten a command tree to all visible nodes (both intermediate and leaf).
+pub fn flatten_all(nodes: &[CommandNode]) -> Vec<&CommandNode> {
+    let mut all = Vec::new();
+    for node in nodes {
+        if node.hidden {
+            continue;
+        }
+        all.push(node);
+        if !node.children.is_empty() {
+            all.extend(flatten_all(&node.children));
+        }
+    }
+    all
+}
+
+impl Clone for FlagInfo {
+    fn clone(&self) -> Self {
+        FlagInfo {
+            name: self.name.clone(),
+            short: self.short.clone(),
+            desc: self.desc.clone(),
+            is_boolean: self.is_boolean,
+            type_name: self.type_name.clone(),
+            required: self.required,
+        }
+    }
+}
+
 // -- Shared JSON/LLM helpers --------------------------------------------------
 
 /// Escape a string for JSON string output.
@@ -640,4 +1028,237 @@ pub fn write_tool_properties<W: Write>(out: &mut W, flags: &[FlagInfo], indent: 
         let _ = write!(out, "\"{}\"", json_escape(name));
     }
     let _ = writeln!(out, "]");
+}
+
+// -- Unit tests ---------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_shell_words_single_quoted() {
+        let words = parse_shell_words("'hello' 'world'");
+        assert_eq!(words, vec!["hello", "world"]);
+    }
+
+    #[test]
+    fn test_parse_shell_words_double_quoted() {
+        let words = parse_shell_words("\"hello\" \"world\"");
+        assert_eq!(words, vec!["hello", "world"]);
+    }
+
+    #[test]
+    fn test_parse_shell_words_mixed() {
+        let words = parse_shell_words("'cmd1' \"Description of cmd1\" 'cmd2' \"Description of cmd2\"");
+        assert_eq!(words, vec!["cmd1", "Description of cmd1", "cmd2", "Description of cmd2"]);
+    }
+
+    #[test]
+    fn test_parse_shell_words_unquoted() {
+        let words = parse_shell_words("hello world");
+        assert_eq!(words, vec!["hello", "world"]);
+    }
+
+    #[test]
+    fn test_parse_shell_words_multiline() {
+        let words = parse_shell_words("'cmd1' \"desc1\"\n    'cmd2' \"desc2\"");
+        assert_eq!(words, vec!["cmd1", "desc1", "cmd2", "desc2"]);
+    }
+
+    #[test]
+    fn test_parse_shell_array_from_body_usage() {
+        let body = r#"cluster ()
+{
+    local -a usage=('up' "Start cluster" 'down' "Stop cluster");
+    :usage "Cluster management" "${@}";
+    "${usage[@]}"
+}"#;
+        let result = parse_shell_array_from_body(body, "usage");
+        assert_eq!(result, vec!["up", "Start cluster", "down", "Stop cluster"]);
+    }
+
+    #[test]
+    fn test_parse_shell_array_from_body_args() {
+        let body = r#"serve ()
+{
+    local port;
+    local -a args=('port|p:int' "Port number");
+    :args "Start the server" "${@}";
+    echo "serving on port ${port:-8080}"
+}"#;
+        let result = parse_shell_array_from_body(body, "args");
+        assert_eq!(result, vec!["port|p:int", "Port number"]);
+    }
+
+    #[test]
+    fn test_parse_shell_array_from_body_multiline() {
+        let body = r#"main ()
+{
+    local -a usage=(
+        'serve' "Start the server"
+        'build' "Build the project"
+    );
+    :usage "My app" "${@}"
+}"#;
+        let result = parse_shell_array_from_body(body, "usage");
+        assert_eq!(result, vec!["serve", "Start the server", "build", "Build the project"]);
+    }
+
+    #[test]
+    fn test_parse_shell_array_from_body_not_found() {
+        let body = r#"foo ()
+{
+    echo hello
+}"#;
+        let result = parse_shell_array_from_body(body, "usage");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_parse_shell_array_with_extra_locals() {
+        // bash declare -f output when there are extra vars before the array
+        let body = r#"main ()
+{
+    local config;
+    local -a verbose args=('verbose|v:+' "Enable verbose" 'config|c' "Config file");
+    :args "test" "${@}"
+}"#;
+        let result = parse_shell_array_from_body(body, "args");
+        assert_eq!(result, vec!["verbose|v:+", "Enable verbose", "config|c", "Config file"]);
+    }
+
+    #[test]
+    fn test_parse_shell_array_from_body_append_syntax() {
+        let body = r#"deploy ()
+{
+    local target;
+    args+=('target|t' "Deploy target");
+    :args "Deploy the app" "${@}"
+}"#;
+        let result = parse_shell_array_from_body(body, "args");
+        assert_eq!(result, vec!["target|t", "Deploy target"]);
+    }
+
+    #[test]
+    fn test_flatten_leaves_simple() {
+        let nodes = vec![
+            CommandNode {
+                name: "serve".to_string(),
+                desc: "Start".to_string(),
+                full_path: vec!["serve".to_string()],
+                flags: Vec::new(),
+                children: Vec::new(),
+                hidden: false,
+            },
+            CommandNode {
+                name: "build".to_string(),
+                desc: "Build".to_string(),
+                full_path: vec!["build".to_string()],
+                flags: Vec::new(),
+                children: Vec::new(),
+                hidden: false,
+            },
+        ];
+        let leaves = flatten_leaves(&nodes);
+        assert_eq!(leaves.len(), 2);
+        assert_eq!(leaves[0].name, "serve");
+        assert_eq!(leaves[1].name, "build");
+    }
+
+    #[test]
+    fn test_flatten_leaves_nested() {
+        let nodes = vec![
+            CommandNode {
+                name: "cluster".to_string(),
+                desc: "Cluster".to_string(),
+                full_path: vec!["cluster".to_string()],
+                flags: Vec::new(),
+                children: vec![
+                    CommandNode {
+                        name: "up".to_string(),
+                        desc: "Start".to_string(),
+                        full_path: vec!["cluster".to_string(), "up".to_string()],
+                        flags: Vec::new(),
+                        children: Vec::new(),
+                        hidden: false,
+                    },
+                    CommandNode {
+                        name: "down".to_string(),
+                        desc: "Stop".to_string(),
+                        full_path: vec!["cluster".to_string(), "down".to_string()],
+                        flags: Vec::new(),
+                        children: Vec::new(),
+                        hidden: false,
+                    },
+                ],
+                hidden: false,
+            },
+        ];
+        let leaves = flatten_leaves(&nodes);
+        assert_eq!(leaves.len(), 2);
+        assert_eq!(leaves[0].full_path, vec!["cluster", "up"]);
+        assert_eq!(leaves[1].full_path, vec!["cluster", "down"]);
+    }
+
+    #[test]
+    fn test_flatten_leaves_skips_hidden() {
+        let nodes = vec![
+            CommandNode {
+                name: "visible".to_string(),
+                desc: "Visible".to_string(),
+                full_path: vec!["visible".to_string()],
+                flags: Vec::new(),
+                children: Vec::new(),
+                hidden: false,
+            },
+            CommandNode {
+                name: "hidden".to_string(),
+                desc: "Hidden".to_string(),
+                full_path: vec!["hidden".to_string()],
+                flags: Vec::new(),
+                children: Vec::new(),
+                hidden: true,
+            },
+        ];
+        let leaves = flatten_leaves(&nodes);
+        assert_eq!(leaves.len(), 1);
+        assert_eq!(leaves[0].name, "visible");
+    }
+
+    #[test]
+    fn test_flatten_all_nested() {
+        let nodes = vec![
+            CommandNode {
+                name: "serve".to_string(),
+                desc: "Start".to_string(),
+                full_path: vec!["serve".to_string()],
+                flags: Vec::new(),
+                children: Vec::new(),
+                hidden: false,
+            },
+            CommandNode {
+                name: "cluster".to_string(),
+                desc: "Cluster".to_string(),
+                full_path: vec!["cluster".to_string()],
+                flags: Vec::new(),
+                children: vec![
+                    CommandNode {
+                        name: "up".to_string(),
+                        desc: "Start".to_string(),
+                        full_path: vec!["cluster".to_string(), "up".to_string()],
+                        flags: Vec::new(),
+                        children: Vec::new(),
+                        hidden: false,
+                    },
+                ],
+                hidden: false,
+            },
+        ];
+        let all = flatten_all(&nodes);
+        assert_eq!(all.len(), 3);
+        assert_eq!(all[0].name, "serve");
+        assert_eq!(all[1].name, "cluster");
+        assert_eq!(all[2].name, "up");
+    }
 }

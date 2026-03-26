@@ -1,13 +1,6 @@
 {
   "files": [
     {
-      "file": "builtin/src/usage/mcp.rs",
-      "percent_covered": "100.00",
-      "covered_lines": "393",
-      "total_lines": "393",
-      "excluded_lines": "102"
-    },
-    {
       "file": "builtin/src/usage/completion.rs",
       "percent_covered": "100.00",
       "covered_lines": "166",
@@ -71,26 +64,33 @@
       "excluded_lines": "37"
     },
     {
+      "file": "builtin/src/usage/mod.rs",
+      "percent_covered": "95.77",
+      "covered_lines": "611",
+      "total_lines": "638",
+      "excluded_lines": "22"
+    },
+    {
       "file": "builtin/src/usage/docgen.rs",
-      "percent_covered": "98.55",
-      "covered_lines": "341",
-      "total_lines": "346",
+      "percent_covered": "92.61",
+      "covered_lines": "426",
+      "total_lines": "460",
       "excluded_lines": "7"
     },
     {
-      "file": "builtin/src/usage/mod.rs",
-      "percent_covered": "97.10",
-      "covered_lines": "368",
-      "total_lines": "379",
-      "excluded_lines": "20"
+      "file": "builtin/src/usage/mcp.rs",
+      "percent_covered": "80.13",
+      "covered_lines": "383",
+      "total_lines": "478",
+      "excluded_lines": "104"
     }
   ],
-  "percent_covered": "100.00",
-  "covered_lines": 2288,
-  "total_lines": 2288,
-  "excluded_lines": 224,
+  "percent_covered": "94.79",
+  "covered_lines": 2603,
+  "total_lines": 2746,
+  "excluded_lines": 228,
   "percent_low": 25,
   "percent_high": 75,
   "command": "bats+llvm-cov",
-  "date": "2026-02-14 17:10:17"
+  "date": "2026-03-26 16:01:24"
 }

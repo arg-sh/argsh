@@ -11,9 +11,11 @@ use crate::shell;
 use std::ffi::{c_char, c_int};
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::process::{Command, Stdio};
+#[allow(unused_imports)]
 use super::{
     extract_subcommands, extract_flags_for_llm,
     json_escape, argsh_type_to_json, sanitize_tool_name,
+    build_command_tree, flatten_leaves,
     FlagInfo, SubCmd,
 };
 
@@ -113,9 +115,34 @@ pub fn mcp_main(args: &[String]) -> i32 {
     };
     let script_path = shell::get_script_path();
 
-    // Pre-extract tool data (immutable for the session)
-    let subcmds = extract_subcommands(usage_pairs);
-    let flags = extract_flags_for_llm(&args_arr);
+    // Build command tree and extract leaf tools
+    let caller = shell::get_funcname(0);
+    let tree = build_command_tree(usage_pairs, &args_arr, caller.as_deref());
+    let leaves = flatten_leaves(&tree);
+
+    // Build owned leaf data for the session (tool_name, full_path, flags)
+    let leaf_tools: Vec<LeafTool> = if leaves.is_empty() {
+        // No subcommands (or all hidden) — single tool for the script itself
+        let top_flags = extract_flags_for_llm(&args_arr);
+        vec![LeafTool {
+            tool_name: sanitize_tool_name(&cmd_name),
+            full_path: Vec::new(),
+            desc: title.lines().next().unwrap_or(title).trim().to_string(),
+            flags: top_flags,
+        }]
+    } else {
+        leaves.iter().map(|leaf| {
+            let tool_name = sanitize_tool_name(
+                &format!("{}_{}", cmd_name, leaf.full_path.join("_")),
+            );
+            LeafTool {
+                tool_name,
+                full_path: leaf.full_path.clone(),
+                desc: leaf.desc.clone(),
+                flags: leaf.flags.clone(),
+            }
+        }).collect()
+    };
 
     // JSON-RPC stdio loop
     let stdin = std::io::stdin();
@@ -145,13 +172,13 @@ pub fn mcp_main(args: &[String]) -> i32 {
                 handle_ping(&mut writer, &id);
             }
             Some("tools/list") => {
-                handle_tools_list(&mut writer, &id, &cmd_name, title, &subcmds, &flags);
+                handle_tools_list_v2(&mut writer, &id, title, &leaf_tools);
             }
             Some("tools/call") => {
                 let params = extract_json_field(&line, "params").unwrap_or_default();
-                handle_tools_call(
+                handle_tools_call_v2(
                     &mut writer, &id, &params,
-                    &script_path, &cmd_name, &subcmds, &flags,
+                    &script_path, &leaf_tools,
                 );
             }
             Some(_) => {
@@ -207,7 +234,36 @@ fn handle_ping<W: Write>(writer: &mut W, id: &Option<String>) {
     write_jsonrpc_response(writer, id, "{}");
 }
 
-/// Handle `tools/list` request.
+/// Owned leaf tool data extracted from the command tree.
+struct LeafTool {
+    tool_name: String,
+    full_path: Vec<String>,
+    desc: String,
+    flags: Vec<FlagInfo>,
+}
+
+/// Handle `tools/list` request (v2 — tree-aware, per-leaf flags).
+fn handle_tools_list_v2<W: Write>(
+    writer: &mut W,
+    id: &Option<String>,
+    _title: &str,
+    leaf_tools: &[LeafTool],
+) {
+    let mut tools = String::from("{\"tools\":[");
+
+    for (i, leaf) in leaf_tools.iter().enumerate() {
+        if i > 0 {
+            tools.push(',');
+        }
+        tools.push_str(&format_tool(&leaf.tool_name, &leaf.desc, &leaf.flags));
+    }
+
+    tools.push_str("]}");
+    write_jsonrpc_response(writer, id, &tools);
+}
+
+/// Handle `tools/list` request (legacy — kept for backward compatibility).
+#[allow(dead_code)]
 fn handle_tools_list<W: Write>(
     writer: &mut W,
     id: &Option<String>,
@@ -276,7 +332,84 @@ fn format_tool(name: &str, description: &str, flags: &[FlagInfo]) -> String {
     s
 }
 
-/// Handle `tools/call` request.
+/// Handle `tools/call` request (v2 — tree-aware, per-leaf flags and full command paths).
+fn handle_tools_call_v2<W: Write>(
+    writer: &mut W,
+    id: &Option<String>,
+    params: &str,
+    script_path: &str,
+    leaf_tools: &[LeafTool],
+) {
+    // Extract tool name and arguments from params
+    let tool_name = match extract_json_string(params, "name") {
+        Some(n) => n,
+        None => {
+            write_jsonrpc_error(writer, id, -32602, "Missing tool name");
+            return;
+        }
+    };
+
+    // Find matching leaf tool
+    let leaf = leaf_tools.iter().find(|t| t.tool_name == tool_name);
+    let leaf = match leaf {
+        Some(l) => l,
+        None => {
+            write_jsonrpc_error(writer, id, -32602, &format!("Unknown tool: {}", tool_name));
+            return;
+        }
+    };
+
+    // Parse arguments
+    let args_json = extract_json_field(params, "arguments").unwrap_or_default();
+    let arg_pairs = parse_flat_json_object(&args_json);
+
+    // Build CLI args — prepend all path segments then flags
+    let mut cli_args: Vec<String> = leaf.full_path.clone();
+    for (key, value) in &arg_pairs {
+        let flag = leaf.flags.iter().find(|f| f.name == *key);
+        if flag.is_none() {
+            continue; // Unknown arg — ignore (lenient for LLM hallucinations)
+        }
+        match value {
+            JsonValue::Bool(true) => {
+                cli_args.push(format!("--{}", key));
+            }
+            JsonValue::Bool(false) | JsonValue::Null => {
+                // Omit
+            }
+            JsonValue::Str(s) => {
+                cli_args.push(format!("--{}", key));
+                cli_args.push(s.clone());
+            }
+            JsonValue::Number(n) => {
+                cli_args.push(format!("--{}", key));
+                cli_args.push(n.clone());
+            }
+        }
+    }
+
+    // Execute
+    let (exit_code, stdout_text, stderr_text) = execute_tool(script_path, &cli_args);
+
+    // Format response
+    let is_error = exit_code != 0;
+    let text = if is_error && !stderr_text.is_empty() { // coverage:off - error_path: test fixtures always succeed
+        format!("{}\n{}", stdout_text, stderr_text) // coverage:off
+    } else {
+        stdout_text
+    };
+    let text = text.trim_end_matches('\n');
+
+    let result = format!(
+        "{{\"content\":[{{\"type\":\"text\",\"text\":\"{}\"}}],\"isError\":{}}}",
+        json_escape(text),
+        is_error
+    );
+    write_jsonrpc_response(writer, id, &result);
+}
+
+/// Handle `tools/call` request (legacy — kept for backward compatibility).
+#[allow(dead_code)]
 fn handle_tools_call<W: Write>(
     writer: &mut W,
     id: &Option<String>,
