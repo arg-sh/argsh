@@ -19,9 +19,10 @@ main() {
     'config|c'    "Config file path"
   )
   local -a usage=(
-    'serve'   "Start the server"
-    'build'   "Build the project"
-    'cluster' "Cluster management"
+    'serve@readonly'     "Start the server"
+    'build@destructive'  "Build the project"
+    'cluster'            "Cluster management"
+    'status@json'        "Get status as JSON"
   )
   :usage "My test application" "${@}"
   "${usage[@]}"
@@ -45,6 +46,11 @@ build() {
   )
   :args "Build the project" "${@}"
   echo "building to ${output:-dist}"
+}
+
+status() {
+  :args "Get status as JSON" "${@}"
+  echo '{"status":"ok","uptime":42}'
 }
 
 cluster() {
