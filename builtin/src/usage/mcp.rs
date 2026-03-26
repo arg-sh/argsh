@@ -396,7 +396,7 @@ pub(crate) fn handle_resources_list<W: Write>(writer: &mut W, id: &Option<String
 /// Handle `resources/read` request.
 /// Generates help text in-process from the already-parsed metadata to avoid
 /// re-executing the script (which could have side effects).
-fn handle_resources_read<W: Write>(
+pub(crate) fn handle_resources_read<W: Write>(
     writer: &mut W,
     id: &Option<String>,
     params: &str,
@@ -435,8 +435,21 @@ fn handle_resources_read<W: Write>(
 
 /// Handle `prompts/list` request.
 pub(crate) fn handle_prompts_list<W: Write>(writer: &mut W, id: &Option<String>) {
-    let result = r#"{"prompts":[{"name":"run_subcommand","description":"Run a specific subcommand","arguments":[{"name":"subcommand","description":"The subcommand to run","required":true},{"name":"args","description":"Additional arguments","required":false}]},{"name":"get_help","description":"Show help for a subcommand","arguments":[{"name":"subcommand","description":"The subcommand to get help for","required":false}]}]}"#;
-    write_jsonrpc_response(writer, id, result);
+    let mut prompts = String::from("{\"prompts\":[");
+
+    // run_subcommand prompt
+    prompts.push_str("{\"name\":\"run_subcommand\",\"description\":\"Run a specific subcommand\",\"arguments\":[");
+    prompts.push_str("{\"name\":\"subcommand\",\"description\":\"The subcommand to run\",\"required\":true},");
+    prompts.push_str("{\"name\":\"args\",\"description\":\"Additional arguments\",\"required\":false}");
+    prompts.push_str("]},");
+
+    // get_help prompt
+    prompts.push_str("{\"name\":\"get_help\",\"description\":\"Show help for a subcommand\",\"arguments\":[");
+    prompts.push_str("{\"name\":\"subcommand\",\"description\":\"The subcommand to get help for\",\"required\":false}");
+    prompts.push_str("]}");
+
+    prompts.push_str("]}");
+    write_jsonrpc_response(writer, id, &prompts);
 }
 
 /// Handle `prompts/get` request.

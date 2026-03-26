@@ -1596,4 +1596,65 @@ mod tests {
         let subcmd = mcp::extract_json_string(&args, "subcommand").unwrap();
         assert_eq!(subcmd, "serve");
     }
+
+    #[test]
+    fn test_mcp_resources_read_help() {
+        let mut buf = Vec::new();
+        let id = Some("1".to_string());
+        let tools = vec![
+            mcp::LeafTool {
+                tool_name: "app_serve".to_string(),
+                full_path: vec!["serve".to_string()],
+                desc: "Start server".to_string(),
+                flags: vec![],
+                annotations: vec![],
+            },
+            mcp::LeafTool {
+                tool_name: "app_build".to_string(),
+                full_path: vec!["build".to_string()],
+                desc: "Build project".to_string(),
+                flags: vec![],
+                annotations: vec![],
+            },
+        ];
+        mcp::handle_resources_read(
+            &mut buf, &id,
+            r#"{"uri":"script:///help"}"#,
+            "app", "My app", &tools,
+        );
+        let output = String::from_utf8(buf).unwrap();
+        assert!(output.contains("My app"));
+        assert!(output.contains("serve"));
+        assert!(output.contains("build"));
+    }
+
+    #[test]
+    fn test_mcp_resources_read_version() {
+        let mut buf = Vec::new();
+        let id = Some("1".to_string());
+        let tools = vec![];
+        mcp::handle_resources_read(
+            &mut buf, &id,
+            r#"{"uri":"script:///version"}"#,
+            "app", "My app", &tools,
+        );
+        let output = String::from_utf8(buf).unwrap();
+        assert!(output.contains("\"result\""));
+        assert!(output.contains("script:///version"));
+    }
+
+    #[test]
+    fn test_mcp_resources_read_unknown_uri() {
+        let mut buf = Vec::new();
+        let id = Some("1".to_string());
+        let tools = vec![];
+        mcp::handle_resources_read(
+            &mut buf, &id,
+            r#"{"uri":"script:///nonexistent"}"#,
+            "app", "My app", &tools,
+        );
+        let output = String::from_utf8(buf).unwrap();
+        assert!(output.contains("-32602"));
+        assert!(output.contains("Unknown resource URI"));
+    }
 }
