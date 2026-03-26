@@ -10,7 +10,8 @@ use std::io::Write;
 use super::{
     extract_subcommands, extract_flags, extract_flags_for_llm,
     json_escape, sanitize_tool_name, write_tool_properties,
-    FlagInfo,
+    build_command_tree, flatten_leaves, flatten_all,
+    FlagInfo, CommandNode,
 };
 
 // -- :usage::docgen builtin registration --------------------------------------
@@ -93,22 +94,26 @@ pub fn usage_docgen_main(args: &[String]) -> i32 {
         shell::get_script_name() // coverage:off - defensive_check: always called via :usage dispatch which sets COMMANDNAME
     };
 
+    // Build command tree for nested subcommand discovery
+    let caller = shell::get_funcname(0);
+    let tree = build_command_tree(usage_pairs, &args_arr, caller.as_deref());
+
     let out = std::io::stdout();
     let mut out = out.lock();
 
     match format.as_str() {
-        "man" => generate_man_page(&mut out, &cmd_name, title, usage_pairs, &args_arr),
-        "md" => generate_markdown(&mut out, &cmd_name, title, usage_pairs, &args_arr),
-        "rst" => generate_rst(&mut out, &cmd_name, title, usage_pairs, &args_arr),
-        "yaml" => generate_yaml(&mut out, &cmd_name, title, usage_pairs, &args_arr),
+        "man" => generate_man_page(&mut out, &cmd_name, title, usage_pairs, &args_arr, &tree),
+        "md" => generate_markdown(&mut out, &cmd_name, title, usage_pairs, &args_arr, &tree),
+        "rst" => generate_rst(&mut out, &cmd_name, title, usage_pairs, &args_arr, &tree),
+        "yaml" => generate_yaml(&mut out, &cmd_name, title, usage_pairs, &args_arr, &tree),
         "llm" => {
             let provider = user_args.get(1).map(|s| s.as_str());
             match provider {
                 Some("claude") | Some("anthropic") => {
-                    generate_llm_claude(&mut out, &cmd_name, title, usage_pairs, &args_arr);
+                    generate_llm_claude(&mut out, &cmd_name, title, usage_pairs, &args_arr, &tree);
                 }
                 Some("openai") | Some("gemini") | Some("kimi") => {
-                    generate_llm_openai(&mut out, &cmd_name, title, usage_pairs, &args_arr);
+                    generate_llm_openai(&mut out, &cmd_name, title, usage_pairs, &args_arr, &tree);
                 }
                 Some(unknown) => {
                     return shared::error_usage("", &format!(
@@ -138,9 +143,11 @@ fn generate_man_page<W: Write>(
     title: &str,
     usage_pairs: &[String],
     args_arr: &[String],
+    tree: &[CommandNode],
 ) {
     let cmds = extract_subcommands(usage_pairs);
     let flags = extract_flags(args_arr);
+    let all_nodes = flatten_all(tree);
     let upper_name = cmd_name.to_uppercase();
     let first_line = title.lines().next().unwrap_or(title).trim();
 
@@ -170,8 +177,15 @@ fn generate_man_page<W: Write>(
         }
     }
 
-    // COMMANDS
-    if !cmds.is_empty() {
+    // COMMANDS — show all discovered nodes (flattened with full path)
+    if !all_nodes.is_empty() {
+        let _ = writeln!(out, ".SH COMMANDS");
+        for node in &all_nodes {
+            let _ = writeln!(out, ".TP");
+            let _ = writeln!(out, ".B {}", node.full_path.join(" "));
+            let _ = writeln!(out, "{}", man_escape(&node.desc));
+        }
+    } else if !cmds.is_empty() {
         let _ = writeln!(out, ".SH COMMANDS");
         for cmd in &cmds {
             let _ = writeln!(out, ".TP");
@@ -180,7 +194,7 @@ fn generate_man_page<W: Write>(
         }
     }
 
-    // OPTIONS
+    // OPTIONS (top-level flags)
     if !flags.is_empty() {
         let _ = writeln!(out, ".SH OPTIONS");
         for flag in &flags {
@@ -230,9 +244,11 @@ fn generate_markdown<W: Write>(
     title: &str,
     usage_pairs: &[String],
     args_arr: &[String],
+    tree: &[CommandNode],
 ) {
     let cmds = extract_subcommands(usage_pairs);
     let flags = extract_flags(args_arr);
+    let all_nodes = flatten_all(tree);
     let first_line = title.lines().next().unwrap_or(title).trim();
 
     let _ = writeln!(out, "# {}\n", cmd_name);
@@ -256,8 +272,16 @@ fn generate_markdown<W: Write>(
         let _ = writeln!(out);
     }
 
-    // Commands
-    if !cmds.is_empty() {
+    // Commands — show all discovered nodes (flattened with full path)
+    if !all_nodes.is_empty() {
+        let _ = writeln!(out, "## Commands\n");
+        let _ = writeln!(out, "| Command | Description |");
+        let _ = writeln!(out, "|---------|-------------|");
+        for node in &all_nodes {
+            let _ = writeln!(out, "| `{}` | {} |", node.full_path.join(" "), node.desc);
+        }
+        let _ = writeln!(out);
+    } else if !cmds.is_empty() {
         let _ = writeln!(out, "## Commands\n");
         let _ = writeln!(out, "| Command | Description |");
         let _ = writeln!(out, "|---------|-------------|");
@@ -295,9 +319,11 @@ fn generate_rst<W: Write>(
     title: &str,
     usage_pairs: &[String],
     args_arr: &[String],
+    tree: &[CommandNode],
 ) {
     let cmds = extract_subcommands(usage_pairs);
     let flags = extract_flags(args_arr);
+    let all_nodes = flatten_all(tree);
     let first_line = title.lines().next().unwrap_or(title).trim();
 
     // Title
@@ -327,8 +353,15 @@ fn generate_rst<W: Write>(
         let _ = writeln!(out);
     }
 
-    // Commands
-    if !cmds.is_empty() {
+    // Commands — show all discovered nodes (flattened with full path)
+    if !all_nodes.is_empty() {
+        let _ = writeln!(out, "Commands");
+        let _ = writeln!(out, "--------\n");
+        for node in &all_nodes {
+            let _ = writeln!(out, "**{}**", node.full_path.join(" "));
+            let _ = writeln!(out, "   {}\n", node.desc);
+        }
+    } else if !cmds.is_empty() {
         let _ = writeln!(out, "Commands");
         let _ = writeln!(out, "--------\n");
         for cmd in &cmds {
@@ -372,9 +405,11 @@ fn generate_yaml<W: Write>(
     title: &str,
     usage_pairs: &[String],
     args_arr: &[String],
+    tree: &[CommandNode],
 ) {
     let cmds = extract_subcommands(usage_pairs);
     let flags = extract_flags(args_arr);
+    let all_nodes = flatten_all(tree);
     let first_line = title.lines().next().unwrap_or(title).trim();
 
     let _ = writeln!(out, "name: \"{}\"", yaml_escape(cmd_name));
@@ -387,8 +422,14 @@ fn generate_yaml<W: Write>(
     };
     let _ = writeln!(out, "synopsis: \"{}\"", yaml_escape(&synopsis));
 
-    // Commands
-    if !cmds.is_empty() {
+    // Commands — show all discovered nodes (flattened with full path)
+    if !all_nodes.is_empty() {
+        let _ = writeln!(out, "commands:");
+        for node in &all_nodes {
+            let _ = writeln!(out, "  - name: \"{}\"", yaml_escape(&node.full_path.join(" ")));
+            let _ = writeln!(out, "    description: \"{}\"", yaml_escape(&node.desc));
+        }
+    } else if !cmds.is_empty() {
         let _ = writeln!(out, "commands:");
         for cmd in &cmds {
             let _ = writeln!(out, "  - name: \"{}\"", yaml_escape(&cmd.name));
@@ -421,22 +462,26 @@ fn generate_llm_claude<W: Write>(
     out: &mut W,
     cmd_name: &str,
     title: &str,
-    usage_pairs: &[String],
+    _usage_pairs: &[String],
     args_arr: &[String],
+    tree: &[CommandNode],
 ) {
-    let cmds = extract_subcommands(usage_pairs);
-    let flags = extract_flags_for_llm(args_arr);
+    let leaves = flatten_leaves(tree);
     let first_line = title.lines().next().unwrap_or(title).trim();
 
     let _ = writeln!(out, "[");
 
-    if cmds.is_empty() {
+    if leaves.is_empty() {
+        // No subcommands — single tool for the script itself
+        let flags = extract_flags_for_llm(args_arr);
         write_claude_tool(out, &sanitize_tool_name(cmd_name), first_line, &flags, true);
     } else {
-        for (i, cmd) in cmds.iter().enumerate() {
-            let tool_name = sanitize_tool_name(&format!("{}_{}", cmd_name, cmd.name));
-            let desc = if cmd.desc.is_empty() { first_line } else { &cmd.desc };
-            write_claude_tool(out, &tool_name, desc, &flags, i == cmds.len() - 1);
+        for (i, leaf) in leaves.iter().enumerate() {
+            let tool_name = sanitize_tool_name(
+                &format!("{}_{}", cmd_name, leaf.full_path.join("_")),
+            );
+            let desc = if leaf.desc.is_empty() { first_line } else { &leaf.desc };
+            write_claude_tool(out, &tool_name, desc, &leaf.flags, i == leaves.len() - 1);
         }
     }
 
@@ -461,22 +506,26 @@ fn generate_llm_openai<W: Write>(
     out: &mut W,
     cmd_name: &str,
     title: &str,
-    usage_pairs: &[String],
+    _usage_pairs: &[String],
     args_arr: &[String],
+    tree: &[CommandNode],
 ) {
-    let cmds = extract_subcommands(usage_pairs);
-    let flags = extract_flags_for_llm(args_arr);
+    let leaves = flatten_leaves(tree);
     let first_line = title.lines().next().unwrap_or(title).trim();
 
     let _ = writeln!(out, "[");
 
-    if cmds.is_empty() {
+    if leaves.is_empty() {
+        // No subcommands — single tool for the script itself
+        let flags = extract_flags_for_llm(args_arr);
         write_openai_tool(out, &sanitize_tool_name(cmd_name), first_line, &flags, true);
     } else {
-        for (i, cmd) in cmds.iter().enumerate() {
-            let tool_name = sanitize_tool_name(&format!("{}_{}", cmd_name, cmd.name));
-            let desc = if cmd.desc.is_empty() { first_line } else { &cmd.desc };
-            write_openai_tool(out, &tool_name, desc, &flags, i == cmds.len() - 1);
+        for (i, leaf) in leaves.iter().enumerate() {
+            let tool_name = sanitize_tool_name(
+                &format!("{}_{}", cmd_name, leaf.full_path.join("_")),
+            );
+            let desc = if leaf.desc.is_empty() { first_line } else { &leaf.desc };
+            write_openai_tool(out, &tool_name, desc, &leaf.flags, i == leaves.len() - 1);
         }
     }
 

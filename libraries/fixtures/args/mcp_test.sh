@@ -19,23 +19,60 @@ main() {
     'config|c'    "Config file path"
   )
   local -a usage=(
-    'serve'  "Start the server"
-    'build'  "Build the project"
+    'serve'   "Start the server"
+    'build'   "Build the project"
+    'cluster' "Cluster management"
   )
   :usage "My test application" "${@}"
   "${usage[@]}"
 }
 
 serve() {
+  local port
+  local -a args=(
+    'port|p:int' "Port number"
+  )
   :args "Start the server" "${@}"
-  echo "serving"
+  echo "serving on port ${port:-8080}"
   [[ "${verbose[*]:-}" != "1" ]] || echo "verbose=on"
   [[ -z "${config:-}" ]] || echo "config=${config}"
 }
 
 build() {
+  local output
+  local -a args=(
+    'output|o' "Output directory"
+  )
   :args "Build the project" "${@}"
-  echo "building"
+  echo "building to ${output:-dist}"
+}
+
+cluster() {
+  local -a usage=(
+    'up'   "Start cluster"
+    'down' "Stop cluster"
+  )
+  :usage "Cluster management" "${@}"
+  "${usage[@]}"
+}
+
+cluster::up() {
+  local nodes
+  local -a args=(
+    'nodes|n:int' "Number of nodes"
+  )
+  :args "Start cluster" "${@}"
+  echo "starting ${nodes:-3} nodes"
+}
+
+cluster::down() {
+  local force
+  local -a args=(
+    'force|f:+' "Force shutdown"
+  )
+  :args "Stop cluster" "${@}"
+  echo "stopping cluster"
+  [[ "${force:-}" != "1" ]] || echo "force=on"
 }
 
 main "${@}"
