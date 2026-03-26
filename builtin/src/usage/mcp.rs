@@ -189,7 +189,7 @@ pub fn mcp_main(args: &[String]) -> i32 {
             }
             Some("resources/read") => {
                 let params = extract_json_field(&line, "params").unwrap_or_default();
-                handle_resources_read(&mut writer, &id, &params, &script_path);
+                handle_resources_read(&mut writer, &id, &params, &cmd_name, title, &leaf_tools);
             }
             Some("prompts/list") => {
                 handle_prompts_list(&mut writer, &id);
@@ -361,7 +361,7 @@ pub(crate) fn format_tool(name: &str, description: &str, flags: &[FlagInfo], ann
 
     // outputSchema for @json annotated tools
     if annotations.iter().any(|a| a == "json") {
-        s.push_str(",\"outputSchema\":{\"type\":\"object\"}");
+        s.push_str(",\"outputSchema\":{}");
     }
 
     // Tool annotations (MCP hints)
@@ -394,19 +394,28 @@ pub(crate) fn handle_resources_list<W: Write>(writer: &mut W, id: &Option<String
 }
 
 /// Handle `resources/read` request.
+/// Generates help text in-process from the already-parsed metadata to avoid
+/// re-executing the script (which could have side effects).
 fn handle_resources_read<W: Write>(
     writer: &mut W,
     id: &Option<String>,
     params: &str,
-    script_path: &str,
+    cmd_name: &str,
+    title: &str,
+    leaf_tools: &[LeafTool],
 ) {
     let uri = extract_json_string(params, "uri");
     match uri.as_deref() {
         Some("script:///help") => {
-            let (_, stdout, _) = execute_tool(script_path, &["--help".to_string()]);
+            let first_line = title.lines().next().unwrap_or(title).trim();
+            let mut help = format!("{}\n\nAvailable commands:\n", first_line);
+            for tool in leaf_tools {
+                help.push_str(&format!("  {:20} {}\n", tool.full_path.join(" "), tool.desc));
+            }
+            help.push_str(&format!("\nUse \"{} <command> --help\" for more information.", cmd_name));
             let result = format!(
                 "{{\"contents\":[{{\"uri\":\"script:///help\",\"mimeType\":\"text/plain\",\"text\":\"{}\"}}]}}",
-                json_escape(&stdout)
+                json_escape(&help)
             );
             write_jsonrpc_response(writer, id, &result);
         }
@@ -728,12 +737,12 @@ fn execute_tool(script_path: &str, cli_args: &[String]) -> (i32, String, String)
 
 // -- JSON validation ----------------------------------------------------------
 
-/// Check if a string is likely valid JSON (object or array) by verifying
-/// balanced braces/brackets while respecting string literals.
 /// Validate that a string is well-formed JSON by checking structure with a
-/// stack-based bracket matcher. Verifies that braces/brackets are properly
-/// nested and matched (not just balanced), strings are terminated, and there
-/// are no stray characters after the root value.
+/// stack-based bracket matcher and basic token validation. Verifies that:
+/// - Braces/brackets are properly nested and matched
+/// - Strings are terminated
+/// - Colons are followed by a value (not immediately by `}` or `]`)
+/// - No stray characters after the root value
 pub fn is_likely_valid_json(s: &str) -> bool {
     let trimmed = s.trim();
     if trimmed.is_empty() {
@@ -742,11 +751,11 @@ pub fn is_likely_valid_json(s: &str) -> bool {
     if !trimmed.starts_with('{') && !trimmed.starts_with('[') {
         return false;
     }
-    // Stack-based matching: push openers, pop on matching closer
     let mut stack: Vec<u8> = Vec::new();
     let mut in_string = false;
     let mut escape = false;
     let mut root_closed_at: Option<usize> = None;
+    let mut expect_value = false; // true after `:` — next non-whitespace must be a value
     let bytes = trimmed.as_bytes();
 
     for (i, &b) in bytes.iter().enumerate() {
@@ -761,36 +770,43 @@ pub fn is_likely_valid_json(s: &str) -> bool {
             }
             if b == b'"' {
                 in_string = false;
+                expect_value = false;
             }
             continue;
         }
         match b {
-            b'"' => in_string = true,
-            b'{' | b'[' => stack.push(b),
+            b'"' => {
+                in_string = true;
+                expect_value = false;
+            }
+            b'{' | b'[' => {
+                stack.push(b);
+                expect_value = false;
+            }
             b'}' => {
-                if stack.last() != Some(&b'{') {
-                    return false; // mismatched: expected { but got something else
-                }
+                if expect_value { return false; } // colon followed by }
+                if stack.last() != Some(&b'{') { return false; }
                 stack.pop();
-                if stack.is_empty() {
-                    root_closed_at = Some(i);
-                }
+                if stack.is_empty() { root_closed_at = Some(i); }
             }
             b']' => {
-                if stack.last() != Some(&b'[') {
-                    return false; // mismatched: expected [ but got something else
-                }
+                if expect_value { return false; } // colon followed by ]
+                if stack.last() != Some(&b'[') { return false; }
                 stack.pop();
-                if stack.is_empty() {
-                    root_closed_at = Some(i);
-                }
+                if stack.is_empty() { root_closed_at = Some(i); }
             }
-            _ => {}
+            b':' => {
+                expect_value = true; // next non-ws must be a value
+            }
+            b' ' | b'\t' | b'\n' | b'\r' => {} // whitespace doesn't clear expect_value
+            _ => {
+                // Any other token (number, true, false, null chars) counts as value
+                expect_value = false;
+            }
         }
     }
 
-    // Valid if: stack is empty, not in a string, and root closed at the last char
-    stack.is_empty() && !in_string && root_closed_at == Some(bytes.len() - 1)
+    stack.is_empty() && !in_string && !expect_value && root_closed_at == Some(bytes.len() - 1)
 }
 
 // -- Minimal JSON parsing -----------------------------------------------------

@@ -1397,7 +1397,7 @@ mod tests {
     #[test]
     fn test_mcp_format_tool_json_annotation() {
         let result = mcp::format_tool("status", "desc", &[], &["json".to_string()]);
-        assert!(result.contains("\"outputSchema\":{\"type\":\"object\"}"));
+        assert!(result.contains("\"outputSchema\":{}"));
         assert!(!result.contains("\"annotations\""));
     }
 
@@ -1405,7 +1405,7 @@ mod tests {
     fn test_mcp_format_tool_multiple_annotations() {
         let annots = vec!["readonly".to_string(), "json".to_string()];
         let result = mcp::format_tool("status", "desc", &[], &annots);
-        assert!(result.contains("\"outputSchema\":{\"type\":\"object\"}"));
+        assert!(result.contains("\"outputSchema\":{}"));
         assert!(result.contains("\"annotations\":{\"readOnlyHint\":true}"));
     }
 
@@ -1503,7 +1503,7 @@ mod tests {
         mcp::handle_tools_list_v2(&mut buf, &id, "My app", &leaf_tools);
         let output = String::from_utf8(buf).unwrap();
         assert!(output.contains("\"readOnlyHint\":true"));
-        assert!(output.contains("\"outputSchema\":{\"type\":\"object\"}"));
+        assert!(output.contains("\"outputSchema\":{}"));
         assert!(output.contains("\"title\":\"Start the server\""));
         assert!(output.contains("\"title\":\"Get status\""));
     }
