@@ -437,6 +437,43 @@ test_func() {
 }
 
 #[test]
+fn obfuscation_does_not_mangle_string_literals() {
+    // Variable `path` exists but "path:" inside echo string should NOT be renamed.
+    // Rule 13 (parameter expansion modifiers) was matching `path:` in plain
+    // string context because its leading character class `[:+\- ]+` matches spaces.
+    let input = r#"#!/usr/bin/env bash
+func() {
+  local path="/tmp"
+  local loc="/here"
+  echo "  path:         ${loc}"
+  echo "  some_path: done"
+  path="/other"
+}
+"#;
+    let dir = TempDir::new().unwrap();
+    let input_path = dir.path().join("input.sh");
+    let output_path = dir.path().join("output.sh");
+    std::fs::write(&input_path, input).unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_minifier"))
+        .args(["-i", input_path.to_str().unwrap(), "-o", output_path.to_str().unwrap(), "-O"])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "minifier failed: {}", String::from_utf8_lossy(&output.stderr));
+
+    let result = std::fs::read_to_string(&output_path).unwrap();
+    // "path:" in the echo string must NOT be renamed
+    assert!(result.contains("path:"),
+        "String literal 'path:' was mangled by obfuscator: {}", result);
+    // "some_path:" should also be preserved
+    assert!(result.contains("some_path:"),
+        "String literal 'some_path:' was mangled by obfuscator: {}", result);
+    // But path variable assignments and references SHOULD be renamed
+    assert!(!result.contains("${path}"),
+        "path variable should be obfuscated: {}", result);
+}
+
+#[test]
 fn or_true_after_subshell_joined_correctly() {
     let input = "#!/usr/bin/env bash\n_x=\"$(cmd 'arg')\" || true\n_y=\"$(cmd2)\" || true\necho done\n";
     let dir = TempDir::new().unwrap();
