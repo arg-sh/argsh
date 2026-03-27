@@ -5,15 +5,17 @@
 //!
 //! ## Known limitations
 //!
-//! - **Multi-line strings inside `$()`**: If a command substitution starts on
-//!   one line and contains an unmatched quote (e.g. `x=$(echo "hello` on line 1,
-//!   `world")` on line 2), the tracker only sees line 1 and reports the outer
-//!   double quote as open — it cannot track substitution boundaries across lines.
-//!   This is inherent to the line-based design of the minifier.
+//! - **Multi-line strings inside `$()`**: The stack-based tracker isolates
+//!   quotes inside `$()` from the outer level — they don't leak outward.
+//!   However, if a multi-line quoted string starts inside a `$()` on one line
+//!   (e.g. `x=$(echo "hello` on line 1, `world")` on line 2), the open quote
+//!   is **not detected** by this line-based tracker. The join phase may
+//!   incorrectly terminate such lines with `;` instead of preserving the
+//!   newline. This is inherent to the line-based design of the minifier.
 //!
-//! - **Multi-line strings inside backticks**: Same limitation as `$()` above.
-//!   Backtick substitutions are deprecated in favor of `$()` and rarely contain
-//!   multi-line strings in practice.
+//! - **Multi-line strings inside backticks**: Same as `$()` above — open
+//!   quotes inside backtick substitutions are not detected. Backticks are
+//!   deprecated in favor of `$()` and rarely contain multi-line strings.
 //!
 //! - **Escape detection is O(n) per character** (backward scan for consecutive
 //!   backslashes). Worst case is O(n²) per line for pathological inputs with
