@@ -184,8 +184,8 @@ argsh::builtin() {
       _loc="$(argsh::builtin::location 2>/dev/null)" || _loc="not installed"
       _arch="$(argsh::builtin::arch 2>/dev/null)" || _arch="unsupported"
       echo "argsh builtin: ${_loc}"
-      echo "  platform: linux/${_arch}"
-      echo "  loaded:   $(( ARGSH_BUILTIN )) (ARGSH_BUILTIN=${ARGSH_BUILTIN:-0})"
+      echo "  platform: $(uname -s | tr '[:upper:]' '[:lower:]')/${_arch}"
+      echo "  loaded:   $(( ${ARGSH_BUILTIN:-0} )) (ARGSH_BUILTIN=${ARGSH_BUILTIN:-0})"
       echo ""
       echo "Usage: argsh builtin [install|update|status] [--force] [--path DIR]"
       echo "       Set ARGSH_BUILTIN_PATH env var to control builtin search path."
@@ -216,7 +216,7 @@ argsh::status() {
   local _loc _arch _so_status
   _loc="$(argsh::builtin::location 2>/dev/null)" || _loc="not installed"
   _arch="$(argsh::builtin::arch 2>/dev/null)" || _arch="unsupported"
-  if (( ARGSH_BUILTIN )); then
+  if (( ${ARGSH_BUILTIN:-0} )); then
     _so_status="loaded"
   else
     _so_status="not loaded"
@@ -224,7 +224,7 @@ argsh::status() {
   echo "Builtin (.so):"
   echo "  status:       ${_so_status}"
   echo "  path:         ${_loc}"
-  echo "  architecture: linux/${_arch}"
+  echo "  architecture: $(uname -s | tr '[:upper:]' '[:lower:]')/${_arch}"
   echo ""
 
   # Shell
@@ -234,7 +234,7 @@ argsh::status() {
 
   # Features
   echo "Features:"
-  if (( ARGSH_BUILTIN )); then
+  if (( ${ARGSH_BUILTIN:-0} )); then
     echo "  mcp:        available (builtin)"
     echo "  completion: available (builtin)"
     echo "  docgen:     available (builtin)"
@@ -288,6 +288,7 @@ argsh::help() {
   echo ""
   echo "Flags:"
   echo "  --version          Print version and exit"
+  echo "  --help, -h         Show this help and exit"
   echo "  -i, --import LIB   Import library before running script"
   echo ""
   echo "Environment:"
@@ -296,22 +297,22 @@ argsh::help() {
 
 # @internal
 argsh::builtin::_install() {
-  local _force=0 _path=""
+  local _force=0 _dest_dir=""
   while [[ "${1:-}" == --* ]]; do
     case "${1}" in
       --force) _force=1; shift ;;
-      --path)  shift; _path="${1}"; shift ;;
+      --path)  shift; _dest_dir="${1}"; shift ;;
       *) echo "argsh: unknown option: ${1}" >&2; return 1 ;;
     esac
   done
 
   # If --path given, override install dir logic
-  if [[ -n "${_path}" ]]; then
-    [[ -d "${_path}" && -w "${_path}" ]] || {
-      echo "argsh: directory not writable: ${_path}" >&2
+  if [[ -n "${_dest_dir}" ]]; then
+    [[ -d "${_dest_dir}" && -w "${_dest_dir}" ]] || {
+      echo "argsh: directory not writable: ${_dest_dir}" >&2
       return 1
     }
-    PATH_BIN="${_path}" argsh::builtin::download "${_force}"
+    PATH_BIN="${_dest_dir}" argsh::builtin::download "${_force}"
   else
     argsh::builtin::download "${_force}"
   fi
