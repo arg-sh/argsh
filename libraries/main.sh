@@ -290,6 +290,7 @@ argsh::help() {
   echo "  --version          Print version and exit"
   echo "  --help, -h         Show this help and exit"
   echo "  -i, --import LIB   Import library before running script"
+  echo "  --no-builtin       Skip builtin loading and auto-download"
   echo ""
   echo "Environment:"
   echo "  ARGSH_BUILTIN_PATH  Path to argsh.so (overrides auto-search)"
@@ -301,7 +302,14 @@ argsh::builtin::_install() {
   while [[ "${1:-}" == --* ]]; do
     case "${1}" in
       --force) _force=1; shift ;;
-      --path)  shift; _dest_dir="${1}"; shift ;;
+      --path)
+        shift
+        if [[ -z "${1:-}" || "${1}" == --* ]]; then
+          echo "argsh: --path requires a directory argument" >&2
+          return 1
+        fi
+        _dest_dir="${1}"; shift
+        ;;
       *) echo "argsh: unknown option: ${1}" >&2; return 1 ;;
     esac
   done
@@ -328,15 +336,18 @@ argsh::builtin::_install() {
 #
 # Flags (parsed before script file):
 #   -i, --import <lib>  Import additional libraries (repeatable).
+#   --no-builtin        Skip builtin loading and auto-download.
 #   --version           Print argsh version and exit.
 #   --help, -h          Show usage information.
 #
-# Builtin loading is controlled via ARGSH_BUILTIN_PATH env var
-# or by running: argsh builtin install --path /your/dir
+# Builtins are loaded by default and auto-downloaded if missing.
+# Use --no-builtin to disable. Control install path via
+# ARGSH_BUILTIN_PATH env var or: argsh builtin install --path /your/dir
 #
 # @exitcode 1 If the file does not exist
 argsh::shebang() {
   local -a _argsh_imports=()
+  local _argsh_no_builtin=0
 
   # Parse argsh flags before the script file
   while [[ "${1:-}" == -* ]]; do
@@ -351,6 +362,10 @@ argsh::shebang() {
         _argsh_imports+=("${1}")
         shift
         ;;
+      --no-builtin)
+        _argsh_no_builtin=1
+        shift
+        ;;
       --version)
         echo "argsh ${ARGSH_VERSION:-unknown} (${ARGSH_COMMIT_SHA:-unknown})"
         return 0
@@ -363,6 +378,12 @@ argsh::shebang() {
         ;;
     esac
   done
+
+  # No args: show help
+  if [[ -z "${1:-}" ]]; then
+    argsh::help
+    return 0
+  fi
 
   local -r file="${1}"
   : "${ARGSH_SOURCE="${file}"}"
@@ -396,12 +417,18 @@ argsh::shebang() {
     return 1
   } >&2
 
-  # Load builtins (try silently, no failure)
-  # Control via ARGSH_BUILTIN_PATH env var or: argsh builtin install
+  # Load builtins: try loading, auto-download if missing (unless --no-builtin)
   # obfus ignore variable
   declare -gi ARGSH_BUILTIN=0
   # shellcheck disable=SC2034
-  argsh::builtin::try && ARGSH_BUILTIN=1
+  if (( ! _argsh_no_builtin )); then
+    if argsh::builtin::try; then
+      ARGSH_BUILTIN=1
+    else
+      # Auto-download from latest release
+      argsh::builtin::download 0 2>/dev/null && argsh::builtin::try && ARGSH_BUILTIN=1
+    fi
+  fi
 
   # Import additional libraries
   local _lib

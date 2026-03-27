@@ -6,16 +6,30 @@
 /// Stateless quote analysis.
 pub struct QuoteTracker;
 
+/// Per-nesting-level quote state, used to track whether quotes inside `$()`
+/// command substitutions belong to that level or the outer level.
+struct QuoteState {
+    in_single: bool,
+    in_double: bool,
+}
+
 impl QuoteTracker {
     /// Count unbalanced quotes in a line, respecting escapes, command substitution
     /// nesting (`$(...)` and backticks), so that quotes inside substitutions don't
     /// leak to the outer level.
+    ///
+    /// Uses a stack of `QuoteState` to track quote context per `$()` nesting
+    /// level, so that `)` inside quotes within a substitution does not
+    /// prematurely close it.
+    ///
+    /// `$((...))` arithmetic expansions are detected and skipped — they don't
+    /// create a new quoting context in bash.
+    ///
     /// Returns (single_open, double_open) — true if the outermost level has an
     /// unmatched quote of that type.
     pub fn line_has_open_quote(line: &str) -> (bool, bool) {
-        let mut in_single = false;
-        let mut in_double = false;
-        let mut subst_depth: usize = 0; // $() nesting depth
+        // Stack: index 0 = outermost level, push on $( , pop on matching )
+        let mut stack: Vec<QuoteState> = vec![QuoteState { in_single: false, in_double: false }];
         let mut backtick_depth: usize = 0; // backtick substitution depth
         let chars: Vec<char> = line.chars().collect();
         let len = chars.len();
@@ -23,13 +37,14 @@ impl QuoteTracker {
         let mut i = 0;
         while i < len {
             let ch = chars[i];
+            let cur = stack.len() - 1;
 
             // Inside single quotes at the current nesting level:
             // Everything is literal except the closing single quote.
             // No escapes, no command substitution detection.
-            if in_single {
+            if stack[cur].in_single {
                 if ch == '\'' {
-                    in_single = false;
+                    stack[cur].in_single = false;
                 }
                 i += 1;
                 continue;
@@ -51,16 +66,23 @@ impl QuoteTracker {
                 continue;
             }
 
-            // Detect $( for command substitution
+            // Detect $( for command substitution (but NOT $(( which is arithmetic)
             if ch == '$' && i + 1 < len && chars[i + 1] == '(' {
-                subst_depth += 1;
+                if i + 2 < len && chars[i + 2] == '(' {
+                    // $(( — arithmetic expansion, skip $
+                    // Arithmetic doesn't create a new quoting context
+                    i += 1;
+                    continue;
+                }
+                stack.push(QuoteState { in_single: false, in_double: false });
                 i += 2; // skip $(
                 continue;
             }
 
-            // Detect ) closing command substitution
-            if ch == ')' && subst_depth > 0 {
-                subst_depth -= 1;
+            // Detect ) closing command substitution — only when NOT inside
+            // quotes at the current nesting level
+            if ch == ')' && stack.len() > 1 && !stack[cur].in_double {
+                stack.pop();
                 i += 1;
                 continue;
             }
@@ -76,26 +98,25 @@ impl QuoteTracker {
                 continue;
             }
 
-            // Only track quotes at the outermost level (no active substitution)
-            if subst_depth == 0 && backtick_depth == 0 {
+            // Track quotes at the current nesting level
+            if backtick_depth == 0 {
+                let cur = stack.len() - 1;
                 match ch {
-                    '\'' if !in_double => {
-                        in_single = true;
+                    '\'' if !stack[cur].in_double => {
+                        stack[cur].in_single = true;
                     }
                     '"' => {
-                        in_double = !in_double;
+                        stack[cur].in_double = !stack[cur].in_double;
                     }
                     _ => {}
                 }
             }
-            // Inside command substitution: quotes exist but they're at a deeper
-            // level. We don't track them because we only care about whether the
-            // LINE (outermost level) has an open quote.
 
             i += 1;
         }
 
-        (in_single, in_double)
+        // Report from the outermost level (stack[0])
+        (stack[0].in_single, stack[0].in_double)
     }
 }
 
@@ -249,5 +270,28 @@ mod tests {
         );
         assert!(!s);
         assert!(d, "outer double quote is open");
+    }
+
+    #[test]
+    fn paren_inside_quotes_in_substitution() {
+        // $(echo ")") — the ) inside quotes should not close the $()
+        let (s, d) = QuoteTracker::line_has_open_quote(r#"x="$(echo ")")""#);
+        assert!(!s);
+        assert!(!d, "paren inside quotes should not close substitution");
+    }
+
+    #[test]
+    fn arithmetic_expansion_not_confused() {
+        // $((...)) should not be treated as command substitution
+        let (s, d) = QuoteTracker::line_has_open_quote(r#"echo "$((1+2))""#);
+        assert!(!s);
+        assert!(!d);
+    }
+
+    #[test]
+    fn arithmetic_inside_command_substitution() {
+        let (s, d) = QuoteTracker::line_has_open_quote(r#"x="$(echo $((1+2)))""#);
+        assert!(!s);
+        assert!(!d);
     }
 }
