@@ -388,11 +388,10 @@ argsh::shebang() {
   : "${ARGSH_SOURCE="${file}"}"
   export ARGSH_SOURCE
 
-  # Handle built-in commands before file check
+  # Handle builtin management commands before file/docker check
   case "${file}" in
     builtin)  shift; argsh::builtin "${@}";  return ;;
     builtins) shift; argsh::builtins "${@}"; return ;;
-    status)   shift; argsh::status "${@}";   return ;;
   esac
 
   [[ "${BASH_SOURCE[-1]}" != "${file}" && -f "${file}" ]] || {
@@ -428,6 +427,9 @@ argsh::shebang() {
       argsh::builtin::download 0 2>/dev/null && argsh::builtin::try && ARGSH_BUILTIN=1
     fi
   fi
+
+  # Handle status after builtins are loaded (so it reports accurate state)
+  [[ "${file}" != "status" ]] || { shift; argsh::status "${@}"; return; }
 
   # Import additional libraries
   local _lib

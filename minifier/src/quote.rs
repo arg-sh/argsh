@@ -11,6 +11,7 @@ pub struct QuoteTracker;
 struct QuoteState {
     in_single: bool,
     in_double: bool,
+    paren_depth: usize, // tracks nested () within this $() level
 }
 
 impl QuoteTracker {
@@ -29,7 +30,7 @@ impl QuoteTracker {
     /// unmatched quote of that type.
     pub fn line_has_open_quote(line: &str) -> (bool, bool) {
         // Stack: index 0 = outermost level, push on $( , pop on matching )
-        let mut stack: Vec<QuoteState> = vec![QuoteState { in_single: false, in_double: false }];
+        let mut stack: Vec<QuoteState> = vec![QuoteState { in_single: false, in_double: false, paren_depth: 0 }];
         let mut backtick_depth: usize = 0; // backtick substitution depth
         let chars: Vec<char> = line.chars().collect();
         let len = chars.len();
@@ -74,15 +75,26 @@ impl QuoteTracker {
                     i += 1;
                     continue;
                 }
-                stack.push(QuoteState { in_single: false, in_double: false });
+                stack.push(QuoteState { in_single: false, in_double: false, paren_depth: 0 });
                 i += 2; // skip $(
                 continue;
             }
 
-            // Detect ) closing command substitution — only when NOT inside
-            // quotes at the current nesting level
+            // Track ( for nested parentheses within this $() level
+            // (e.g. arithmetic $((...)), subshells, etc.)
+            if ch == '(' && stack.len() > 1 && !stack[cur].in_double {
+                stack[cur].paren_depth += 1;
+                i += 1;
+                continue;
+            }
+
+            // Detect ) — either closes nested parens or the $() substitution
             if ch == ')' && stack.len() > 1 && !stack[cur].in_double {
-                stack.pop();
+                if stack[cur].paren_depth > 0 {
+                    stack[cur].paren_depth -= 1;
+                } else {
+                    stack.pop();
+                }
                 i += 1;
                 continue;
             }
@@ -293,5 +305,21 @@ mod tests {
         let (s, d) = QuoteTracker::line_has_open_quote(r#"x="$(echo $((1+2)))""#);
         assert!(!s);
         assert!(!d);
+    }
+
+    #[test]
+    fn arithmetic_closing_parens_dont_pop_substitution_stack() {
+        // $(( 1 + 2 )) inside $() — the )) must not pop the $() stack
+        let (s, d) = QuoteTracker::line_has_open_quote(r#"x="$(echo "$((1+2))" done)""#);
+        assert!(!s);
+        assert!(!d, "arithmetic )) inside $() should not pop substitution stack");
+    }
+
+    #[test]
+    fn subshell_parens_inside_substitution() {
+        // ( subshell ) inside $() — parens tracked but don't pop $()
+        let (s, d) = QuoteTracker::line_has_open_quote(r#"x="$(if true; then (echo ok); fi)""#);
+        assert!(!s);
+        assert!(!d, "subshell parens inside $() should not pop substitution stack");
     }
 }
