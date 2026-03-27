@@ -405,3 +405,51 @@ fn cli_no_bundle_flag_leaves_imports() {
     assert!(!result.contains("echo lib"), "Got: {result}");
     assert!(result.contains("echo main"), "Got: {result}");
 }
+
+#[test]
+fn command_substitution_or_fallback_joined_correctly() {
+    // The exact pattern that produced $'\n' in the output
+    let input = r#"#!/usr/bin/env bash
+test_func() {
+  local _pct _date
+  _pct="$(grep -o '"percent_covered": "[^"]*"' "${_cov_file}" | tail -1 | grep -o '[0-9.]*')" || _pct="?"
+  _date="$(grep -o '"date": "[^"]*"' "${_cov_file}" | grep -o '[0-9 :-]*')" || _date="?"
+  echo "${_pct} ${_date}"
+}
+"#;
+    let dir = TempDir::new().unwrap();
+    let input_path = dir.path().join("input.sh");
+    let output_path = dir.path().join("output.sh");
+    std::fs::write(&input_path, input).unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_minifier"))
+        .args(["-i", input_path.to_str().unwrap(), "-o", output_path.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "minifier failed: {}", String::from_utf8_lossy(&output.stderr));
+
+    let result = std::fs::read_to_string(&output_path).unwrap();
+    // Must NOT contain $'\n' — that means the joiner incorrectly detected an open quote
+    assert!(!result.contains("$'\\n'"), "Output contains $'\\n' indicating broken quote tracking: {}", result);
+    // Must contain both assignments joined with ;
+    assert!(result.contains("_pct="), "Missing _pct assignment: {}", result);
+    assert!(result.contains("_date="), "Missing _date assignment: {}", result);
+}
+
+#[test]
+fn or_true_after_subshell_joined_correctly() {
+    let input = "#!/usr/bin/env bash\n_x=\"$(cmd 'arg')\" || true\n_y=\"$(cmd2)\" || true\necho done\n";
+    let dir = TempDir::new().unwrap();
+    let input_path = dir.path().join("input.sh");
+    let output_path = dir.path().join("output.sh");
+    std::fs::write(&input_path, input).unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_minifier"))
+        .args(["-i", input_path.to_str().unwrap(), "-o", output_path.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+
+    let result = std::fs::read_to_string(&output_path).unwrap();
+    assert!(!result.contains("$'\\n'"), "Got broken line join: {}", result);
+}
