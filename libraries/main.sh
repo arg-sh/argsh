@@ -132,7 +132,7 @@ argsh::builtin::download() {
   # Find writable install dir
   _dir="$(argsh::builtin::install_dir)" || {
     echo "argsh: no writable install path found for builtins" >&2
-    echo "  Run: argsh builtins install --path /your/writable/dir" >&2
+    echo "  Run: argsh builtin install --path /your/writable/dir" >&2
     return 1
   }
   _dest="${_dir}/argsh.so"
@@ -170,26 +170,127 @@ argsh::builtin::download() {
 }
 
 # @description Manage argsh native builtins (.so).
-# @arg $1 string Subcommand: install, update, or empty for status
+# @arg $1 string Subcommand: install, update, status, or empty for status
 # @example
-#   argsh builtins           # show current status
-#   argsh builtins install   # download if not present
-#   argsh builtins update    # re-download latest
-argsh::builtins() {
+#   argsh builtin            # show current status
+#   argsh builtin install    # download if not present
+#   argsh builtin update     # re-download latest
+argsh::builtin() {
   case "${1:-}" in
     install) shift; argsh::builtin::_install "${@}" ;;
     update)  shift; argsh::builtin::_install --force "${@}" ;;
-    *)
-      # Print current state
+    status|"")
       local _loc _arch
       _loc="$(argsh::builtin::location 2>/dev/null)" || _loc="not installed"
       _arch="$(argsh::builtin::arch 2>/dev/null)" || _arch="unsupported"
-      echo "argsh builtins: ${_loc}"
+      echo "argsh builtin: ${_loc}"
       echo "  platform: linux/${_arch}"
+      echo "  loaded:   $(( ARGSH_BUILTIN )) (ARGSH_BUILTIN=${ARGSH_BUILTIN:-0})"
       echo ""
-      echo "Usage: argsh builtins install|update [--force] [--path DIR]"
+      echo "Usage: argsh builtin [install|update|status] [--force] [--path DIR]"
+      echo "       Set ARGSH_BUILTIN_PATH env var to control builtin search path."
+      ;;
+    *)
+      echo "argsh: unknown builtin subcommand: ${1}" >&2
+      echo "Usage: argsh builtin [install|update|status] [--force] [--path DIR]" >&2
+      return 1
       ;;
   esac
+}
+
+# @description Backward-compat alias for argsh::builtin (plural form).
+# @internal
+argsh::builtins() { argsh::builtin "${@}"; }
+
+# @description Show comprehensive argsh runtime status.
+# @stdout Multi-line status report
+# @example
+#   argsh status
+argsh::status() {
+  # Version + identity
+  echo "argsh ${ARGSH_VERSION:-unknown} (${ARGSH_COMMIT_SHA:-unknown})"
+  echo "  script: $(realpath "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")"
+  echo ""
+
+  # Builtin (.so) status
+  local _loc _arch _so_status
+  _loc="$(argsh::builtin::location 2>/dev/null)" || _loc="not installed"
+  _arch="$(argsh::builtin::arch 2>/dev/null)" || _arch="unsupported"
+  if (( ARGSH_BUILTIN )); then
+    _so_status="loaded"
+  else
+    _so_status="not loaded"
+  fi
+  echo "Builtin (.so):"
+  echo "  status:       ${_so_status}"
+  echo "  path:         ${_loc}"
+  echo "  architecture: linux/${_arch}"
+  echo ""
+
+  # Shell
+  echo "Shell:"
+  echo "  bash: ${BASH_VERSION:-unknown}"
+  echo ""
+
+  # Features
+  echo "Features:"
+  if (( ARGSH_BUILTIN )); then
+    echo "  mcp:        available (builtin)"
+    echo "  completion: available (builtin)"
+    echo "  docgen:     available (builtin)"
+  else
+    echo "  mcp:        requires builtin"
+    echo "  completion: requires builtin"
+    echo "  docgen:     requires builtin"
+  fi
+  echo ""
+
+  # Tests
+  local _lib_dir _bats_count
+  _lib_dir="${BASH_SOURCE[0]%/*}"
+  local -a _bats=()
+  local _f
+  for _f in "${_lib_dir}"/*.bats; do
+    [[ -f "${_f}" ]] && _bats+=("$(basename "${_f}")")
+  done
+  _bats_count="${#_bats[@]}"
+  if (( _bats_count > 0 )); then
+    echo "Tests: ${_bats_count} .bats file(s): ${_bats[*]}"
+  else
+    echo "Tests: none found"
+  fi
+
+  # Coverage
+  local _cov_file
+  _cov_file="${_lib_dir}/../builtin/coverage.json"
+  if [[ -f "${_cov_file}" ]]; then
+    local _pct _date
+    _pct="$(grep -o '"percent_covered": "[^"]*"' "${_cov_file}" | tail -1 | grep -o '[0-9.]*')" || _pct="?"
+    _date="$(grep -o '"date": "[^"]*"' "${_cov_file}" | grep -o '[0-9 :-]*')" || _date="?"
+    echo "Coverage: ${_pct}% (${_date})"
+  else
+    echo "Coverage: no coverage.json found"
+  fi
+}
+
+# @description Print argsh help/usage information.
+# @internal
+argsh::help() {
+  echo "argsh ${ARGSH_VERSION:-unknown}"
+  echo ""
+  echo "Usage: argsh [flags] <script> [script-args...]"
+  echo "       argsh <command> [args...]"
+  echo ""
+  echo "Commands:"
+  echo "  builtin [install|update|status]  Manage native builtins (.so)"
+  echo "  status                           Show argsh runtime status"
+  echo ""
+  echo "Flags:"
+  echo "  --version          Print version and exit"
+  echo "  -i, --import LIB   Import library before running script"
+  echo ""
+  echo "Environment:"
+  echo "  ARGSH_BUILTIN_PATH  Path to argsh.so (overrides auto-search)"
 }
 
 # @internal
@@ -215,36 +316,32 @@ argsh::builtin::_install() {
   fi
 }
 
-# @description Run a bash script from a shebang
+# @description Run a bash script from a shebang or as a CLI.
 # @arg $@ string Flags followed by file to run
 #
+# Commands (when first arg is a keyword):
+#   builtin [install|update|status]  Manage native builtins (.so)
+#   builtins ...                     Alias for builtin (backward compat)
+#   status                           Show argsh runtime status
+#
 # Flags (parsed before script file):
-#   --builtin [path]   Load native builtins. If path given and not found, fail.
-#   --no-builtin       Skip builtin loading entirely.
-#   -i, --import <lib> Import additional libraries (repeatable).
-#   --version          Print argsh version and exit.
+#   -i, --import <lib>  Import additional libraries (repeatable).
+#   --version           Print argsh version and exit.
+#   --help, -h          Show usage information.
+#
+# Builtin loading is controlled via ARGSH_BUILTIN_PATH env var
+# or by running: argsh builtin install --path /your/dir
 #
 # @exitcode 1 If the file does not exist
-# @exitcode 1 If builtin path specified but not found
 argsh::shebang() {
-  local _argsh_builtin_mode="" _argsh_builtin_path=""
   local -a _argsh_imports=()
 
   # Parse argsh flags before the script file
   while [[ "${1:-}" == -* ]]; do
     case "${1}" in
-      --builtin)
-        _argsh_builtin_mode="required"
-        shift
-        # Next arg is a path if it doesn't start with - and isn't the script
-        if [[ -n "${1:-}" && "${1:0:1}" != "-" && "${1}" == *.so ]]; then
-          _argsh_builtin_path="${1}"
-          shift
-        fi
-        ;;
-      --no-builtin)
-        _argsh_builtin_mode="disabled"
-        shift
+      --help|-h)
+        argsh::help
+        return 0
         ;;
       --import|-i)
         shift
@@ -271,7 +368,9 @@ argsh::shebang() {
 
   # Handle built-in commands before file check
   case "${file}" in
+    builtin)  shift; argsh::builtin "${@}";  return ;;
     builtins) shift; argsh::builtins "${@}"; return ;;
+    status)   shift; argsh::status "${@}";   return ;;
   esac
 
   [[ "${BASH_SOURCE[-1]}" != "${file}" && -f "${file}" ]] || {
@@ -295,31 +394,12 @@ argsh::shebang() {
     return 1
   } >&2
 
-  # Load builtins based on mode
+  # Load builtins (try silently, no failure)
+  # Control via ARGSH_BUILTIN_PATH env var or: argsh builtin install
   # obfus ignore variable
   declare -gi ARGSH_BUILTIN=0
-  case "${_argsh_builtin_mode}" in
-    required)
-      argsh::builtin::try "${_argsh_builtin_path}" || {
-        # Auto-download from latest release
-        # If explicit path given, download to that directory
-        if [[ -n "${_argsh_builtin_path}" ]]; then
-          mkdir -p "${_argsh_builtin_path%/*}" 2>/dev/null || true
-          PATH_BIN="${_argsh_builtin_path%/*}" argsh::builtin::download || return 1
-        else
-          argsh::builtin::download || return 1
-        fi
-      }
-      ARGSH_BUILTIN=1
-      ;;
-    disabled)
-      ;;
-    *)
-      # Default: try silently, no failure
-      # shellcheck disable=SC2034
-      argsh::builtin::try && ARGSH_BUILTIN=1
-      ;;
-  esac
+  # shellcheck disable=SC2034
+  argsh::builtin::try && ARGSH_BUILTIN=1
 
   # Import additional libraries
   local _lib
