@@ -264,9 +264,9 @@ argsh::status() {
   local _cov_file
   _cov_file="${_lib_dir}/../builtin/coverage.json"
   if [[ -f "${_cov_file}" ]]; then
-    local _pct _date
-    _pct="$(grep -o '"percent_covered": "[^"]*"' "${_cov_file}" | tail -1 | grep -o '[0-9.]*')" || _pct="?"
-    _date="$(grep -o '"date": "[^"]*"' "${_cov_file}" | grep -o '[0-9 :-]*')" || _date="?"
+    local _pct="?" _date="?"
+    _pct="$(grep -o '"percent_covered": "[^"]*"' "${_cov_file}" | tail -1 | grep -o '[0-9.]*')" || true
+    _date="$(grep -o '"date": "[^"]*"' "${_cov_file}" | grep -o '[0-9 :-]*')" || true
     echo "Coverage: ${_pct}% (${_date})"
   else
     echo "Coverage: no coverage.json found"
