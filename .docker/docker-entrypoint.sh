@@ -157,14 +157,18 @@ argsh::docs() {
 
 argsh::main() {
   local -a usage=(
-    'minify:-argsh::minify'     "Minify Bash files"
-    'lint:-argsh::lint'         "Lint Bash files"
-    'test:-argsh::test'         "Run tests"
-    'coverage:-argsh::coverage' "Generate coverage report for your Bash scripts"
-    'docs:-argsh::docs'         "Generate documentation"
+    '-'                             "Tools"
+    'minify:-argsh::minify'         "Minify Bash files"
+    'lint:-argsh::lint'             "Lint Bash files"
+    'test:-argsh::test'             "Run tests"
+    'coverage:-argsh::coverage'     "Generate coverage report for your Bash scripts"
+    'docs:-argsh::docs'             "Generate documentation"
+    '-'                             "Management"
+    'builtin:-argsh::builtin'       "Manage native builtins (.so)"
+    'status:-argsh::status'         "Show argsh runtime status"
   )
   :usage "Enhance your Bash scripting by promoting structure and maintainability,
-          making it easier to write, understand, 
+          making it easier to write, understand,
           and maintain even complex scripts." "${@}"
   "${usage[@]}"
 }
