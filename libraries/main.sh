@@ -397,7 +397,7 @@ argsh::shebang() {
       # obfus ignore variable
       declare -gi ARGSH_BUILTIN=0
       # shellcheck disable=SC2034
-      if (( ! _argsh_no_builtin )); then
+      if (( ! _argsh_no_builtin )) && declare -p __ARGSH_BUILTINS &>/dev/null; then
         argsh::builtin::try && ARGSH_BUILTIN=1
       fi
       shift; argsh::status "${@}"; return ;;
@@ -432,8 +432,8 @@ argsh::shebang() {
     if argsh::builtin::try; then
       ARGSH_BUILTIN=1
     else
-      # Auto-download from latest release
-      argsh::builtin::download 0 2>/dev/null && argsh::builtin::try && ARGSH_BUILTIN=1
+      # Auto-download from latest release (stderr visible for debugging)
+      argsh::builtin::download 0 && argsh::builtin::try && ARGSH_BUILTIN=1
     fi
   fi
 
