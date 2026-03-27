@@ -2,6 +2,23 @@
 //!
 //! Determines whether a line has unbalanced (open) single or double quotes,
 //! used by the join phase to detect multi-line strings.
+//!
+//! ## Known limitations
+//!
+//! - **Multi-line strings inside `$()`**: If a command substitution starts on
+//!   one line and contains an unmatched quote (e.g. `x=$(echo "hello` on line 1,
+//!   `world")` on line 2), the tracker only sees line 1 and reports the outer
+//!   double quote as open — it cannot track substitution boundaries across lines.
+//!   This is inherent to the line-based design of the minifier.
+//!
+//! - **Multi-line strings inside backticks**: Same limitation as `$()` above.
+//!   Backtick substitutions are deprecated in favor of `$()` and rarely contain
+//!   multi-line strings in practice.
+//!
+//! - **Escape detection is O(n) per character** (backward scan for consecutive
+//!   backslashes). Worst case is O(n²) per line for pathological inputs with
+//!   long backslash sequences. In practice this is bounded by line length which
+//!   is small after minification (typically one logical statement per line).
 
 /// Stateless quote analysis.
 pub struct QuoteTracker;
