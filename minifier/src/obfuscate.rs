@@ -127,8 +127,9 @@ impl VarPatterns {
         );
 
         // 13. Parameter expansion modifiers: `:+`, `:-`, etc.
+        // Must be inside a `${...}` expansion — require `${` before the modifier chars.
         add(
-            &format!(r"([:+\- ]+){v}([:}}+])"),
+            &format!(r"(\$\{{[^}}]*?[:+\-]){v}([:}}+])"),
             format!("${{1}}{r}${{2}}"),
             true,
         );
@@ -802,6 +803,25 @@ mod tests {
         assert_eq!(ob.obfuscate_line("${str:0:_i}"), "${str:0:_i}");
         // But bare `i` must still be renamed
         assert_eq!(ob.obfuscate_line("${str:i-1:1}"), "${str:a0-1:1}");
+    }
+
+    #[test]
+    fn string_literal_not_mangled_by_rule13() {
+        // "path:" in a string literal should not be renamed even though `path` is a variable.
+        // Rule 13 pattern `([:+\- ]+)path([:}+])` could match ` path:` in a string
+        // because `[:+\- ]` includes space and `[:}+]` includes colon.
+        let ob = make_obfuscator(&["path"], "a");
+        let result = ob.obfuscate_line(r#"echo "  path:         ${path}""#);
+        assert!(result.contains("path:"), "String literal mangled: {}", result);
+        assert!(result.contains("${a0}"), "Variable not renamed: {}", result);
+    }
+
+    #[test]
+    fn string_literal_some_path_not_mangled() {
+        // "some_path:" should not be mangled
+        let ob = make_obfuscator(&["path"], "a");
+        let result = ob.obfuscate_line(r#"echo "  some_path: done""#);
+        assert!(result.contains("some_path:"), "String literal mangled: {}", result);
     }
 
     #[test]
