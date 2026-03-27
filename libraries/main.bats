@@ -116,3 +116,54 @@ declare -gi ARGSH_BUILTIN="${ARGSH_BUILTIN:-0}"
   contains "Flags:" stdout
   contains "Environment:" stdout
 }
+
+# ---------------------------------------------------------------------------
+# argsh::shebang dispatch tests
+# ---------------------------------------------------------------------------
+@test "shebang: no args shows help" {
+  argsh::shebang >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains "Usage:" stdout
+}
+
+@test "shebang: --help shows help" {
+  argsh::shebang --help >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains "Usage:" stdout
+  contains "builtin" stdout
+  contains "status" stdout
+}
+
+@test "shebang: -h shows help" {
+  argsh::shebang -h >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains "Usage:" stdout
+}
+
+@test "shebang: builtin command dispatches" {
+  ARGSH_BUILTIN=0 argsh::shebang builtin >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains "argsh builtin:" stdout
+}
+
+@test "shebang: status command dispatches" {
+  ARGSH_BUILTIN=0 argsh::shebang status >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains "Shell:" stdout
+  contains "Features:" stdout
+}
+
+@test "shebang: --version shows version" {
+  ARGSH_VERSION="test-ver" argsh::shebang --version >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains "test-ver" stdout
+}
