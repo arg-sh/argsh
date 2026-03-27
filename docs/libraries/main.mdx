@@ -4,25 +4,75 @@ import ExternalLink from "@site/src/theme/Icon/Twitter";
 <Link to="https://github.com/arg-sh/argsh/blob/main/libraries/main.sh" alt="source code">
 Source code
 </Link>
-This file contains the main function for running a bash script
+This file contains the main entry point for running argsh scripts, managing builtins, and displaying runtime status.
 
 ## Index
 
-* [argsh::builtins](#argshbuiltins)
+* [argsh::builtin](#argshbuiltin)
+* [argsh::status](#argshstatus)
+* [argsh::help](#argshhelp)
 
-### argsh::builtins
+### argsh::builtin
 
 Manage argsh native builtins (.so).
 
 #### Example
 
 ```bash
-argsh builtins           # show current status
-argsh builtins install   # download if not present
-argsh builtins update    # re-download latest
+argsh builtin            # show current status
+argsh builtin install    # download if not present
+argsh builtin update     # re-download latest
+argsh builtin install --path /usr/local/lib  # install to specific dir
 ```
 
 #### Arguments
 
-* **$1** (string): Subcommand: install, update, or empty for status
+* **$1** (string): Subcommand: install, update, status, or empty for status
 
+### argsh::builtins
+
+Backward-compatible alias for `argsh::builtin` (plural form).
+
+### argsh::status
+
+Show comprehensive argsh runtime status including version, builtin state, shell version, feature availability, test count, and coverage.
+
+#### Example
+
+```bash
+argsh status
+```
+
+#### Output
+
+```
+argsh v0.5.4 (0489efc...)
+  script: /usr/local/bin/argsh
+
+Builtin (.so):
+  status:       loaded
+  path:         /usr/local/lib/argsh.so
+  architecture: linux/amd64
+
+Shell:
+  bash: 5.2.21(1)-release
+
+Features:
+  mcp:        available (builtin)
+  completion: available (builtin)
+  docgen:     available (builtin)
+
+Tests: 4 .bats file(s)
+Coverage: 90.05%
+```
+
+### argsh::help
+
+Print argsh CLI usage information.
+
+#### Example
+
+```bash
+argsh --help
+argsh -h
+```

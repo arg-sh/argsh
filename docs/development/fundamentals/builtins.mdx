@@ -16,35 +16,50 @@ The key benefits are:
 - **Transparent fallback**: If the `.so` is not found, everything works as before with the pure-Bash implementation
 - **Identical behavior**: The builtin output is byte-for-byte identical to the Bash implementation (validated by the test suite)
 
-## Usage (Shebang)
+## Usage
 
-The simplest way to use native builtins is through the shebang line:
-
-```bash
-#!/usr/bin/env argsh --builtin
-```
-
-If the `.so` is not found locally, argsh automatically downloads it from the latest GitHub release.
-
-To specify an install path:
+Native builtins are **loaded automatically** when argsh starts. If the `.so` is not found locally, argsh downloads it from the latest GitHub release. No flags needed — just use:
 
 ```bash
-#!/usr/bin/env argsh --builtin /usr/local/lib/argsh.so
+#!/usr/bin/env argsh
 ```
 
-If the file doesn't exist at that path, argsh downloads it there. On subsequent runs the cached `.so` is loaded directly.
+### Management
 
 ```bash
-#!/usr/bin/env argsh --no-builtin
-#!/usr/bin/env argsh --import mylib
+argsh builtin                # show current status
+argsh builtin install        # download if not present
+argsh builtin update         # re-download latest
+argsh builtin install --path /usr/local/lib  # install to specific dir
+argsh status                 # show full argsh runtime info
 ```
+
+### Opt-out
+
+To skip builtin loading entirely (pure-Bash mode):
+
+```bash
+argsh --no-builtin ./myscript.sh
+```
+
+Or control via environment variable:
+
+```bash
+export ARGSH_BUILTIN_PATH="/path/to/argsh.so"  # explicit path
+```
+
+### CLI Flags
 
 | Flag | Description |
 |---|---|
-| `--builtin [path]` | Require native builtins. Auto-downloads if not found. If path given, downloads to that path. |
-| `--no-builtin` | Skip builtin loading entirely. |
+| `--no-builtin` | Skip builtin loading and auto-download. |
 | `-i`, `--import <lib>` | Import additional libraries (repeatable). |
 | `--version` | Print argsh version and exit. |
+| `--help`, `-h` | Show usage information. |
+
+:::note
+Shebang lines (`#!/usr/bin/env argsh`) cannot pass additional flags on most systems due to kernel limitations. Use environment variables or `argsh builtin install` instead.
+:::
 
 ## Available Builtins
 
