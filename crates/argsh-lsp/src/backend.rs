@@ -1,0 +1,200 @@
+use dashmap::DashMap;
+use tower_lsp::jsonrpc::Result;
+use tower_lsp::lsp_types::*;
+use tower_lsp::{Client, LanguageServer};
+
+use argsh_syntax::document::{analyze, DocumentAnalysis};
+
+use crate::completion;
+use crate::diagnostics;
+use crate::goto_def;
+use crate::hover;
+use crate::symbols;
+
+pub struct Backend {
+    client: Client,
+    documents: DashMap<Url, DocumentState>,
+}
+
+pub struct DocumentState {
+    pub content: String,
+    pub analysis: DocumentAnalysis,
+    pub is_argsh: bool,
+}
+
+impl Backend {
+    pub fn new(client: Client) -> Self {
+        Self {
+            client,
+            documents: DashMap::new(),
+        }
+    }
+
+    fn update_document(&self, uri: &Url, content: String) {
+        let analysis = analyze(&content);
+        let is_argsh = analysis.has_source_argsh
+            || analysis.has_argsh_shebang
+            || analysis
+                .functions
+                .iter()
+                .any(|f| f.calls_args || f.calls_usage);
+        self.documents.insert(
+            uri.clone(),
+            DocumentState {
+                content,
+                analysis,
+                is_argsh,
+            },
+        );
+    }
+
+    async fn publish_diagnostics(&self, uri: &Url) {
+        if let Some(doc) = self.documents.get(uri) {
+            if !doc.is_argsh {
+                // Not an argsh file — clear any stale diagnostics.
+                self.client
+                    .publish_diagnostics(uri.clone(), vec![], None)
+                    .await;
+                return;
+            }
+            let diags = diagnostics::generate_diagnostics(&doc.analysis);
+            self.client
+                .publish_diagnostics(uri.clone(), diags, None)
+                .await;
+        }
+    }
+}
+
+#[tower_lsp::async_trait]
+impl LanguageServer for Backend {
+    async fn initialize(&self, _: InitializeParams) -> Result<InitializeResult> {
+        Ok(InitializeResult {
+            capabilities: ServerCapabilities {
+                text_document_sync: Some(TextDocumentSyncCapability::Kind(
+                    TextDocumentSyncKind::FULL,
+                )),
+                completion_provider: Some(CompletionOptions {
+                    trigger_characters: Some(vec![
+                        "'".to_string(),
+                        "@".to_string(),
+                        ":".to_string(),
+                        "~".to_string(),
+                    ]),
+                    resolve_provider: Some(false),
+                    ..Default::default()
+                }),
+                definition_provider: Some(OneOf::Left(true)),
+                document_symbol_provider: Some(OneOf::Left(true)),
+                hover_provider: Some(HoverProviderCapability::Simple(true)),
+                ..Default::default()
+            },
+            server_info: Some(ServerInfo {
+                name: "argsh-lsp".to_string(),
+                version: Some("0.1.0".to_string()),
+            }),
+        })
+    }
+
+    async fn initialized(&self, _: InitializedParams) {
+        self.client
+            .log_message(MessageType::INFO, "argsh-lsp initialized")
+            .await;
+    }
+
+    async fn shutdown(&self) -> Result<()> {
+        Ok(())
+    }
+
+    async fn did_open(&self, params: DidOpenTextDocumentParams) {
+        let uri = params.text_document.uri;
+        let content = params.text_document.text;
+        self.update_document(&uri, content);
+        self.publish_diagnostics(&uri).await;
+    }
+
+    async fn did_change(&self, params: DidChangeTextDocumentParams) {
+        let uri = params.text_document.uri;
+        if let Some(change) = params.content_changes.into_iter().last() {
+            self.update_document(&uri, change.text);
+            self.publish_diagnostics(&uri).await;
+        }
+    }
+
+    async fn did_close(&self, params: DidCloseTextDocumentParams) {
+        let uri = params.text_document.uri;
+        self.documents.remove(&uri);
+        self.client
+            .publish_diagnostics(uri, vec![], None)
+            .await;
+    }
+
+    async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
+        let uri = params.text_document_position.text_document.uri;
+        let position = params.text_document_position.position;
+        let trigger = params
+            .context
+            .as_ref()
+            .and_then(|ctx| ctx.trigger_character.as_deref());
+
+        if let Some(doc) = self.documents.get(&uri) {
+            if !doc.is_argsh {
+                return Ok(None);
+            }
+            let items = completion::completions(&doc.analysis, position, trigger, &doc.content);
+            if items.is_empty() {
+                return Ok(None);
+            }
+            return Ok(Some(CompletionResponse::Array(items)));
+        }
+        Ok(None)
+    }
+
+    async fn goto_definition(
+        &self,
+        params: GotoDefinitionParams,
+    ) -> Result<Option<GotoDefinitionResponse>> {
+        let uri = params.text_document_position_params.text_document.uri;
+        let position = params.text_document_position_params.position;
+
+        if let Some(doc) = self.documents.get(&uri) {
+            if !doc.is_argsh {
+                return Ok(None);
+            }
+            if let Some(location) =
+                goto_def::goto_definition(&doc.analysis, position, &doc.content, &uri)
+            {
+                return Ok(Some(GotoDefinitionResponse::Scalar(location)));
+            }
+        }
+        Ok(None)
+    }
+
+    async fn document_symbol(
+        &self,
+        params: DocumentSymbolParams,
+    ) -> Result<Option<DocumentSymbolResponse>> {
+        let uri = params.text_document.uri;
+
+        if let Some(doc) = self.documents.get(&uri) {
+            if !doc.is_argsh {
+                return Ok(None);
+            }
+            let syms = symbols::document_symbols(&doc.analysis);
+            return Ok(Some(DocumentSymbolResponse::Nested(syms)));
+        }
+        Ok(None)
+    }
+
+    async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
+        let uri = params.text_document_position_params.text_document.uri;
+        let position = params.text_document_position_params.position;
+
+        if let Some(doc) = self.documents.get(&uri) {
+            if !doc.is_argsh {
+                return Ok(None);
+            }
+            return Ok(hover::hover(&doc.analysis, position, &doc.content));
+        }
+        Ok(None)
+    }
+}
