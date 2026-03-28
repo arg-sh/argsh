@@ -14,9 +14,26 @@ use crate::preview;
 use crate::resolver::{self, ResolvedImports};
 use crate::symbols;
 
+/// Client-provided settings from initializationOptions.
+#[derive(Debug, Clone)]
+struct Settings {
+    resolve_depth: usize,
+    code_lens_enabled: bool,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            resolve_depth: resolver::DEFAULT_MAX_DEPTH,
+            code_lens_enabled: true,
+        }
+    }
+}
+
 pub struct Backend {
     client: Client,
     documents: DashMap<Url, DocumentState>,
+    settings: std::sync::RwLock<Settings>,
 }
 
 pub struct DocumentState {
@@ -31,6 +48,7 @@ impl Backend {
         Self {
             client,
             documents: DashMap::new(),
+            settings: std::sync::RwLock::new(Settings::default()),
         }
     }
 
@@ -46,7 +64,8 @@ impl Backend {
         // Resolve cross-file imports
         let imports = if is_argsh {
             if let Ok(path) = uri.to_file_path() {
-                resolver::resolve_imports(&analysis, &path, resolver::DEFAULT_MAX_DEPTH)
+                let depth = self.settings.read().unwrap().resolve_depth;
+                resolver::resolve_imports(&analysis, &path, depth)
             } else {
                 ResolvedImports::default()
             }
@@ -84,7 +103,18 @@ impl Backend {
 
 #[tower_lsp::async_trait]
 impl LanguageServer for Backend {
-    async fn initialize(&self, _: InitializeParams) -> Result<InitializeResult> {
+    async fn initialize(&self, params: InitializeParams) -> Result<InitializeResult> {
+        // Read client settings from initializationOptions
+        if let Some(opts) = params.initialization_options {
+            let mut settings = self.settings.write().unwrap();
+            if let Some(depth) = opts.get("resolveDepth").and_then(|v| v.as_u64()) {
+                settings.resolve_depth = depth as usize;
+            }
+            if let Some(enabled) = opts.get("codeLensEnabled").and_then(|v| v.as_bool()) {
+                settings.code_lens_enabled = enabled;
+            }
+        }
+
         Ok(InitializeResult {
             capabilities: ServerCapabilities {
                 text_document_sync: Some(TextDocumentSyncCapability::Kind(
@@ -242,6 +272,9 @@ impl LanguageServer for Backend {
     }
 
     async fn code_lens(&self, params: CodeLensParams) -> Result<Option<Vec<CodeLens>>> {
+        if !self.settings.read().unwrap().code_lens_enabled {
+            return Ok(None);
+        }
         let uri = params.text_document.uri;
         if let Some(doc) = self.documents.get(&uri) {
             if !doc.is_argsh {

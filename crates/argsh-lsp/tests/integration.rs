@@ -1664,3 +1664,52 @@ fn test_code_lens_shows_parent_link() {
 
     client.shutdown();
 }
+
+#[test]
+fn test_settings_resolve_depth_passed() {
+    let mut client = LspTestClient::new();
+    // Initialize with custom resolveDepth
+    let resp = client.send_request("initialize", serde_json::json!({
+        "processId": null,
+        "capabilities": {},
+        "rootUri": null,
+        "initializationOptions": {
+            "resolveDepth": 1,
+            "codeLensEnabled": true
+        }
+    }));
+    assert!(resp.get("error").is_none());
+    assert!(resp["result"]["capabilities"].is_object());
+    client.notify("initialized", serde_json::json!({}));
+    client.shutdown();
+}
+
+#[test]
+fn test_settings_code_lens_disabled() {
+    let mut client = LspTestClient::new();
+    let resp = client.send_request("initialize", serde_json::json!({
+        "processId": null,
+        "capabilities": {},
+        "rootUri": null,
+        "initializationOptions": {
+            "resolveDepth": 2,
+            "codeLensEnabled": false
+        }
+    }));
+    assert!(resp.get("error").is_none());
+    client.notify("initialized", serde_json::json!({}));
+
+    let content = "#!/usr/bin/env bash\nsource argsh\nmain() {\n  local -a usage=(\n    'serve' \"Start\"\n  )\n  :usage \"App\" \"${@}\"\n  \"${usage[@]}\"\n}\n";
+    client.open_document("file:///test.sh", content);
+
+    let resp = client.send_request("textDocument/codeLens", serde_json::json!({
+        "textDocument": { "uri": "file:///test.sh" }
+    }));
+    assert!(resp.get("error").is_none());
+    // With codeLens disabled, should return null or empty
+    let result = &resp["result"];
+    assert!(result.is_null() || (result.is_array() && result.as_array().unwrap().is_empty()),
+        "Code lens should be disabled, got: {:?}", result);
+
+    client.shutdown();
+}

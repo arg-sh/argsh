@@ -128,6 +128,10 @@ export function activate(context: vscode.ExtensionContext) {
     documentSelector: [
       { scheme: 'file', language: 'shellscript' },
     ],
+    initializationOptions: {
+      resolveDepth: config.get<number>('resolveDepth', 2),
+      codeLensEnabled: config.get<boolean>('codeLens.enabled', true),
+    },
   };
 
   client = new LanguageClient(
