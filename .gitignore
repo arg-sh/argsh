@@ -39,3 +39,4 @@ crates/argsh-syntax/target/
 crates/argsh-lsp/target/
 vscode-argsh/out/
 vscode-argsh/node_modules/
+.vscode/
