@@ -275,26 +275,28 @@ fn extract_array_entries(
                 continue;
             }
 
-            // Multi-line: collect until closing `)`
-            let mut content = String::new();
+            // Multi-line: collect lines with their line numbers
+            let mut content_lines: Vec<(usize, String)> = Vec::new();
             // Include any content after the opening paren on the same line
-            if !after_open.is_empty() {
-                content.push_str(after_open.trim());
-                content.push('\n');
+            if !after_open.is_empty() && !after_open.trim().is_empty() {
+                content_lines.push((body_start + i, after_open.trim().to_string()));
             }
-            let array_line = body_start + i;
             i += 1;
             while i < body.len() {
                 let inner = body[i].trim();
                 if inner.starts_with(')') || inner == ")" {
                     break;
                 }
-                content.push_str(inner);
-                content.push('\n');
+                if !inner.is_empty() {
+                    content_lines.push((body_start + i, inner.to_string()));
+                }
                 i += 1;
             }
-            let tokens = tokenize_array_content(&content);
-            add_paired_entries(&mut entries, &tokens, array_line);
+            // Process each line — each line typically has one spec + description pair
+            for (line_num, line_content) in &content_lines {
+                let tokens = tokenize_array_content(line_content);
+                add_paired_entries(&mut entries, &tokens, *line_num);
+            }
         }
         i += 1;
     }
