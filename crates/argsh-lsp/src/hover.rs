@@ -657,6 +657,55 @@ fn hover_inside_array(
         line_idx >= f.line && line_idx <= f.end_line
     )?;
 
+    // Check for group separator '-' — show the heading/description
+    if spec == "-" {
+        // Find which group separator on this line
+        // Check args entries first
+        for (i, entry) in func.args_entries.iter().enumerate() {
+            if entry.spec == "-" && entry.line == line_idx {
+                return Some(Hover {
+                    contents: HoverContents::Markup(MarkupContent {
+                        kind: MarkupKind::Markdown,
+                        value: format!("### Group separator\n\n**{}**\n\n*Groups the following flags under this heading in `--help` output*", entry.description),
+                    }),
+                    range: None,
+                });
+            }
+            // Match by position if lines aren't precise
+            if entry.spec == "-" && i < func.args_entries.len() {
+                // Check if this is roughly the right separator
+            }
+        }
+        // Check usage entries
+        for entry in &func.usage_entries {
+            if entry.is_group_separator && entry.line == line_idx {
+                return Some(Hover {
+                    contents: HoverContents::Markup(MarkupContent {
+                        kind: MarkupKind::Markdown,
+                        value: format!("### Group separator\n\n**{}**\n\n*Groups the following subcommands under this heading in `--help` output*", entry.description),
+                    }),
+                    range: None,
+                });
+            }
+        }
+        // Fallback: find the closest separator description
+        let all_seps: Vec<&str> = func.usage_entries.iter()
+            .filter(|e| e.is_group_separator)
+            .map(|e| e.description.as_str())
+            .chain(func.args_entries.iter().filter(|e| e.spec == "-").map(|e| e.description.as_str()))
+            .collect();
+        if !all_seps.is_empty() {
+            return Some(Hover {
+                contents: HoverContents::Markup(MarkupContent {
+                    kind: MarkupKind::Markdown,
+                    value: format!("### Group separator\n\nGroup headings: {}\n\n*Used to organize `--help` output into sections*",
+                        all_seps.iter().map(|s| format!("**{}**", s)).collect::<Vec<_>>().join(", ")),
+                }),
+                range: None,
+            });
+        }
+    }
+
     // Try as args entry
     for entry in &func.args_entries {
         if entry.spec == spec {
