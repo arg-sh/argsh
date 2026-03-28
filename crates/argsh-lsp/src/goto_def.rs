@@ -19,7 +19,12 @@ pub fn goto_definition(
 
     let line = lines[line_idx];
 
-    // 1. Check if cursor is on a usage entry `:-func::name` mapping
+    // 1. Check if cursor is inside a single-quoted usage entry — resolve target function
+    if let Some(loc) = goto_usage_entry(analysis, line, col, line_idx, uri) {
+        return Some(loc);
+    }
+
+    // 2. Check if cursor is on a `:-func::name` mapping specifically
     if let Some(target) = extract_func_mapping_at(line, col) {
         return find_function_location(analysis, &target, uri);
     }
@@ -98,6 +103,69 @@ fn find_function_location(
         })
 }
 
+/// If cursor is inside a single-quoted usage entry, resolve to the target function.
+fn goto_usage_entry(
+    analysis: &DocumentAnalysis,
+    line: &str,
+    col: usize,
+    line_idx: usize,
+    uri: &Url,
+) -> Option<Location> {
+    // Find enclosing single-quoted string
+    let spec = extract_single_quoted_at(line, col)?;
+
+    // Find which function this line belongs to
+    let func = analysis.functions.iter().find(|f|
+        line_idx >= f.line && line_idx <= f.end_line
+    )?;
+
+    // Find matching usage entry
+    for entry in &func.usage_entries {
+        if entry.is_group_separator { continue; }
+        if !spec.contains(&entry.name) { continue; }
+
+        // Resolve target function
+        let candidates = if let Some(ref explicit) = entry.explicit_func {
+            vec![explicit.clone()]
+        } else {
+            vec![
+                format!("{}::{}", func.name, entry.name),
+                entry.name.clone(),
+                format!("argsh::{}", entry.name),
+            ]
+        };
+
+        for candidate in &candidates {
+            if let Some(loc) = find_function_location(analysis, candidate, uri) {
+                return Some(loc);
+            }
+        }
+    }
+    None
+}
+
+/// Extract the content of the single-quoted string containing the cursor.
+fn extract_single_quoted_at(line: &str, col: usize) -> Option<String> {
+    let bytes = line.as_bytes();
+    let mut in_sq = false;
+    let mut sq_start = 0;
+
+    for (i, &b) in bytes.iter().enumerate() {
+        if b == b'\'' {
+            if in_sq {
+                if col >= sq_start && col <= i {
+                    return Some(line[sq_start + 1..i].to_string());
+                }
+                in_sq = false;
+            } else {
+                in_sq = true;
+                sq_start = i;
+            }
+        }
+    }
+    None
+}
+
 /// Extract a `:-func::name` mapping if the cursor is on it.
 fn extract_func_mapping_at(line: &str, col: usize) -> Option<String> {
     // Find all `:-` patterns in the line
@@ -106,11 +174,17 @@ fn extract_func_mapping_at(line: &str, col: usize) -> Option<String> {
         let abs_pos = search_start + pos;
         let func_start = abs_pos + 2;
 
-        // Find the end of the function name
-        let func_end = line[func_start..]
-            .find(|c: char| c == '\'' || c == '"' || c == '@' || c == ' ' || c == ':')
-            .map(|p| func_start + p)
-            .unwrap_or(line.len());
+        // Find the end of the function name (allow :: in names like argsh::docs)
+        let mut func_end = func_start;
+        let bytes = line.as_bytes();
+        while func_end < bytes.len() {
+            let ch = bytes[func_end] as char;
+            if ch.is_ascii_alphanumeric() || ch == '_' || ch == ':' {
+                func_end += 1;
+            } else {
+                break;
+            }
+        }
 
         // Check if cursor is within this range
         if col >= abs_pos && col <= func_end {
