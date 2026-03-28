@@ -82,6 +82,25 @@
         "path": "./snippets/argsh.json"
       }
     ],
+
+    "viewsContainers": {
+      "panel": [
+        {
+          "id": "argsh-panel",
+          "title": "argsh",
+          "icon": "$(terminal)"
+        }
+      ]
+    },
+    "views": {
+      "argsh-panel": [
+        {
+          "id": "argsh.commandTree",
+          "name": "Commands",
+          "when": "argsh.hasCommands"
+        }
+      ]
+    },
     "configuration": {
       "title": "argsh",
       "properties": {
@@ -94,6 +113,16 @@
           "type": "string",
           "default": "",
           "description": "Path to argsh-lsp binary (auto-detected if empty)"
+        },
+        "argsh.commandTree.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the argsh command tree panel"
+        },
+        "argsh.codeLens.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show flag/subcommand counts above functions"
         }
       }
     }
