@@ -3,6 +3,8 @@ use tower_lsp::lsp_types::*;
 use argsh_syntax::document::{ArgsArrayEntry, DocumentAnalysis, FunctionInfo};
 use argsh_syntax::field::FieldDef;
 
+use crate::resolver::ResolvedImports;
+
 /// Format a type string, appending `[]` when the field backs an array variable.
 fn format_type(field: &FieldDef, is_array: bool) -> String {
     let base = if field.is_boolean {
@@ -20,6 +22,7 @@ fn format_type(field: &FieldDef, is_array: bool) -> String {
 /// Provide hover information for the symbol under the cursor.
 pub fn hover(
     analysis: &DocumentAnalysis,
+    imports: &ResolvedImports,
     position: Position,
     content: &str,
 ) -> Option<Hover> {
@@ -64,7 +67,7 @@ pub fn hover(
     // 6. Hover on a function name
     if !word.is_empty() {
         // Check if it's a function
-        if let Some(h) = hover_function(analysis, &word) {
+        if let Some(h) = hover_function(analysis, imports, &word) {
             return Some(h);
         }
 
@@ -301,8 +304,10 @@ fn hover_annotation(line: &str, col: usize) -> Option<Hover> {
 }
 
 /// Hover on a function name: show signature, flags, and title with a help preview.
-fn hover_function(analysis: &DocumentAnalysis, name: &str) -> Option<Hover> {
-    let func = analysis.functions.iter().find(|f| f.name == name)?;
+fn hover_function(analysis: &DocumentAnalysis, imports: &ResolvedImports, name: &str) -> Option<Hover> {
+    let func = analysis.functions.iter()
+        .chain(imports.functions.iter())
+        .find(|f| f.name == name)?;
     let md = render_help_preview(func, analysis);
 
     Some(Hover {

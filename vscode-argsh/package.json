@@ -133,6 +133,13 @@
           "type": "boolean",
           "default": true,
           "description": "Automatically format argsh arrays on save"
+        },
+        "argsh.resolveDepth": {
+          "type": "integer",
+          "default": 2,
+          "minimum": 0,
+          "maximum": 5,
+          "description": "Maximum depth for resolving imports and source statements across files (0 = current file only)"
         }
       }
     }

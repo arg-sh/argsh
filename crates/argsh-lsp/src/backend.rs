@@ -11,6 +11,7 @@ use crate::diagnostics;
 use crate::goto_def;
 use crate::hover;
 use crate::preview;
+use crate::resolver::{self, ResolvedImports};
 use crate::symbols;
 
 pub struct Backend {
@@ -22,6 +23,7 @@ pub struct DocumentState {
     pub content: String,
     pub analysis: DocumentAnalysis,
     pub is_argsh: bool,
+    pub imports: ResolvedImports,
 }
 
 impl Backend {
@@ -40,12 +42,25 @@ impl Backend {
                 .functions
                 .iter()
                 .any(|f| f.calls_args || f.calls_usage);
+
+        // Resolve cross-file imports
+        let imports = if is_argsh {
+            if let Ok(path) = uri.to_file_path() {
+                resolver::resolve_imports(&analysis, &path, resolver::DEFAULT_MAX_DEPTH)
+            } else {
+                ResolvedImports::default()
+            }
+        } else {
+            ResolvedImports::default()
+        };
+
         self.documents.insert(
             uri.clone(),
             DocumentState {
                 content,
                 analysis,
                 is_argsh,
+                imports,
             },
         );
     }
@@ -59,7 +74,7 @@ impl Backend {
                     .await;
                 return;
             }
-            let diags = diagnostics::generate_diagnostics(&doc.analysis, &doc.content);
+            let diags = diagnostics::generate_diagnostics(&doc.analysis, &doc.imports, &doc.content);
             self.client
                 .publish_diagnostics(uri.clone(), diags, None)
                 .await;
@@ -171,7 +186,7 @@ impl LanguageServer for Backend {
                 return Ok(None);
             }
             if let Some(location) =
-                goto_def::goto_definition(&doc.analysis, position, &doc.content, &uri)
+                goto_def::goto_definition(&doc.analysis, &doc.imports, position, &doc.content, &uri)
             {
                 return Ok(Some(GotoDefinitionResponse::Scalar(location)));
             }
@@ -220,7 +235,7 @@ impl LanguageServer for Backend {
             if !doc.is_argsh {
                 return Ok(None);
             }
-            return Ok(hover::hover(&doc.analysis, position, &doc.content));
+            return Ok(hover::hover(&doc.analysis, &doc.imports, position, &doc.content));
         }
         Ok(None)
     }

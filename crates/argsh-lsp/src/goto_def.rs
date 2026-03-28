@@ -1,10 +1,13 @@
 use tower_lsp::lsp_types::*;
 
-use argsh_syntax::document::DocumentAnalysis;
+use argsh_syntax::document::{analyze, DocumentAnalysis};
+
+use crate::resolver::ResolvedImports;
 
 /// Go-to-definition: resolve the symbol under the cursor to a location.
 pub fn goto_definition(
     analysis: &DocumentAnalysis,
+    imports: &ResolvedImports,
     position: Position,
     content: &str,
     uri: &Url,
@@ -20,28 +23,38 @@ pub fn goto_definition(
     let line = lines[line_idx];
 
     // 1. Check if cursor is inside a single-quoted usage entry — resolve target function
-    if let Some(loc) = goto_usage_entry(analysis, line, col, line_idx, uri) {
+    if let Some(loc) = goto_usage_entry(analysis, imports, line, col, line_idx, uri) {
         return Some(loc);
     }
 
     // 2. Check if cursor is on a `:-func::name` mapping specifically
     if let Some(target) = extract_func_mapping_at(line, col) {
-        return find_function_location(analysis, &target, uri);
+        return find_function_location(analysis, imports, &target, uri);
     }
 
     // 3. Check if cursor is on a type reference :~typename — resolve to to::typename()
-    if let Some(loc) = goto_type_definition(analysis, line, col, uri) {
+    if let Some(loc) = goto_type_definition(analysis, imports, line, col, uri) {
         return Some(loc);
     }
 
-    // 4. Check if cursor is on an import statement
+    // 4. Check if cursor is on an import statement — resolve to the imported file
     if let Some(module) = extract_import_module(line, col) {
-        // We cannot resolve import paths without filesystem context,
-        // but we can check if the module corresponds to a function in the file.
-        let _ = module;
+        for (mod_name, path) in &imports.resolved_files {
+            if *mod_name == module {
+                if let Ok(import_uri) = Url::from_file_path(path) {
+                    return Some(Location {
+                        uri: import_uri,
+                        range: Range {
+                            start: Position { line: 0, character: 0 },
+                            end: Position { line: 0, character: 0 },
+                        },
+                    });
+                }
+            }
+        }
     }
 
-    // 3. Check if cursor is on a function call or name like `func::name`
+    // 5. Check if cursor is on a function call or name like `func::name`
     let word = extract_word_at(line, col);
     if !word.is_empty() {
         // Check if it matches a usage entry's explicit_func
@@ -49,7 +62,7 @@ pub fn goto_definition(
             for entry in &func.usage_entries {
                 if let Some(ref target) = entry.explicit_func {
                     if target == &word {
-                        return find_function_location(analysis, target, uri);
+                        return find_function_location(analysis, imports, target, uri);
                     }
                 }
                 // Check if the word matches a usage entry name and resolve
@@ -62,12 +75,12 @@ pub fn goto_definition(
                             // Implicit: parent::subcmd pattern not easily detectable here
                             &word
                         });
-                    if let Some(loc) = find_function_location(analysis, target_name, uri) {
+                    if let Some(loc) = find_function_location(analysis, imports, target_name, uri) {
                         return Some(loc);
                     }
                     // Try with parent prefix
                     let prefixed = format!("{}::{}", func.name, entry.name);
-                    if let Some(loc) = find_function_location(analysis, &prefixed, uri) {
+                    if let Some(loc) = find_function_location(analysis, imports, &prefixed, uri) {
                         return Some(loc);
                     }
                 }
@@ -75,7 +88,7 @@ pub fn goto_definition(
         }
 
         // Direct function name match
-        if let Some(loc) = find_function_location(analysis, &word, uri) {
+        if let Some(loc) = find_function_location(analysis, imports, &word, uri) {
             return Some(loc);
         }
     }
@@ -83,17 +96,16 @@ pub fn goto_definition(
     None
 }
 
-/// Find a function by name in the analysis and return its location.
+/// Find a function by name in the analysis (current file first, then imports).
 fn find_function_location(
     analysis: &DocumentAnalysis,
+    imports: &ResolvedImports,
     name: &str,
     uri: &Url,
 ) -> Option<Location> {
-    analysis
-        .functions
-        .iter()
-        .find(|f| f.name == name)
-        .map(|f| Location {
+    // First try in current file
+    if let Some(f) = analysis.functions.iter().find(|f| f.name == name) {
+        return Some(Location {
             uri: uri.clone(),
             range: Range {
                 start: Position {
@@ -105,12 +117,43 @@ fn find_function_location(
                     character: f.name.len() as u32,
                 },
             },
-        })
+        });
+    }
+
+    // Then try imported files
+    if imports.functions.iter().any(|f| f.name == name) {
+        for (_, path) in &imports.resolved_files {
+            let content = match std::fs::read_to_string(path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+            let imported_analysis = analyze(&content);
+            if let Some(f) = imported_analysis.functions.iter().find(|f| f.name == name) {
+                let import_uri = Url::from_file_path(path).ok()?;
+                return Some(Location {
+                    uri: import_uri,
+                    range: Range {
+                        start: Position {
+                            line: f.line as u32,
+                            character: 0,
+                        },
+                        end: Position {
+                            line: f.line as u32,
+                            character: f.name.len() as u32,
+                        },
+                    },
+                });
+            }
+        }
+    }
+
+    None
 }
 
 /// If cursor is inside a single-quoted usage entry, resolve to the target function.
 fn goto_usage_entry(
     analysis: &DocumentAnalysis,
+    imports: &ResolvedImports,
     line: &str,
     col: usize,
     line_idx: usize,
@@ -141,7 +184,7 @@ fn goto_usage_entry(
         };
 
         for candidate in &candidates {
-            if let Some(loc) = find_function_location(analysis, candidate, uri) {
+            if let Some(loc) = find_function_location(analysis, imports, candidate, uri) {
                 return Some(loc);
             }
         }
@@ -174,6 +217,7 @@ fn extract_single_quoted_at(line: &str, col: usize) -> Option<String> {
 /// If cursor is on `:~typename`, resolve to `to::typename()` function.
 fn goto_type_definition(
     analysis: &DocumentAnalysis,
+    imports: &ResolvedImports,
     line: &str,
     col: usize,
     uri: &Url,
@@ -200,7 +244,7 @@ fn goto_type_definition(
                 let type_name = &line[type_start..type_end];
                 // Try to find to::typename function
                 let func_name = format!("to::{}", type_name);
-                return find_function_location(analysis, &func_name, uri);
+                return find_function_location(analysis, imports, &func_name, uri);
             }
             break;
         }
@@ -228,7 +272,7 @@ fn goto_type_definition(
                 if type_end > type_start {
                     let type_name = &line[type_start..type_end];
                     let func_name = format!("to::{}", type_name);
-                    return find_function_location(analysis, &func_name, uri);
+                    return find_function_location(analysis, imports, &func_name, uri);
                 }
                 break;
             }

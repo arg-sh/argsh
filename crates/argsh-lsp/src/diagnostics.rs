@@ -4,6 +4,8 @@ use tower_lsp::lsp_types::*;
 
 use argsh_syntax::document::{DocumentAnalysis, FunctionInfo};
 
+use crate::resolver::ResolvedImports;
+
 /// Diagnostic codes — like shellcheck's SC#### identifiers.
 /// Users can suppress them with `# argsh-ignore=AG001,AG002` comments.
 pub mod codes {
@@ -20,7 +22,11 @@ pub mod codes {
 }
 
 /// Generate LSP diagnostics from a document analysis.
-pub fn generate_diagnostics(analysis: &DocumentAnalysis, content: &str) -> Vec<Diagnostic> {
+pub fn generate_diagnostics(
+    analysis: &DocumentAnalysis,
+    imports: &ResolvedImports,
+    content: &str,
+) -> Vec<Diagnostic> {
     let mut diags = Vec::new();
     let suppressed = collect_suppressions(content);
 
@@ -31,10 +37,10 @@ pub fn generate_diagnostics(analysis: &DocumentAnalysis, content: &str) -> Vec<D
         check_missing_variable_declarations(func, &mut diags);
         check_missing_args_call(func, &mut diags);
         check_missing_usage_call(func, &mut diags);
-        check_usage_function_targets(func, analysis, &mut diags);
+        check_usage_function_targets(func, analysis, imports, &mut diags);
         check_duplicate_flags(func, &mut diags);
         check_duplicate_short_aliases(func, &mut diags);
-        check_bare_function_resolution(func, analysis, &mut diags);
+        check_bare_function_resolution(func, analysis, imports, &mut diags);
     }
 
     // Filter out suppressed diagnostics
@@ -293,9 +299,14 @@ fn check_missing_usage_call(func: &FunctionInfo, diags: &mut Vec<Diagnostic>) {
 fn check_usage_function_targets(
     func: &FunctionInfo,
     analysis: &DocumentAnalysis,
+    imports: &ResolvedImports,
     diags: &mut Vec<Diagnostic>,
 ) {
-    let known_funcs: HashSet<&str> = analysis.functions.iter().map(|f| f.name.as_str()).collect();
+    let mut known_funcs: HashSet<&str> = analysis.functions.iter().map(|f| f.name.as_str()).collect();
+    // Also include imported function names
+    for f in &imports.functions {
+        known_funcs.insert(&f.name);
+    }
 
     for entry in &func.usage_entries {
         if entry.is_group_separator { continue; }
@@ -373,9 +384,13 @@ fn check_duplicate_short_aliases(func: &FunctionInfo, diags: &mut Vec<Diagnostic
 fn check_bare_function_resolution(
     func: &FunctionInfo,
     analysis: &DocumentAnalysis,
+    imports: &ResolvedImports,
     diags: &mut Vec<Diagnostic>,
 ) {
-    let known_funcs: HashSet<&str> = analysis.functions.iter().map(|f| f.name.as_str()).collect();
+    let mut known_funcs: HashSet<&str> = analysis.functions.iter().map(|f| f.name.as_str()).collect();
+    for f in &imports.functions {
+        known_funcs.insert(&f.name);
+    }
 
     for entry in &func.usage_entries {
         if entry.is_group_separator { continue; }
