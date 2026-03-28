@@ -1,0 +1,95 @@
+---
+description: 'IDE support for argsh -- language server with diagnostics, completions, and more'
+---
+
+# Language Server & VSCode Extension
+
+argsh includes a Language Server Protocol (LSP) implementation and VSCode extension that provides IDE support for argsh-specific syntax.
+
+## Features
+
+### Diagnostics
+
+The language server validates your argsh scripts in real-time:
+
+- **Missing variable declarations** -- warns when an `args` field has no matching `local` declaration
+- **Invalid modifiers** -- errors on conflicting modifiers (`:+` with `:~type`)
+- **Unpaired entries** -- errors when args/usage arrays have odd element counts
+- **Duplicate flags** -- warns on duplicate flag names or short aliases
+- **Missing calls** -- warns when `args=(...)` is declared but `:args` is never called
+- **Unresolved commands** -- warns when a usage entry references a nonexistent function
+
+### Completions
+
+Context-aware completions trigger automatically:
+
+| Context | Trigger | Suggestions |
+|---------|---------|-------------|
+| Inside `args=(...)` after `:` | `:` | `:+`, `:~int`, `:~float`, `:!`, `:#` |
+| After `:~` | `~` | `int`, `float`, `file`, `boolean`, `string`, custom `to::` types |
+| Inside `usage=(...)` after `@` | `@` | `readonly`, `destructive`, `json`, `idempotent`, `openworld` |
+| After `:-` | `-` | Function names in the file |
+| After `import` | space | `string`, `array`, `fmt`, `error`, `is`, `to`, ... |
+
+### Help Preview
+
+Hover over any function to see its generated help text -- the same output users see with `--help`:
+
+- Flag table with types, aliases, and descriptions
+- Subcommand list for `:usage` functions
+- Summary counts (flags, required, subcommands)
+
+### Code Lens
+
+Clickable indicators above functions show:
+- Number of flags and required flags
+- Number of subcommands
+
+### Script Preview
+
+Use **Ctrl+Shift+A** or the command palette (**argsh: Show Script Preview**) to open a dashboard showing:
+- Command tree with all nested subcommands
+- Flag details per command
+- MCP tool schema preview
+- Docgen YAML preview
+
+### Go to Definition
+
+**Ctrl+Click** on:
+- A usage entry command name -- jumps to the function
+- A `:-func::name` mapping -- jumps to the target function
+
+### Document Symbols
+
+The sidebar outline shows the function hierarchy with `::` namespace nesting, with args and usage entries as children.
+
+## Installation
+
+### From Source
+
+```bash
+# Build the LSP binary
+cd crates/argsh-lsp && cargo build --release
+
+# Install the VSCode extension
+cd vscode-argsh && npm install && npm run compile
+```
+
+Then in VSCode: **Ctrl+Shift+P** > "Developer: Install Extension from Location..." > select `vscode-argsh/`.
+
+### Configuration
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `argsh.lsp.enabled` | `true` | Enable the language server |
+| `argsh.lsp.path` | `""` | Path to `argsh-lsp` binary (auto-detected if empty) |
+
+## Architecture
+
+```
+crates/argsh-syntax/  -- shared parsing library (pure Rust, no FFI)
+crates/argsh-lsp/     -- LSP server (tower-lsp)
+vscode-argsh/         -- VSCode extension (TypeScript)
+```
+
+The LSP server communicates over stdio and works with any LSP-compatible editor (VSCode, Neovim, Helix, Emacs).

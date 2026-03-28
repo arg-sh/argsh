@@ -19,7 +19,30 @@
       {
         "command": "argsh.showPreview",
         "title": "argsh: Show Script Preview",
-        "icon": "$(preview)"
+        "icon": "$(preview)",
+        "category": "argsh"
+      },
+      {
+        "command": "argsh.showHelp",
+        "title": "argsh: Show Help for Current Function",
+        "category": "argsh"
+      },
+      {
+        "command": "argsh.validateScript",
+        "title": "argsh: Validate Script",
+        "category": "argsh"
+      },
+      {
+        "command": "argsh.restartServer",
+        "title": "argsh: Restart Language Server",
+        "category": "argsh"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "argsh.showPreview",
+        "key": "ctrl+shift+a",
+        "when": "resourceLangId == shellscript"
       }
     ],
     "menus": {

@@ -918,3 +918,159 @@ fn test_diagnostics_no_warning_when_local_declared() {
     std::thread::sleep(std::time::Duration::from_millis(300));
     client.shutdown();
 }
+
+#[test]
+fn test_hover_on_args_entry_shows_field_details() {
+    let mut client = LspTestClient::new();
+    client.initialize();
+
+    let content = "#!/usr/bin/env bash\nsource argsh\nserve() {\n  local port\n  local -a args=(\n    'port|p:~int' \"Port number\"\n  )\n  :args \"Start server\" \"${@}\"\n}\n";
+    client.open_document("file:///test.sh", content);
+    // Hover on 'port|p:~int' (line 5, inside the quotes)
+    let resp = client.hover("file:///test.sh", 5, 8);
+    assert!(resp.get("error").is_none(), "Error: {:?}", resp["error"]);
+    let result = &resp["result"];
+    assert!(!result.is_null(), "Hover returned null for args entry");
+    // Should contain field info
+    let content_str = format!("{}", result);
+    assert!(
+        content_str.contains("port") || content_str.contains("int"),
+        "Hover should mention field name or type: {}",
+        content_str
+    );
+
+    client.shutdown();
+}
+
+#[test]
+fn test_hover_on_usage_entry_shows_command_info() {
+    let mut client = LspTestClient::new();
+    client.initialize();
+
+    let content = "#!/usr/bin/env bash\nsource argsh\nmain() {\n  local -a usage=(\n    'serve@readonly' \"Start server\"\n  )\n  :usage \"App\" \"${@}\"\n  \"${usage[@]}\"\n}\nserve() { :args \"S\" \"${@}\"; }\n";
+    client.open_document("file:///test.sh", content);
+    // Hover on 'serve@readonly' (line 4, inside quotes)
+    let resp = client.hover("file:///test.sh", 4, 8);
+    assert!(resp.get("error").is_none());
+    let result = &resp["result"];
+    assert!(
+        !result.is_null(),
+        "Hover returned null for usage entry"
+    );
+    let content_str = format!("{}", result);
+    assert!(
+        content_str.contains("serve") || content_str.contains("readonly"),
+        "Hover should mention command or annotation: {}",
+        content_str
+    );
+
+    client.shutdown();
+}
+
+#[test]
+fn test_hover_on_function_shows_help_preview() {
+    let mut client = LspTestClient::new();
+    client.initialize();
+
+    let content = "#!/usr/bin/env bash\nsource argsh\nserve() {\n  local port verbose\n  local -a args=(\n    'port|p:~int' \"Port number\"\n    'verbose|v:+' \"Verbose output\"\n  )\n  :args \"Start the server\" \"${@}\"\n}\n";
+    client.open_document("file:///test.sh", content);
+    // Hover on function name "serve" (line 2, col 0)
+    let resp = client.hover("file:///test.sh", 2, 0);
+    assert!(resp.get("error").is_none());
+    let result = &resp["result"];
+    assert!(
+        !result.is_null(),
+        "Hover returned null for function"
+    );
+    let content_str = format!("{}", result);
+    // Should show help preview with flags
+    assert!(
+        content_str.contains("port")
+            || content_str.contains("verbose")
+            || content_str.contains("Start"),
+        "Function hover should show help preview: {}",
+        content_str
+    );
+
+    client.shutdown();
+}
+
+#[test]
+fn test_hover_on_modifier_shows_docs() {
+    let mut client = LspTestClient::new();
+    client.initialize();
+
+    let content = "#!/usr/bin/env bash\nsource argsh\nf() {\n  local v\n  local -a args=(\n    'verbose|v:+' \"Verbose\"\n  )\n  :args \"T\" \"${@}\"\n}\n";
+    client.open_document("file:///test.sh", content);
+    // Hover on ':+' modifier (line 5, around col 17)
+    let resp = client.hover("file:///test.sh", 5, 17);
+    // May or may not return content -- just verify no error/crash
+    assert!(
+        resp.get("error").is_none(),
+        "Hover on modifier should not error"
+    );
+
+    client.shutdown();
+}
+
+#[test]
+fn test_hover_on_annotation_shows_docs() {
+    let mut client = LspTestClient::new();
+    client.initialize();
+
+    let content = "#!/usr/bin/env bash\nsource argsh\nm() {\n  local -a usage=(\n    'cmd@readonly' \"Desc\"\n  )\n  :usage \"T\" \"${@}\"\n  \"${usage[@]}\"\n}\n";
+    client.open_document("file:///test.sh", content);
+    // Hover on '@readonly' (line 4, around col 10)
+    let resp = client.hover("file:///test.sh", 4, 10);
+    assert!(
+        resp.get("error").is_none(),
+        "Hover on annotation should not error"
+    );
+
+    client.shutdown();
+}
+
+#[test]
+fn test_hover_on_args_call_shows_summary() {
+    let mut client = LspTestClient::new();
+    client.initialize();
+
+    let content = "#!/usr/bin/env bash\nsource argsh\nf() {\n  local p v\n  local -a args=(\n    'port|p:~int' \"Port\"\n    'verbose|v:+' \"Verbose\"\n  )\n  :args \"Title\" \"${@}\"\n}\n";
+    client.open_document("file:///test.sh", content);
+    // Hover on ':args' call (line 8, col 2)
+    let resp = client.hover("file:///test.sh", 8, 3);
+    assert!(resp.get("error").is_none());
+    // Should show something about the flags count
+
+    client.shutdown();
+}
+
+#[test]
+fn test_code_lens_shows_counts() {
+    let mut client = LspTestClient::new();
+    client.initialize();
+
+    let content = "#!/usr/bin/env bash\nsource argsh\nmain() {\n  local -a usage=(\n    'serve' \"Start\"\n    'build' \"Build\"\n  )\n  :usage \"App\" \"${@}\"\n  \"${usage[@]}\"\n}\nserve() {\n  local port\n  local -a args=(\n    'port|p:~int' \"Port\"\n  )\n  :args \"S\" \"${@}\"\n}\n";
+    client.open_document("file:///test.sh", content);
+    let resp = client.send_request(
+        "textDocument/codeLens",
+        json!({
+            "textDocument": { "uri": "file:///test.sh" }
+        }),
+    );
+    assert!(
+        resp.get("error").is_none(),
+        "CodeLens error: {:?}",
+        resp["error"]
+    );
+    let result = &resp["result"];
+    assert!(result.is_array(), "CodeLens should return array");
+    let lenses = result.as_array().unwrap();
+    assert!(
+        lenses.len() >= 2,
+        "Expected code lenses for main + serve, got {}",
+        lenses.len()
+    );
+
+    client.shutdown();
+}

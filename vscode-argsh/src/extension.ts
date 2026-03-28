@@ -72,6 +72,55 @@ export function activate(context: vscode.ExtensionContext) {
     }
   });
   context.subscriptions.push(previewCmd);
+
+  // Restart server command
+  const restartCmd = vscode.commands.registerCommand('argsh.restartServer', async () => {
+    if (client) {
+      await client.stop();
+      await client.start();
+      vscode.window.showInformationMessage('argsh Language Server restarted');
+    }
+  });
+  context.subscriptions.push(restartCmd);
+
+  // Show help for current function
+  const helpCmd = vscode.commands.registerCommand('argsh.showHelp', async () => {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor || !client) return;
+
+    // Trigger hover at cursor position to show help
+    const position = editor.selection.active;
+    const hover = await client.sendRequest('textDocument/hover', {
+      textDocument: { uri: editor.document.uri.toString() },
+      position: { line: position.line, character: position.character }
+    }) as any;
+
+    if (hover && hover.contents) {
+      const content = typeof hover.contents === 'string'
+        ? hover.contents
+        : hover.contents.value || JSON.stringify(hover.contents);
+      vscode.window.showInformationMessage(content.substring(0, 500));
+    } else {
+      vscode.window.showInformationMessage('No argsh info at cursor position');
+    }
+  });
+  context.subscriptions.push(helpCmd);
+
+  // Validate script command
+  const validateCmd = vscode.commands.registerCommand('argsh.validateScript', async () => {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor || !client) return;
+
+    // Force re-analysis by sending didChange
+    const uri = editor.document.uri.toString();
+    const text = editor.document.getText();
+    await client.sendNotification('textDocument/didChange', {
+      textDocument: { uri, version: editor.document.version },
+      contentChanges: [{ text }]
+    });
+    vscode.window.showInformationMessage('argsh: Script validation triggered');
+  });
+  context.subscriptions.push(validateCmd);
 }
 
 export function deactivate(): Thenable<void> | undefined {
