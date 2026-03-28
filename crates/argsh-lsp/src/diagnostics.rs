@@ -325,16 +325,16 @@ fn check_usage_function_targets(
         if !known_funcs.contains(target.as_str()) {
             diags.push(make_diag(
                 line_range(func.line),
-                DiagnosticSeverity::HINT,
+                DiagnosticSeverity::WARNING,
                 codes::AG007,
-                format!("'{}' → '{}' not found in this file (may be imported)", entry.name, target),
+                format!("'{}' → '{}' not found (searched current file and imports)", entry.name, target),
             ));
             if entry.line != func.line && entry.line > 0 {
                 diags.push(make_diag_tagged(
                     line_range(entry.line),
-                    DiagnosticSeverity::HINT,
+                    DiagnosticSeverity::WARNING,
                     codes::AG007,
-                    format!("'{}' not found in this file", target),
+                    format!("'{}' not found", target),
                     vec![DiagnosticTag::UNNECESSARY],
                 ));
             }
