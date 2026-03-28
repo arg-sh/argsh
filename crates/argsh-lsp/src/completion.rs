@@ -1,6 +1,15 @@
+use std::sync::LazyLock;
+
+use regex::Regex;
 use tower_lsp::lsp_types::*;
 
 use argsh_syntax::document::DocumentAnalysis;
+
+static RE_TO_FUNC: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?m)^\s*(to::\w[\w:]*)\s*\(\)").unwrap());
+
+static RE_LIB_PREFIX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\b(\w+)::\w*$").unwrap());
 
 /// Provide contextual completions based on cursor position and trigger character.
 pub fn completions(
@@ -132,8 +141,7 @@ fn detect_context(
                 return Context::LibraryFunction(format!("{}::", module));
             }
             // Also check for partial: "is::arr" -> still library function context
-            let re = regex::Regex::new(r"\b(\w+)::\w*$").unwrap();
-            if let Some(cap) = re.captures(prefix) {
+            if let Some(cap) = RE_LIB_PREFIX.captures(prefix) {
                 let module = cap.get(1).unwrap().as_str();
                 return Context::LibraryFunction(format!("{}::", module));
             }
@@ -300,8 +308,7 @@ fn complete_args_types(analysis: &DocumentAnalysis, content: &str) -> Vec<Comple
     ];
 
     // Add custom `to::` function names found in the file as custom type validators.
-    let re = regex::Regex::new(r"(?m)^\s*(to::\w[\w:]*)\s*\(\)").unwrap();
-    for cap in re.captures_iter(content) {
+    for cap in RE_TO_FUNC.captures_iter(content) {
         let fname = cap.get(1).unwrap().as_str();
         // Strip the `to::` prefix for the type name
         let tname = fname.strip_prefix("to::").unwrap_or(fname);

@@ -575,7 +575,21 @@ fn hover_args_entry(
 
 /// Render hover markdown for a single args entry.
 fn render_args_entry_detail(entry: &ArgsArrayEntry) -> Hover {
-    let field = entry.parsed.as_ref().ok().unwrap();
+    let field = match entry.parsed.as_ref() {
+        Ok(f) => f,
+        Err(e) => {
+            return Hover {
+                contents: HoverContents::Markup(MarkupContent {
+                    kind: MarkupKind::Markdown,
+                    value: format!(
+                        "**Parse error** in `{}`\n\n{}",
+                        entry.spec, e
+                    ),
+                }),
+                range: None,
+            };
+        }
+    };
     let type_str = format_type(field, entry.is_array);
 
     // Build the flag header like: **--port, -p** `int`

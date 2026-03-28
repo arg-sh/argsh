@@ -54,7 +54,7 @@ class ArgshCommandTreeProvider implements vscode.TreeDataProvider<CommandTreeIte
   }
 
   getTreeItem(element: CommandTreeItem): vscode.TreeItem {
-    const isFunction = element.kind === 12; // SymbolKind.Function
+    const isFunction = element.kind === vscode.SymbolKind.Function;
     const hasChildren = element.children && element.children.length > 0;
     const collapsible = hasChildren
       ? vscode.TreeItemCollapsibleState.Expanded
@@ -74,10 +74,10 @@ class ArgshCommandTreeProvider implements vscode.TreeDataProvider<CommandTreeIte
         title: 'Go to',
         arguments: [element],
       };
-    } else if (element.kind === 7) { // Property (args entry)
+    } else if (element.kind === vscode.SymbolKind.Property) {
       item.iconPath = new vscode.ThemeIcon('symbol-field');
       item.description = element.detail || '';
-    } else if (element.kind === 10) { // Enum (usage entry)
+    } else if (element.kind === vscode.SymbolKind.Enum) {
       item.iconPath = new vscode.ThemeIcon('symbol-enum');
       item.description = element.detail || '';
     }
@@ -138,7 +138,6 @@ export function activate(context: vscode.ExtensionContext) {
   );
 
   client.start();
-  context.subscriptions.push({ dispose: () => client?.stop() });
 
   // --- Command Tree ---
 
