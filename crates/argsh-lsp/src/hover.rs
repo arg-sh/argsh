@@ -716,15 +716,81 @@ fn hover_inside_array(
         }
     }
 
-    // Try as usage entry
+    // Try as usage entry — show target function's full help preview
     for entry in &func.usage_entries {
+        if entry.is_group_separator {
+            continue;
+        }
         if spec.contains(&entry.name) {
-            let mut md = format!("**subcommand** `{}`\n\n", entry.name);
+            let mut md = format!("### `{}`", entry.name);
             if !entry.description.is_empty() {
-                md.push_str(&format!("{}\n", entry.description));
+                md.push_str(&format!(" — {}", entry.description));
             }
+            md.push('\n');
+
+            if !entry.annotations.is_empty() {
+                let badges: Vec<String> = entry.annotations.iter()
+                    .map(|a| format!("`@{}`", a))
+                    .collect();
+                md.push_str(&format!("\n{}\n", badges.join(" ")));
+            }
+
+            if let Some(ref target) = entry.explicit_func {
+                md.push_str(&format!("\n*→ `{}`*\n", target));
+            }
+
             if entry.hidden {
-                md.push_str("*Hidden*\n");
+                md.push_str("\n*Hidden from `--help`*\n");
+            }
+
+            // Find the target function and show its flags/subcommands
+            let target_name = entry.explicit_func.as_deref().unwrap_or(&entry.name);
+            let target_func = analysis.functions.iter().find(|f| {
+                f.name == target_name
+                    || f.name == format!("{}::{}", func.name, entry.name)
+                    || f.name.ends_with(&format!("::{}", entry.name))
+            });
+
+            if let Some(target) = target_func {
+                if let Some(ref title) = target.title {
+                    if title != &entry.description {
+                        md.push_str(&format!("\n> {}\n", title));
+                    }
+                }
+
+                // Show flags
+                let flags: Vec<_> = target.args_entries.iter()
+                    .filter(|e| e.spec != "-" && e.parsed.is_ok())
+                    .collect();
+                if !flags.is_empty() {
+                    md.push_str("\n**Options:**\n\n");
+                    for flag_entry in &flags {
+                        if let Ok(ref field) = flag_entry.parsed {
+                            let type_str = format_type(field, flag_entry.is_array);
+                            let flag_str = if field.is_positional {
+                                format!("`<{}>`", field.display_name)
+                            } else if let Some(ref short) = field.short {
+                                format!("`--{}`, `-{}`", field.display_name, short)
+                            } else {
+                                format!("`--{}`", field.display_name)
+                            };
+                            let req = if field.required { " *(required)*" } else { "" };
+                            md.push_str(&format!("- {} `{}` — {}{}\n",
+                                flag_str, type_str, flag_entry.description, req));
+                        }
+                    }
+                }
+
+                // Show nested subcommands
+                let cmds: Vec<_> = target.usage_entries.iter()
+                    .filter(|e| !e.is_group_separator && !e.hidden)
+                    .collect();
+                if !cmds.is_empty() {
+                    md.push_str("\n**Subcommands:**\n\n");
+                    for cmd in &cmds {
+                        md.push_str(&format!("- `{}` — {}\n", cmd.name, cmd.description));
+                    }
+                }
             }
 
             return Some(Hover {
