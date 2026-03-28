@@ -78,7 +78,7 @@ pub fn code_lenses(analysis: &DocumentAnalysis, uri: &Url) -> Vec<CodeLens> {
             parts.push(format!("← {}", parent_name));
         }
 
-        let title = format!("{} {}", icon, parts.join(" · "));
+        let title = format!("{}\u{2002}{}", icon, parts.join(" · "));
 
         lenses.push(CodeLens {
             range: Range {
