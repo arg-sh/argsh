@@ -303,34 +303,85 @@ pre {{
         }
     }
 
-    // MCP tools — show as readable command table (not raw JSON)
+    // MCP tools — leaf functions only (have :args, no :usage)
     let leaf_funcs: Vec<_> = analysis.functions.iter()
-        .filter(|f| f.calls_args && !f.usage_entries.is_empty() == false)
-        .filter(|f| !f.args_entries.is_empty() || f.calls_args)
+        .filter(|f| f.calls_args && f.usage_entries.is_empty())
         .collect();
     if !leaf_funcs.is_empty() {
-        html.push_str("<h2>MCP Tools</h2>\n<div class=\"card\">\n");
+        html.push_str(&format!(
+            "<h2>MCP Tools<span class=\"section-count\">{} tool{}</span></h2>\n<div class=\"card\">\n",
+            leaf_funcs.len(),
+            if leaf_funcs.len() == 1 { "" } else { "s" }
+        ));
         html.push_str("<p style=\"color: var(--text-dim); font-size: 0.85em; margin-bottom: 12px;\">Commands exposed via <code>./script mcp</code></p>\n");
+
+        // Find the script name from the first dispatcher or first function
+        let script_prefix = analysis.functions.iter()
+            .find(|f| f.calls_usage)
+            .or_else(|| analysis.functions.first())
+            .map(|f| f.name.split("::").next().unwrap_or(&f.name))
+            .unwrap_or("script");
+
         for func in &leaf_funcs {
+            // MCP tool name: script_funcname (:: replaced with _)
+            let tool_name = format!("{}_{}", script_prefix, func.name.replace("::", "_"));
             let desc = func.title.as_deref().unwrap_or("");
+
+            // Collect annotations from usage entries that reference this function
+            let annotations: Vec<String> = analysis.functions.iter()
+                .flat_map(|parent| parent.usage_entries.iter())
+                .filter(|entry| {
+                    // Check if this usage entry maps to our function
+                    let prefixed = format!("{}::{}",
+                        analysis.functions.iter()
+                            .find(|p| p.usage_entries.iter().any(|e| std::ptr::eq(e, *entry)))
+                            .map(|p| p.name.as_str())
+                            .unwrap_or(""),
+                        entry.name
+                    );
+                    prefixed == func.name || entry.name == func.name
+                        || entry.explicit_func.as_deref() == Some(&func.name)
+                })
+                .flat_map(|entry| entry.annotations.iter().cloned())
+                .collect();
+
+            let annotation_badges = if annotations.is_empty() {
+                String::new()
+            } else {
+                let badges: Vec<String> = annotations.iter().map(|a| {
+                    let color = match a.as_str() {
+                        "readonly" => "#4ec9b0",
+                        "destructive" => "#f44747",
+                        "idempotent" => "#569cd6",
+                        "json" => "#dcdcaa",
+                        _ => "#888888",
+                    };
+                    format!("<span style=\"background:{}22;color:{};border:1px solid {}44;border-radius:3px;padding:1px 6px;font-size:0.8em;margin-left:6px;\">@{}</span>", color, color, color, html_escape(a))
+                }).collect();
+                badges.join("")
+            };
+
             html.push_str(&format!(
-                "<p><span class=\"cmd-name\">{}</span> <span class=\"cmd-desc\">&mdash; {}</span></p>\n",
-                html_escape(&func.name), html_escape(desc)
+                "<p style=\"margin-top:10px;\"><span class=\"cmd-name\">{}</span>{} <span class=\"cmd-desc\">&mdash; {}</span></p>\n",
+                html_escape(&tool_name), annotation_badges, html_escape(desc)
             ));
+
             if !func.args_entries.is_empty() {
                 html.push_str("<table style=\"margin-left: 16px; width: calc(100% - 16px);\">\n");
                 for entry in &func.args_entries {
                     if entry.spec == "-" { continue; }
                     if let Ok(ref field) = entry.parsed {
-                        let flag = if let Some(ref s) = field.short {
-                            format!("--{}, -{}", field.display_name, s)
+                        let flag = if field.is_positional {
+                            format!("&lt;{}&gt;", html_escape(&field.display_name))
+                        } else if let Some(ref s) = field.short {
+                            format!("--{}, -{}", html_escape(&field.display_name), html_escape(s))
                         } else {
-                            format!("--{}", field.display_name)
+                            format!("--{}", html_escape(&field.display_name))
                         };
                         let typ = format_type(field, entry.is_array);
                         html.push_str(&format!(
                             "<tr><td>{}</td><td><span class=\"type-badge\">{}</span></td><td>{}</td></tr>\n",
-                            html_escape(&flag), html_escape(&typ), html_escape(&entry.description)
+                            flag, html_escape(&typ), html_escape(&entry.description)
                         ));
                     }
                 }

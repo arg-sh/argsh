@@ -301,17 +301,7 @@ fn extract_array_entries(
     entries
 }
 
-/// Get content between the first `(` and last `)`.
-fn extract_between_parens(line: &str) -> String {
-    if let Some(start) = line.find('(') {
-        if let Some(end) = line.rfind(')') {
-            if end > start {
-                return line[start + 1..end].to_string();
-            }
-        }
-    }
-    String::new()
-}
+
 
 /// Tokenize array content, handling both single-quoted and double-quoted strings,
 /// bare words, and the `-` separator.
