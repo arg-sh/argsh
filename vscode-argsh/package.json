@@ -18,23 +18,23 @@
     "commands": [
       {
         "command": "argsh.showPreview",
-        "title": "Show Script Preview",
+        "title": "argsh: Show Script Preview",
         "icon": "$(preview)",
         "category": "argsh"
       },
       {
         "command": "argsh.showHelp",
-        "title": "Show Help for Current Function",
+        "title": "argsh: Show Help for Current Function",
         "category": "argsh"
       },
       {
         "command": "argsh.validateScript",
-        "title": "Validate Script",
+        "title": "argsh: Validate Script",
         "category": "argsh"
       },
       {
         "command": "argsh.restartServer",
-        "title": "Restart Language Server",
+        "title": "argsh: Restart Language Server",
         "category": "argsh"
       }
     ],
