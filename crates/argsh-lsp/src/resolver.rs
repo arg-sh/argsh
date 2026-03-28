@@ -184,3 +184,125 @@ fn find_argsh_lib_dir(base_dir: &Path) -> Vec<PathBuf> {
 
     candidates
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn test_resolve_module_path_finds_sh_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let lib = dir.path().join("mylib.sh");
+        fs::write(&lib, "mylib_func() { echo hi; }").unwrap();
+
+        let candidates = resolve_module_path("mylib", dir.path());
+        assert!(candidates.iter().any(|p| p == &lib),
+            "Should find mylib.sh, candidates: {:?}", candidates);
+    }
+
+    #[test]
+    fn test_resolve_module_path_finds_in_libraries_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let lib_dir = dir.path().join("libraries");
+        fs::create_dir_all(&lib_dir).unwrap();
+        let lib = lib_dir.join("string.sh");
+        fs::write(&lib, "string::trim() { echo; }").unwrap();
+
+        let candidates = resolve_module_path("string", dir.path());
+        assert!(candidates.iter().any(|p| p == &lib),
+            "Should find libraries/string.sh, candidates: {:?}", candidates);
+    }
+
+    #[test]
+    fn test_resolve_imports_finds_functions() {
+        let dir = tempfile::tempdir().unwrap();
+
+        // Create a library file
+        let lib = dir.path().join("helpers.sh");
+        fs::write(&lib, "helper_func() {\n  :args \"Help\" \"${@}\"\n}\n").unwrap();
+
+        // Create a main script that imports it
+        let main_content = "#!/usr/bin/env bash\nimport helpers\nmain() { echo; }\n";
+        let main_sh = dir.path().join("main.sh");
+        fs::write(&main_sh, main_content).unwrap();
+
+        let analysis = analyze(main_content);
+        let imports = resolve_imports(&analysis, &main_sh, 2);
+
+        assert!(!imports.functions.is_empty(),
+            "Should find functions from imported file");
+        assert!(imports.functions.iter().any(|f| f.name == "helper_func"),
+            "Should find helper_func, got: {:?}", imports.functions.iter().map(|f| &f.name).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn test_resolve_imports_handles_circular() {
+        let dir = tempfile::tempdir().unwrap();
+
+        // a.sh imports b.sh, b.sh imports a.sh
+        let a = dir.path().join("a.sh");
+        let b = dir.path().join("b.sh");
+        fs::write(&a, "import b\nfunc_a() { echo a; }\n").unwrap();
+        fs::write(&b, "import a\nfunc_b() { echo b; }\n").unwrap();
+
+        let analysis = analyze(&fs::read_to_string(&a).unwrap());
+        let imports = resolve_imports(&analysis, &a, 3);
+
+        // Should not hang or crash
+        assert!(imports.functions.iter().any(|f| f.name == "func_b"),
+            "Should find func_b from b.sh");
+        // Should NOT find func_a again (it's the current file, visited)
+    }
+
+    #[test]
+    fn test_resolve_imports_respects_max_depth() {
+        let dir = tempfile::tempdir().unwrap();
+
+        // Chain: main -> a -> b -> c
+        let a = dir.path().join("a.sh");
+        let b = dir.path().join("b.sh");
+        let c = dir.path().join("c.sh");
+        fs::write(&a, "import b\nfunc_a() { echo; }\n").unwrap();
+        fs::write(&b, "import c\nfunc_b() { echo; }\n").unwrap();
+        fs::write(&c, "func_c() { echo; }\n").unwrap();
+
+        let main_content = "import a\nmain() { echo; }\n";
+        let main_sh = dir.path().join("main.sh");
+        fs::write(&main_sh, main_content).unwrap();
+
+        // Depth 1: only finds a.sh
+        let analysis = analyze(main_content);
+        let imports_d1 = resolve_imports(&analysis, &main_sh, 1);
+        assert!(imports_d1.functions.iter().any(|f| f.name == "func_a"));
+        assert!(!imports_d1.functions.iter().any(|f| f.name == "func_b"),
+            "Depth 1 should not reach b.sh");
+
+        // Depth 2: finds a.sh and b.sh
+        let imports_d2 = resolve_imports(&analysis, &main_sh, 2);
+        assert!(imports_d2.functions.iter().any(|f| f.name == "func_a"));
+        assert!(imports_d2.functions.iter().any(|f| f.name == "func_b"));
+        assert!(!imports_d2.functions.iter().any(|f| f.name == "func_c"),
+            "Depth 2 should not reach c.sh");
+
+        // Depth 3: finds all
+        let imports_d3 = resolve_imports(&analysis, &main_sh, 3);
+        assert!(imports_d3.functions.iter().any(|f| f.name == "func_c"),
+            "Depth 3 should reach c.sh");
+    }
+
+    #[test]
+    fn test_resolve_imports_depth_zero_no_imports() {
+        let dir = tempfile::tempdir().unwrap();
+        let lib = dir.path().join("helpers.sh");
+        fs::write(&lib, "helper() { echo; }\n").unwrap();
+
+        let main_content = "import helpers\nmain() { echo; }\n";
+        let main_sh = dir.path().join("main.sh");
+        fs::write(&main_sh, main_content).unwrap();
+
+        let analysis = analyze(main_content);
+        let imports = resolve_imports(&analysis, &main_sh, 0);
+        assert!(imports.functions.is_empty(), "Depth 0 should import nothing");
+    }
+}
