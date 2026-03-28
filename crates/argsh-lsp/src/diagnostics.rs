@@ -323,6 +323,9 @@ fn check_usage_function_targets(
         };
 
         if !known_funcs.contains(target.as_str()) {
+            // NOTE: Primary diagnostic on func.line (not entry.line) is intentional —
+            // puts the gutter dots on the function declaration for clean visual grouping.
+            // The secondary diagnostic on entry.line (below) highlights the specific entry.
             diags.push(make_diag(
                 line_range(func.line),
                 DiagnosticSeverity::WARNING,

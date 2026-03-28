@@ -450,7 +450,8 @@ fn build_mcp_tools(analysis: &DocumentAnalysis) -> String {
         }
 
         let mut tool = serde_json::Map::new();
-        tool.insert("name".to_string(), serde_json::Value::String(func.name.clone()));
+        let tool_name = func.name.replace("::", "_");
+        tool.insert("name".to_string(), serde_json::Value::String(tool_name));
         tool.insert("description".to_string(), serde_json::Value::String(description.to_string()));
         tool.insert("inputSchema".to_string(), serde_json::Value::Object(schema));
 

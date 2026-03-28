@@ -140,6 +140,11 @@ impl LanguageServer for Backend {
                 code_lens_provider: Some(CodeLensOptions {
                     resolve_provider: Some(false),
                 }),
+                // NOTE: Only argsh.preview is advertised here. The export commands
+                // (exportMcpJson, exportYaml, exportJson) are handled in execute_command
+                // but intentionally NOT listed — Windsurf/forked VSCode registers commands
+                // from both package.json AND this list, causing "command already exists"
+                // errors. The client calls them via workspace/executeCommand directly.
                 execute_command_provider: Some(ExecuteCommandOptions {
                     commands: vec!["argsh.preview".to_string()],
                     ..Default::default()

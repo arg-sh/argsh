@@ -73,7 +73,7 @@ pub fn rename(
                         character: lines[func.line].len() as u32,
                     },
                 },
-                new_text: lines[func.line].replace(&old_name, new_name).to_string(),
+                new_text: replace_word(lines[func.line], &old_name, new_name),
             });
         }
     }
@@ -97,7 +97,7 @@ pub fn rename(
                                     character: old_line.len() as u32,
                                 },
                             },
-                            new_text: old_line.replace(&old_name, new_name).to_string(),
+                            new_text: replace_word(old_line, &old_name, new_name),
                         });
                     }
                 }
@@ -119,7 +119,7 @@ pub fn rename(
                         character: line_str.len() as u32,
                     },
                 },
-                new_text: line_str.replace(&old_name, new_name).to_string(),
+                new_text: replace_word(line_str, &old_name, new_name),
             });
         }
     }
@@ -134,6 +134,36 @@ pub fn rename(
         changes: Some(changes),
         ..Default::default()
     })
+}
+
+/// Replace occurrences of `old` with `new` only at word boundaries.
+/// Word characters are ASCII alphanumeric, `_`, and `:`.
+fn replace_word(line: &str, old: &str, new: &str) -> String {
+    let mut result = String::new();
+    let mut remaining = line;
+    while let Some(pos) = remaining.find(old) {
+        // Check word boundary before match
+        let before_ok = pos == 0 || {
+            let ch = remaining.as_bytes()[pos - 1] as char;
+            !ch.is_ascii_alphanumeric() && ch != '_' && ch != ':'
+        };
+        // Check word boundary after match
+        let end = pos + old.len();
+        let after_ok = end >= remaining.len() || {
+            let ch = remaining.as_bytes()[end] as char;
+            !ch.is_ascii_alphanumeric() && ch != '_' && ch != ':'
+        };
+
+        if before_ok && after_ok {
+            result.push_str(&remaining[..pos]);
+            result.push_str(new);
+        } else {
+            result.push_str(&remaining[..end]);
+        }
+        remaining = &remaining[end..];
+    }
+    result.push_str(remaining);
+    result
 }
 
 fn extract_word_at(line: &str, col: usize) -> String {

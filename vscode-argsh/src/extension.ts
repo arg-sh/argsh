@@ -94,6 +94,8 @@ class ArgshCommandTreeProvider implements vscode.TreeDataProvider<CommandTreeIte
     return item;
   }
 
+  getUri(): string { return this.uri; }
+
   getChildren(element?: CommandTreeItem): CommandTreeItem[] {
     if (!element) return this.items;
     return element.children || [];
@@ -165,8 +167,10 @@ export function activate(context: vscode.ExtensionContext) {
 
   // --- Command Tree ---
 
+  let treeProvider: ArgshCommandTreeProvider | undefined;
+
   if (config.get<boolean>('commandTree.enabled', true)) {
-    const treeProvider = new ArgshCommandTreeProvider();
+    treeProvider = new ArgshCommandTreeProvider();
     const treeView = vscode.window.createTreeView('argsh.commandTree', {
       treeDataProvider: treeProvider,
       showCollapseAll: true,
@@ -177,7 +181,7 @@ export function activate(context: vscode.ExtensionContext) {
     const updateTree = async () => {
       const editor = vscode.window.activeTextEditor;
       if (!editor || !client || editor.document.languageId !== 'shellscript') {
-        treeProvider.refresh([], '');
+        treeProvider!.refresh([], '');
         return;
       }
 
@@ -187,9 +191,9 @@ export function activate(context: vscode.ExtensionContext) {
         }) as CommandTreeItem[] | null;
 
         if (symbols && Array.isArray(symbols)) {
-          treeProvider.refresh(symbols, editor.document.uri.toString());
+          treeProvider!.refresh(symbols, editor.document.uri.toString());
         } else {
-          treeProvider.refresh([], '');
+          treeProvider!.refresh([], '');
         }
       } catch {
         // LSP not ready yet
@@ -200,7 +204,7 @@ export function activate(context: vscode.ExtensionContext) {
     const updateHighlight = () => {
       const editor = vscode.window.activeTextEditor;
       if (editor && editor.document.languageId === 'shellscript') {
-        const activeItem = treeProvider.highlightFunction(editor.selection.active.line);
+        const activeItem = treeProvider!.highlightFunction(editor.selection.active.line);
         if (activeItem) {
           treeView.reveal(activeItem, { select: false, focus: false, expand: true });
         }
@@ -225,6 +229,11 @@ export function activate(context: vscode.ExtensionContext) {
       if (e.document.languageId !== 'shellscript') return;
       if (!client) return;
 
+      // Skip if VSCode's built-in formatOnSave is enabled (the LSP formatting
+      // provider will be invoked automatically by VSCode).
+      const editorConfig = vscode.workspace.getConfiguration('editor', e.document.uri);
+      if (editorConfig.get<boolean>('formatOnSave', false)) return;
+
       e.waitUntil(
         client.sendRequest('textDocument/formatting', {
           textDocument: { uri: e.document.uri.toString() },
@@ -244,9 +253,19 @@ export function activate(context: vscode.ExtensionContext) {
   );
 
   // Go to symbol command (used by tree item clicks)
-  const goToSymbolCmd = vscode.commands.registerCommand('argsh.goToSymbol', (item: CommandTreeItem) => {
-    const editor = vscode.window.activeTextEditor;
-    if (!editor || !item.range) return;
+  const goToSymbolCmd = vscode.commands.registerCommand('argsh.goToSymbol', async (item: CommandTreeItem) => {
+    if (!item.range) return;
+
+    // Prefer the URI tracked by the tree provider; fall back to active editor
+    const storedUri = treeProvider?.getUri();
+    let editor: vscode.TextEditor | undefined;
+    if (storedUri) {
+      const doc = await vscode.workspace.openTextDocument(vscode.Uri.parse(storedUri));
+      editor = await vscode.window.showTextDocument(doc);
+    } else {
+      editor = vscode.window.activeTextEditor;
+    }
+    if (!editor) return;
 
     const pos = new vscode.Position(item.range.start.line, 0);
     editor.selection = new vscode.Selection(pos, pos);
