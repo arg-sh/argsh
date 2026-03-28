@@ -29,7 +29,12 @@ pub fn goto_definition(
         return find_function_location(analysis, &target, uri);
     }
 
-    // 2. Check if cursor is on an import statement
+    // 3. Check if cursor is on a type reference :~typename — resolve to to::typename()
+    if let Some(loc) = goto_type_definition(analysis, line, col, uri) {
+        return Some(loc);
+    }
+
+    // 4. Check if cursor is on an import statement
     if let Some(module) = extract_import_module(line, col) {
         // We cannot resolve import paths without filesystem context,
         // but we can check if the module corresponds to a function in the file.
@@ -163,6 +168,78 @@ fn extract_single_quoted_at(line: &str, col: usize) -> Option<String> {
             }
         }
     }
+    None
+}
+
+/// If cursor is on `:~typename`, resolve to `to::typename()` function.
+fn goto_type_definition(
+    analysis: &DocumentAnalysis,
+    line: &str,
+    col: usize,
+    uri: &Url,
+) -> Option<Location> {
+    // Find :~typename pattern around cursor
+    let bytes = line.as_bytes();
+
+    // Search backwards from cursor for :~
+    let mut start = col;
+    while start > 0 {
+        if start >= 2 && bytes[start - 2] == b':' && bytes[start - 1] == b'~' {
+            // Found :~ — extract the type name after it
+            let type_start = start;
+            let mut type_end = start;
+            while type_end < bytes.len() {
+                let ch = bytes[type_end] as char;
+                if ch.is_ascii_alphanumeric() || ch == '_' {
+                    type_end += 1;
+                } else {
+                    break;
+                }
+            }
+            if type_end > type_start && col >= start - 2 && col <= type_end {
+                let type_name = &line[type_start..type_end];
+                // Try to find to::typename function
+                let func_name = format!("to::{}", type_name);
+                return find_function_location(analysis, &func_name, uri);
+            }
+            break;
+        }
+        start -= 1;
+    }
+
+    // Also try: cursor is directly on the type name after :~
+    // Scan forward from cursor to find if we're inside :~<word>
+    if col < bytes.len() {
+        let mut scan = col;
+        // Go backwards to find :~
+        while scan > 1 {
+            if bytes[scan - 1] == b'~' && scan >= 2 && bytes[scan - 2] == b':' {
+                // We're after :~ — extract the type name
+                let type_start = scan;
+                let mut type_end = scan;
+                while type_end < bytes.len() {
+                    let ch = bytes[type_end] as char;
+                    if ch.is_ascii_alphanumeric() || ch == '_' {
+                        type_end += 1;
+                    } else {
+                        break;
+                    }
+                }
+                if type_end > type_start {
+                    let type_name = &line[type_start..type_end];
+                    let func_name = format!("to::{}", type_name);
+                    return find_function_location(analysis, &func_name, uri);
+                }
+                break;
+            }
+            let ch = bytes[scan - 1] as char;
+            if !ch.is_ascii_alphanumeric() && ch != '_' {
+                break;
+            }
+            scan -= 1;
+        }
+    }
+
     None
 }
 

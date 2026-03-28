@@ -39,7 +39,7 @@ pub fn hover(
     }
 
     // 2. Hover on a modifier character
-    if let Some(h) = hover_modifier(line, col, &lines, line_idx) {
+    if let Some(h) = hover_modifier(analysis, line, col, &lines, line_idx) {
         return Some(h);
     }
 
@@ -126,6 +126,7 @@ fn hover_builtin_call(
 
 /// Hover on modifier characters like `:+`, `:~`, `:!`, `:#`.
 fn hover_modifier(
+    analysis: &DocumentAnalysis,
     line: &str,
     col: usize,
     lines: &[&str],
@@ -154,6 +155,45 @@ fn hover_modifier(
             Some(("`:+` Boolean flag", "Flag takes no value. Variable is set to `true` when the flag is present, empty otherwise."))
         }
         (Some(':'), '~') => {
+            // Extract the type name after :~
+            let type_name = extract_type_after_tilde(line, col);
+            let builtin_types = ["int", "float", "file", "boolean", "string", "stdin"];
+            if let Some(ref tname) = type_name {
+                if builtin_types.contains(&tname.as_str()) {
+                    let desc = match tname.as_str() {
+                        "int" => "Validates that the value is an integer",
+                        "float" => "Validates that the value is a float",
+                        "file" => "Validates that the file path exists",
+                        "boolean" => "Converts to boolean (0 or 1)",
+                        "string" => "Identity conversion (any string accepted)",
+                        "stdin" => "Reads value from stdin if not provided",
+                        _ => "",
+                    };
+                    return Some(Hover {
+                        contents: HoverContents::Markup(MarkupContent {
+                            kind: MarkupKind::Markdown,
+                            value: format!("**`:~{}` Built-in type**\n\n{}", tname, desc),
+                        }),
+                        range: None,
+                    });
+                } else {
+                    // Custom type — check if to::typename exists
+                    let func_name = format!("to::{}", tname);
+                    let found = analysis.functions.iter().any(|f| f.name == func_name);
+                    let status = if found {
+                        format!("Validated by `{}()` *(defined in this file)*", func_name)
+                    } else {
+                        format!("Validated by `{}()` *(not found in this file — may be imported)*", func_name)
+                    };
+                    return Some(Hover {
+                        contents: HoverContents::Markup(MarkupContent {
+                            kind: MarkupKind::Markdown,
+                            value: format!("**`:~{}` Custom type**\n\n{}\n\n*Ctrl+Click to go to definition*", tname, status),
+                        }),
+                        range: None,
+                    });
+                }
+            }
             Some(("`:~type` Typed parameter", "Specifies a type validator. Built-in types: `int`, `float`, `file`, `boolean`, `string`, `stdin`. Custom types use `to::name` functions."))
         }
         (Some(':'), '!') | (_, '!') if is_after_colon_in_spec(line, col) => {
@@ -852,4 +892,26 @@ fn find_enclosing_array<'a>(lines: &[&str], line_idx: usize) -> Option<&'a str> 
         }
     }
     None
+}
+
+/// Extract the type name after `:~` at cursor position.
+fn extract_type_after_tilde(line: &str, col: usize) -> Option<String> {
+    // col is on `~`, type name starts at col+1
+    let start = col + 1;
+    if start >= line.len() { return None; }
+    let bytes = line.as_bytes();
+    let mut end = start;
+    while end < bytes.len() {
+        let ch = bytes[end] as char;
+        if ch.is_ascii_alphanumeric() || ch == '_' {
+            end += 1;
+        } else {
+            break;
+        }
+    }
+    if end > start {
+        Some(line[start..end].to_string())
+    } else {
+        None
+    }
 }
