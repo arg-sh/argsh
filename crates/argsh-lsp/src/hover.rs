@@ -890,24 +890,28 @@ fn extract_single_quoted_at(line: &str, col: usize) -> Option<String> {
 
 /// Walk backwards to find if we're inside an args or usage array.
 fn find_enclosing_array(lines: &[&str], line_idx: usize) -> Option<&'static str> {
+    // Same-line fast path
+    let current = lines[line_idx].trim();
+    if current.contains("args=(") { return Some("args"); }
+    if current.contains("usage=(") { return Some("usage"); }
+
+    // Walk backwards with right-to-left paren counting
     let mut paren_depth: i32 = 0;
     for i in (0..=line_idx).rev() {
         let trimmed = lines[i].trim();
-        for ch in trimmed.chars() {
+        for ch in trimmed.chars().rev() {
             match ch {
                 ')' => paren_depth += 1,
-                '(' => paren_depth -= 1,
+                '(' => {
+                    paren_depth -= 1;
+                    if paren_depth < 0 {
+                        if trimmed.contains("args=(") { return Some("args"); }
+                        if trimmed.contains("usage=(") { return Some("usage"); }
+                        return None;
+                    }
+                }
                 _ => {}
             }
-        }
-        if paren_depth < 0 {
-            if trimmed.contains("args=(") {
-                return Some("args");
-            }
-            if trimmed.contains("usage=(") {
-                return Some("usage");
-            }
-            return None;
         }
     }
     None

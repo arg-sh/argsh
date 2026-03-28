@@ -484,7 +484,7 @@ fn build_docgen_yaml(analysis: &DocumentAnalysis, _content: &str) -> String {
 
         yaml.push_str(&format!("{}:\n", func.name));
         if let Some(ref title) = func.title {
-            yaml.push_str(&format!("  description: \"{}\"\n", title));
+            yaml.push_str(&format!("  description: \"{}\"\n", yaml_escape(title)));
         }
 
         if !func.args_entries.is_empty() {
@@ -497,7 +497,7 @@ fn build_docgen_yaml(analysis: &DocumentAnalysis, _content: &str) -> String {
                     yaml.push_str(&format!("    {}:\n", field.name));
                     let type_str = format_type(field, entry.is_array);
                     yaml.push_str(&format!("      type: {}\n", type_str));
-                    yaml.push_str(&format!("      description: \"{}\"\n", entry.description));
+                    yaml.push_str(&format!("      description: \"{}\"\n", yaml_escape(&entry.description)));
                     if field.required {
                         yaml.push_str("      required: true\n");
                     }
@@ -518,7 +518,7 @@ fn build_docgen_yaml(analysis: &DocumentAnalysis, _content: &str) -> String {
                     continue;
                 }
                 yaml.push_str(&format!("    {}:\n", entry.name));
-                yaml.push_str(&format!("      description: \"{}\"\n", entry.description));
+                yaml.push_str(&format!("      description: \"{}\"\n", yaml_escape(&entry.description)));
                 if entry.hidden {
                     yaml.push_str("      hidden: true\n");
                 }
@@ -591,6 +591,15 @@ pub fn export_docgen_json(analysis: &DocumentAnalysis) -> String {
         funcs.push(serde_json::Value::Object(obj));
     }
     serde_json::to_string_pretty(&funcs).unwrap_or_default()
+}
+
+/// Escape a string for safe YAML double-quoted output.
+fn yaml_escape(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
+        .replace('\t', "\\t")
 }
 
 /// Simple HTML escaping.

@@ -94,7 +94,7 @@
         {
           "id": "argsh-panel",
           "title": "argsh",
-          "icon": "$(terminal)"
+          "icon": "icon.png"
         }
       ]
     },
