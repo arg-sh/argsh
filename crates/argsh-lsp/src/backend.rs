@@ -92,12 +92,7 @@ impl LanguageServer for Backend {
                     resolve_provider: Some(false),
                 }),
                 execute_command_provider: Some(ExecuteCommandOptions {
-                    commands: vec![
-                        "argsh.preview".to_string(),
-                        "argsh.exportMcpJson".to_string(),
-                        "argsh.exportYaml".to_string(),
-                        "argsh.exportJson".to_string(),
-                    ],
+                    commands: vec!["argsh.preview".to_string()],
                     ..Default::default()
                 }),
                 ..Default::default()
