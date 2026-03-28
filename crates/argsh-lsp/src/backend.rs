@@ -59,7 +59,7 @@ impl Backend {
                     .await;
                 return;
             }
-            let diags = diagnostics::generate_diagnostics(&doc.analysis);
+            let diags = diagnostics::generate_diagnostics(&doc.analysis, &doc.content);
             self.client
                 .publish_diagnostics(uri.clone(), diags, None)
                 .await;
