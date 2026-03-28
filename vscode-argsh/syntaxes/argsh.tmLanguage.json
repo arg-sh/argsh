@@ -98,6 +98,11 @@
             "1": { "name": "punctuation.separator.modifier.argsh" },
             "2": { "name": "keyword.operator.required.argsh" }
           }
+        },
+        {
+          "comment": "Hidden modifier :#",
+          "match": "(:#)",
+          "name": "comment.hidden.argsh"
         }
       ]
     },

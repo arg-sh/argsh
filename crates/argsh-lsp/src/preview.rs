@@ -456,17 +456,25 @@ fn build_mcp_tools(analysis: &DocumentAnalysis) -> String {
         tool.insert("description".to_string(), serde_json::Value::String(description.to_string()));
         tool.insert("inputSchema".to_string(), serde_json::Value::Object(schema));
 
-        // Annotations from usage entries
-        for entry in &func.usage_entries {
-            for ann in &entry.annotations {
-                let hint_key = match ann.as_str() {
-                    "readonly" => "readOnlyHint",
-                    "destructive" => "destructiveHint",
-                    "idempotent" => "idempotentHint",
-                    "openworld" => "openWorldHint",
-                    _ => { continue; } // skip unknown annotations
-                };
-                tool.insert(hint_key.to_string(), serde_json::Value::Bool(true));
+        // Annotations: leaf functions have empty usage_entries, so find
+        // annotations from parent functions' usage entries that reference this leaf
+        for parent in &analysis.functions {
+            for entry in &parent.usage_entries {
+                if entry.is_group_separator { continue; }
+                let matches = entry.explicit_func.as_deref() == Some(&func.name)
+                    || format!("{}::{}", parent.name, entry.name) == func.name
+                    || entry.name == func.name;
+                if !matches { continue; }
+                for ann in &entry.annotations {
+                    let hint_key = match ann.as_str() {
+                        "readonly" => "readOnlyHint",
+                        "destructive" => "destructiveHint",
+                        "idempotent" => "idempotentHint",
+                        "openworld" => "openWorldHint",
+                        _ => { continue; }
+                    };
+                    tool.insert(hint_key.to_string(), serde_json::Value::Bool(true));
+                }
             }
         }
 
