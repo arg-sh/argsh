@@ -3,4 +3,5 @@ src/**
 tsconfig.json
 **/*.ts
 !out/**
+!bin/**
 node_modules/**
