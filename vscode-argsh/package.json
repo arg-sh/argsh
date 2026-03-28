@@ -36,6 +36,21 @@
         "command": "argsh.restartServer",
         "title": "argsh: Restart Language Server",
         "category": "argsh"
+      },
+      {
+        "command": "argsh.exportMcpJson",
+        "title": "argsh: Export MCP JSON",
+        "category": "argsh"
+      },
+      {
+        "command": "argsh.exportYaml",
+        "title": "argsh: Export YAML",
+        "category": "argsh"
+      },
+      {
+        "command": "argsh.exportJson",
+        "title": "argsh: Export JSON",
+        "category": "argsh"
       }
     ],
     "keybindings": [

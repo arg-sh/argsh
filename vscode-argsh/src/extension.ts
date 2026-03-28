@@ -121,6 +121,57 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.window.showInformationMessage('argsh: Script validation triggered');
   });
   context.subscriptions.push(validateCmd);
+
+  // Export MCP JSON
+  const exportMcpCmd = vscode.commands.registerCommand('argsh.exportMcpJson', async () => {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor || !client) return;
+    const result = await client.sendRequest('workspace/executeCommand', {
+      command: 'argsh.exportMcpJson',
+      arguments: [editor.document.uri.toString()],
+    });
+    if (typeof result === 'string' && result.length > 0) {
+      const doc = await vscode.workspace.openTextDocument({ content: result, language: 'json' });
+      await vscode.window.showTextDocument(doc, vscode.ViewColumn.Beside);
+    } else {
+      vscode.window.showInformationMessage('argsh: No MCP JSON data available');
+    }
+  });
+  context.subscriptions.push(exportMcpCmd);
+
+  // Export YAML
+  const exportYamlCmd = vscode.commands.registerCommand('argsh.exportYaml', async () => {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor || !client) return;
+    const result = await client.sendRequest('workspace/executeCommand', {
+      command: 'argsh.exportYaml',
+      arguments: [editor.document.uri.toString()],
+    });
+    if (typeof result === 'string' && result.length > 0) {
+      const doc = await vscode.workspace.openTextDocument({ content: result, language: 'yaml' });
+      await vscode.window.showTextDocument(doc, vscode.ViewColumn.Beside);
+    } else {
+      vscode.window.showInformationMessage('argsh: No YAML data available');
+    }
+  });
+  context.subscriptions.push(exportYamlCmd);
+
+  // Export JSON
+  const exportJsonCmd = vscode.commands.registerCommand('argsh.exportJson', async () => {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor || !client) return;
+    const result = await client.sendRequest('workspace/executeCommand', {
+      command: 'argsh.exportJson',
+      arguments: [editor.document.uri.toString()],
+    });
+    if (typeof result === 'string' && result.length > 0) {
+      const doc = await vscode.workspace.openTextDocument({ content: result, language: 'json' });
+      await vscode.window.showTextDocument(doc, vscode.ViewColumn.Beside);
+    } else {
+      vscode.window.showInformationMessage('argsh: No JSON data available');
+    }
+  });
+  context.subscriptions.push(exportJsonCmd);
 }
 
 export function deactivate(): Thenable<void> | undefined {
