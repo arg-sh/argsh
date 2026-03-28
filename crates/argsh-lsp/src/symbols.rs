@@ -11,6 +11,10 @@ use argsh_syntax::document::DocumentAnalysis;
 /// - Usage entries are `Enum` children of the function
 #[allow(deprecated)] // DocumentSymbol::deprecated is deprecated but required by the type
 pub fn document_symbols(analysis: &DocumentAnalysis) -> Vec<DocumentSymbol> {
+    if analysis.functions.is_empty() {
+        return Vec::new();
+    }
+
     let mut top_level: Vec<DocumentSymbol> = Vec::new();
 
     for func in &analysis.functions {
@@ -69,6 +73,11 @@ pub fn document_symbols(analysis: &DocumentAnalysis) -> Vec<DocumentSymbol> {
         }
 
         let func_detail = func.title.clone();
+        let end_line = if func.end_line >= func.line {
+            func.end_line as u32
+        } else {
+            func.line as u32
+        };
 
         let sym = DocumentSymbol {
             name: func.name.clone(),
@@ -82,8 +91,8 @@ pub fn document_symbols(analysis: &DocumentAnalysis) -> Vec<DocumentSymbol> {
                     character: 0,
                 },
                 end: Position {
-                    line: func.end_line as u32,
-                    character: u32::MAX,
+                    line: end_line,
+                    character: 999,
                 },
             },
             selection_range: Range {
@@ -177,6 +186,13 @@ fn build_nested_symbols(analysis: &DocumentAnalysis) -> Vec<DocumentSymbol> {
                 });
             }
 
+            // Ensure end_line is never before start line (guards against end_line == 0).
+            let end_line = if func.end_line >= func.line {
+                func.end_line as u32
+            } else {
+                func.line as u32
+            };
+
             let sym = DocumentSymbol {
                 name: func.name.clone(),
                 detail: func.title.clone(),
@@ -189,8 +205,8 @@ fn build_nested_symbols(analysis: &DocumentAnalysis) -> Vec<DocumentSymbol> {
                         character: 0,
                     },
                     end: Position {
-                        line: func.end_line as u32,
-                        character: u32::MAX,
+                        line: end_line,
+                        character: 999,
                     },
                 },
                 selection_range: Range {
@@ -270,7 +286,7 @@ fn line_range(line: usize) -> Range {
         },
         end: Position {
             line: line as u32,
-            character: u32::MAX,
+            character: 999,
         },
     }
 }

@@ -176,10 +176,27 @@ impl LanguageServer for Backend {
         let uri = params.text_document.uri;
 
         if let Some(doc) = self.documents.get(&uri) {
+            self.client
+                .log_message(
+                    MessageType::LOG,
+                    format!(
+                        "documentSymbol: uri={}, is_argsh={}, functions={}",
+                        uri,
+                        doc.is_argsh,
+                        doc.analysis.functions.len()
+                    ),
+                )
+                .await;
             if !doc.is_argsh {
                 return Ok(None);
             }
             let syms = symbols::document_symbols(&doc.analysis);
+            self.client
+                .log_message(
+                    MessageType::LOG,
+                    format!("documentSymbol: returning {} symbols", syms.len()),
+                )
+                .await;
             return Ok(Some(DocumentSymbolResponse::Nested(syms)));
         }
         Ok(None)
