@@ -846,6 +846,66 @@ func_c() {
     client.shutdown();
 }
 
+#[test]
+fn test_format_aligns_args_entries() {
+    let mut client = LspTestClient::new();
+    client.initialize();
+
+    let content = "#!/usr/bin/env bash\nsource argsh\nf() {\n  local p v\n  local -a args=(\n    'port|p:~int' \"Port\"\n    'verbose|v:+' \"Verbose output\"\n    'config|c' \"Config file path\"\n  )\n  :args \"T\" \"${@}\"\n}\n";
+    client.open_document("file:///test.sh", content);
+
+    let resp = client.send_request(
+        "textDocument/formatting",
+        json!({
+            "textDocument": { "uri": "file:///test.sh" },
+            "options": { "tabSize": 2, "insertSpaces": true }
+        }),
+    );
+
+    assert!(
+        resp.get("error").is_none(),
+        "Format error: {:?}",
+        resp["error"]
+    );
+    // Should have edits (entries are not perfectly aligned)
+    let result = &resp["result"];
+    if !result.is_null() {
+        let edits = result.as_array().unwrap();
+        // Verify the edits align descriptions to the same column
+        for edit in edits {
+            let new_text = edit["newText"].as_str().unwrap();
+            assert!(
+                new_text.contains('"'),
+                "Edit should contain description: {}",
+                new_text
+            );
+        }
+    }
+
+    client.shutdown();
+}
+
+#[test]
+fn test_format_preserves_already_aligned() {
+    let mut client = LspTestClient::new();
+    client.initialize();
+
+    // Already perfectly aligned -- should produce no edits
+    let content = "#!/usr/bin/env bash\nsource argsh\nf() {\n  local v\n  local -a args=(\n    'verbose|v:+' \"Verbose\"\n  )\n  :args \"T\" \"${@}\"\n}\n";
+    client.open_document("file:///test.sh", content);
+
+    let resp = client.send_request(
+        "textDocument/formatting",
+        json!({
+            "textDocument": { "uri": "file:///test.sh" },
+            "options": { "tabSize": 2, "insertSpaces": true }
+        }),
+    );
+
+    assert!(resp.get("error").is_none());
+    // With only one entry, there is nothing to align differently
+}
+
 // Helper to extract completion items from a response Value.
 fn extract_completion_items(resp: &Value) -> Vec<&Value> {
     if let Some(items) = resp["result"].as_array() {

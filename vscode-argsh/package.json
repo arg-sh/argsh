@@ -38,6 +38,11 @@
         "category": "argsh"
       },
       {
+        "command": "argsh.formatArrays",
+        "title": "Format argsh Arrays",
+        "category": "argsh"
+      },
+      {
         "command": "argsh.exportMcpJson",
         "title": "Export MCP JSON",
         "category": "argsh"

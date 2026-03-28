@@ -88,6 +88,7 @@ impl LanguageServer for Backend {
                 definition_provider: Some(OneOf::Left(true)),
                 document_symbol_provider: Some(OneOf::Left(true)),
                 hover_provider: Some(HoverProviderCapability::Simple(true)),
+                document_formatting_provider: Some(OneOf::Left(true)),
                 code_lens_provider: Some(CodeLensOptions {
                     resolve_provider: Some(false),
                 }),
@@ -287,5 +288,23 @@ impl LanguageServer for Backend {
             }
             _ => Ok(None),
         }
+    }
+
+    async fn formatting(
+        &self,
+        params: DocumentFormattingParams,
+    ) -> Result<Option<Vec<TextEdit>>> {
+        let uri = params.text_document.uri;
+        if let Some(doc) = self.documents.get(&uri) {
+            if !doc.is_argsh {
+                return Ok(None);
+            }
+            let edits = crate::format::format_document(&doc.content);
+            if edits.is_empty() {
+                return Ok(None);
+            }
+            return Ok(Some(edits));
+        }
+        Ok(None)
     }
 }

@@ -4,6 +4,7 @@ mod backend;
 mod codelens;
 mod completion;
 mod diagnostics;
+mod format;
 mod goto_def;
 mod hover;
 mod preview;

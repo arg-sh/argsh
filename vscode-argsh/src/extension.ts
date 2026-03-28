@@ -298,6 +298,15 @@ export function activate(context: vscode.ExtensionContext) {
   });
   context.subscriptions.push(exportYamlCmd);
 
+  const formatCmd = vscode.commands.registerCommand('argsh.formatArrays', async () => {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor) return;
+
+    // Trigger the built-in format document which will use our LSP formatter
+    await vscode.commands.executeCommand('editor.action.formatDocument');
+  });
+  context.subscriptions.push(formatCmd);
+
   const exportJsonCmd = vscode.commands.registerCommand('argsh.exportJson', async () => {
     const editor = vscode.window.activeTextEditor;
     if (!editor || !client) return;
