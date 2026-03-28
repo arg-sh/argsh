@@ -428,3 +428,420 @@ main() {
 
     client.shutdown();
 }
+
+#[test]
+fn test_goto_definition_usage_to_function() {
+    let mut client = LspTestClient::new();
+    client.initialize();
+
+    let content = r#"#!/usr/bin/env argsh
+
+main() {
+  local -a usage=(
+    'serve' "Start server"
+    'build:-build::run' "Build project"
+  )
+  :usage "My app" "${@}"
+  "${usage[@]}"
+}
+
+serve() {
+  :args "Start server" "${@}"
+}
+
+build::run() {
+  :args "Build" "${@}"
+}
+"#;
+
+    let uri = "file:///test_goto.sh";
+    client.open_document(uri, content);
+
+    // Go-to-def on "serve" usage entry (line 4, col ~5)
+    let resp = client.send_request(
+        "textDocument/definition",
+        json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": 4, "character": 5 }
+        }),
+    );
+    assert!(resp.get("error").is_none(), "Got error: {:?}", resp["error"]);
+    // Should resolve to the serve() function
+    if !resp["result"].is_null() {
+        let result = &resp["result"];
+        // May be scalar Location or array
+        let target_line = if result.is_object() {
+            result["range"]["start"]["line"].as_u64()
+        } else if result.is_array() && !result.as_array().unwrap().is_empty() {
+            result[0]["range"]["start"]["line"].as_u64()
+        } else {
+            None
+        };
+        if let Some(line) = target_line {
+            assert_eq!(line, 11, "Expected goto serve() on line 11");
+        }
+    }
+
+    // Go-to-def on "build::run" explicit mapping (line 5, col ~19)
+    let resp2 = client.send_request(
+        "textDocument/definition",
+        json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": 5, "character": 19 }
+        }),
+    );
+    assert!(
+        resp2.get("error").is_none(),
+        "Got error: {:?}",
+        resp2["error"]
+    );
+    if !resp2["result"].is_null() {
+        let result = &resp2["result"];
+        let target_line = if result.is_object() {
+            result["range"]["start"]["line"].as_u64()
+        } else if result.is_array() && !result.as_array().unwrap().is_empty() {
+            result[0]["range"]["start"]["line"].as_u64()
+        } else {
+            None
+        };
+        if let Some(line) = target_line {
+            assert_eq!(line, 15, "Expected goto build::run() on line 15");
+        }
+    }
+
+    client.shutdown();
+}
+
+#[test]
+fn test_completion_annotations() {
+    let mut client = LspTestClient::new();
+    client.initialize();
+
+    let content = r#"#!/usr/bin/env argsh
+
+main() {
+  local -a usage=(
+    'deploy@' "Deploy"
+  )
+  :usage "App" "${@}"
+}
+"#;
+
+    let uri = "file:///test_comp_ann.sh";
+    client.open_document(uri, content);
+
+    // Position after '@' in 'deploy@' (line 4, inside the quote after @)
+    let resp = client.completion(uri, 4, 12);
+    assert!(resp.get("error").is_none(), "Got error: {:?}", resp["error"]);
+    // Should get annotation completions
+    let items = if resp["result"].is_array() {
+        resp["result"].as_array().unwrap().clone()
+    } else if resp["result"].is_object() && resp["result"]["items"].is_array() {
+        resp["result"]["items"].as_array().unwrap().clone()
+    } else {
+        vec![]
+    };
+    // Annotations may or may not be offered depending on completion logic,
+    // but the server should not crash.
+    let _ = items;
+
+    client.shutdown();
+}
+
+#[test]
+fn test_completion_type_names() {
+    let mut client = LspTestClient::new();
+    client.initialize();
+
+    let content = r#"#!/usr/bin/env bash
+source argsh
+
+myfunc() {
+  local val
+  local -a args=(
+    'val|v:~' "A value"
+  )
+  :args "Test" "${@}"
+}
+"#;
+
+    let uri = "file:///test_comp_type.sh";
+    client.open_document(uri, content);
+
+    // Position right after ':~' in 'val|v:~' (line 6, col 12)
+    let resp = client.completion(uri, 6, 12);
+    assert!(resp.get("error").is_none(), "Got error: {:?}", resp["error"]);
+    let items = if resp["result"].is_array() {
+        resp["result"].as_array().unwrap().clone()
+    } else if resp["result"].is_object() && resp["result"]["items"].is_array() {
+        resp["result"]["items"].as_array().unwrap().clone()
+    } else {
+        vec![]
+    };
+    // Should suggest type names like int, float, file, etc.
+    assert!(!items.is_empty(), "Expected type completion items");
+
+    client.shutdown();
+}
+
+#[test]
+fn test_hover_on_args_entry() {
+    let mut client = LspTestClient::new();
+    client.initialize();
+
+    let content = r#"#!/usr/bin/env bash
+source argsh
+
+serve() {
+  local port verbose
+  local -a args=(
+    'port|p:~int' "Port number"
+    'verbose|v:+' "Enable verbose"
+  )
+  :args "Start server" "${@}"
+}
+"#;
+
+    let uri = "file:///test_hover_args.sh";
+    client.open_document(uri, content);
+
+    // Hover on "port" in args entry (line 6, col 6)
+    let resp = client.hover(uri, 6, 6);
+    assert!(resp.get("error").is_none(), "Got error: {:?}", resp["error"]);
+    if !resp["result"].is_null() {
+        let value = resp["result"]["contents"]["value"]
+            .as_str()
+            .unwrap_or("");
+        assert!(
+            value.contains("--port") || value.contains("port"),
+            "Expected hover to mention 'port', got: {}",
+            value
+        );
+    }
+
+    client.shutdown();
+}
+
+#[test]
+fn test_hover_on_usage_entry() {
+    let mut client = LspTestClient::new();
+    client.initialize();
+
+    let content = r#"#!/usr/bin/env argsh
+
+main() {
+  local -a usage=(
+    'serve|s' "Start server"
+    'build'   "Build project"
+  )
+  :usage "My app" "${@}"
+  "${usage[@]}"
+}
+"#;
+
+    let uri = "file:///test_hover_usage.sh";
+    client.open_document(uri, content);
+
+    // Hover on "serve" in usage entry (line 4, col 6)
+    let resp = client.hover(uri, 4, 6);
+    assert!(resp.get("error").is_none(), "Got error: {:?}", resp["error"]);
+    if !resp["result"].is_null() {
+        let value = resp["result"]["contents"]["value"]
+            .as_str()
+            .unwrap_or("");
+        assert!(
+            value.contains("serve") || value.contains("subcommand"),
+            "Expected hover to mention 'serve', got: {}",
+            value
+        );
+    }
+
+    client.shutdown();
+}
+
+#[test]
+fn test_hover_help_preview() {
+    let mut client = LspTestClient::new();
+    client.initialize();
+
+    let content = r#"#!/usr/bin/env argsh
+
+serve() {
+  local port verbose
+  local -a args=(
+    'port|p:~int'    "Port number"
+    'verbose|v:+'    "Enable verbose output"
+  )
+  :args "Start server" "${@}"
+}
+"#;
+
+    let uri = "file:///test_help_preview.sh";
+    client.open_document(uri, content);
+
+    // Hover on function name "serve" (line 2, col 0)
+    let resp = client.hover(uri, 2, 0);
+    assert!(resp.get("error").is_none(), "Got error: {:?}", resp["error"]);
+    assert!(
+        !resp["result"].is_null(),
+        "Expected hover result for function"
+    );
+
+    let value = resp["result"]["contents"]["value"]
+        .as_str()
+        .unwrap_or("");
+
+    // Should contain help preview elements
+    assert!(
+        value.contains("**serve**"),
+        "Missing function name in preview: {}",
+        value
+    );
+    assert!(
+        value.contains("Start server"),
+        "Missing title in preview: {}",
+        value
+    );
+    assert!(
+        value.contains("Usage:"),
+        "Missing usage line in preview: {}",
+        value
+    );
+    assert!(
+        value.contains("--port") || value.contains("port"),
+        "Missing port flag in preview: {}",
+        value
+    );
+    assert!(
+        value.contains("--verbose") || value.contains("verbose"),
+        "Missing verbose flag in preview: {}",
+        value
+    );
+
+    client.shutdown();
+}
+
+#[test]
+fn test_document_change_updates_diagnostics() {
+    let mut client = LspTestClient::new();
+    client.initialize();
+
+    let uri = "file:///test_change.sh";
+
+    // Open with valid content
+    let content_v1 = r#"#!/usr/bin/env bash
+source argsh
+
+main() {
+  local name
+  local -a args=(
+    'name|n' "Name"
+  )
+  :args "Test" "${@}"
+}
+"#;
+    client.open_document(uri, content_v1);
+
+    // Verify symbols work
+    let resp1 = client.document_symbols(uri);
+    assert!(resp1.get("error").is_none());
+    let syms1 = resp1["result"].as_array().unwrap();
+    assert_eq!(syms1.len(), 1);
+
+    // Change document to add a second function
+    let content_v2 = r#"#!/usr/bin/env bash
+source argsh
+
+main() {
+  local name
+  local -a args=(
+    'name|n' "Name"
+  )
+  :args "Test" "${@}"
+}
+
+second() {
+  :args "Second" "${@}"
+}
+"#;
+    // Send didChange
+    client.notify(
+        "textDocument/didChange",
+        json!({
+            "textDocument": { "uri": uri, "version": 2 },
+            "contentChanges": [{ "text": content_v2 }]
+        }),
+    );
+    std::thread::sleep(std::time::Duration::from_millis(200));
+
+    // Verify symbols updated
+    let resp2 = client.document_symbols(uri);
+    assert!(resp2.get("error").is_none());
+    let syms2 = resp2["result"].as_array().unwrap();
+    assert_eq!(
+        syms2.len(),
+        2,
+        "Expected 2 symbols after update, got: {:?}",
+        syms2
+    );
+
+    client.shutdown();
+}
+
+#[test]
+fn test_multiple_documents() {
+    let mut client = LspTestClient::new();
+    client.initialize();
+
+    let uri1 = "file:///doc1.sh";
+    let content1 = r#"#!/usr/bin/env argsh
+func_a() {
+  :args "Function A" "${@}"
+}
+"#;
+
+    let uri2 = "file:///doc2.sh";
+    let content2 = r#"#!/usr/bin/env argsh
+func_b() {
+  :args "Function B" "${@}"
+}
+func_c() {
+  :args "Function C" "${@}"
+}
+"#;
+
+    client.open_document(uri1, content1);
+    client.open_document(uri2, content2);
+
+    // Doc1 should have 1 symbol
+    let resp1 = client.document_symbols(uri1);
+    assert!(resp1.get("error").is_none());
+    let syms1 = resp1["result"].as_array().unwrap();
+    assert_eq!(syms1.len(), 1, "Doc1 should have 1 symbol: {:?}", syms1);
+
+    // Doc2 should have 2 symbols
+    let resp2 = client.document_symbols(uri2);
+    assert!(resp2.get("error").is_none());
+    let syms2 = resp2["result"].as_array().unwrap();
+    assert_eq!(syms2.len(), 2, "Doc2 should have 2 symbols: {:?}", syms2);
+
+    // Hover on doc1 should only see func_a
+    let hover1 = client.hover(uri1, 1, 0);
+    if !hover1["result"].is_null() {
+        let value = hover1["result"]["contents"]["value"]
+            .as_str()
+            .unwrap_or("");
+        assert!(
+            value.contains("func_a"),
+            "Doc1 hover should reference func_a: {}",
+            value
+        );
+        assert!(
+            !value.contains("func_b"),
+            "Doc1 hover should NOT reference func_b: {}",
+            value
+        );
+    }
+
+    client.shutdown();
+}

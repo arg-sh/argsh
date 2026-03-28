@@ -5,6 +5,7 @@ mod completion;
 mod diagnostics;
 mod goto_def;
 mod hover;
+mod preview;
 mod symbols;
 
 #[tokio::main]

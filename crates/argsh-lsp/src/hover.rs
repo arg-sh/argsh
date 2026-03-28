@@ -1,6 +1,6 @@
 use tower_lsp::lsp_types::*;
 
-use argsh_syntax::document::DocumentAnalysis;
+use argsh_syntax::document::{DocumentAnalysis, FunctionInfo};
 
 /// Provide hover information for the symbol under the cursor.
 pub fn hover(
@@ -233,62 +233,10 @@ fn hover_annotation(line: &str, col: usize) -> Option<Hover> {
     })
 }
 
-/// Hover on a function name: show signature, flags, and title.
+/// Hover on a function name: show signature, flags, and title with a help preview.
 fn hover_function(analysis: &DocumentAnalysis, name: &str) -> Option<Hover> {
     let func = analysis.functions.iter().find(|f| f.name == name)?;
-
-    let mut md = format!("**function** `{}`\n", func.name);
-
-    if let Some(ref title) = func.title {
-        md.push_str(&format!("\n> {}\n", title));
-    }
-
-    if !func.args_entries.is_empty() {
-        md.push_str("\n**Flags:**\n");
-        for entry in &func.args_entries {
-            if entry.spec == "-" {
-                continue;
-            }
-            if let Ok(ref field) = entry.parsed {
-                let type_str = if field.is_boolean {
-                    "boolean".to_string()
-                } else {
-                    field.type_name.clone()
-                };
-                let req = if field.required { " (required)" } else { "" };
-                let flag = if field.is_positional {
-                    format!("<{}>", field.display_name)
-                } else if let Some(ref short) = field.short {
-                    format!("--{} | -{}", field.display_name, short)
-                } else {
-                    format!("--{}", field.display_name)
-                };
-                md.push_str(&format!(
-                    "- `{}` : *{}*{} -- {}\n",
-                    flag, type_str, req, entry.description
-                ));
-            }
-        }
-    }
-
-    if !func.usage_entries.is_empty() {
-        md.push_str("\n**Subcommands:**\n");
-        for entry in &func.usage_entries {
-            if entry.is_group_separator {
-                continue;
-            }
-            let hidden = if entry.hidden { " (hidden)" } else { "" };
-            let target = entry
-                .explicit_func
-                .as_deref()
-                .map(|f| format!(" -> `{}`", f))
-                .unwrap_or_default();
-            md.push_str(&format!(
-                "- `{}`{}{} -- {}\n",
-                entry.name, hidden, target, entry.description
-            ));
-        }
-    }
+    let md = render_help_preview(func, analysis);
 
     Some(Hover {
         contents: HoverContents::Markup(MarkupContent {
@@ -297,6 +245,129 @@ fn hover_function(analysis: &DocumentAnalysis, name: &str) -> Option<Hover> {
         }),
         range: None,
     })
+}
+
+/// Render a help preview for a function, mimicking `--help` output.
+///
+/// For `:args` functions, shows flags/options in a table-like format.
+/// For `:usage` functions, shows subcommands.
+fn render_help_preview(func: &FunctionInfo, _analysis: &DocumentAnalysis) -> String {
+    let title = func.title.as_deref().unwrap_or("");
+    let mut md = format!("**{}**", func.name);
+    if !title.is_empty() {
+        md.push_str(&format!(" — {}", title));
+    }
+    md.push('\n');
+
+    // Usage line
+    if func.calls_usage && !func.usage_entries.is_empty() {
+        md.push_str(&format!("\n```\nUsage: {} <command> [args]\n```\n", func.name));
+    } else if func.calls_args {
+        // Build usage synopsis from args
+        let mut synopsis = format!("Usage: {}", func.name);
+        let mut has_options = false;
+        for entry in &func.args_entries {
+            if entry.spec == "-" {
+                continue;
+            }
+            if let Ok(ref field) = entry.parsed {
+                if field.is_positional {
+                    if field.required {
+                        synopsis.push_str(&format!(" <{}>", field.display_name));
+                    } else {
+                        synopsis.push_str(&format!(" [{}]", field.display_name));
+                    }
+                } else {
+                    has_options = true;
+                }
+            }
+        }
+        if has_options {
+            synopsis.push_str(" [options]");
+        }
+        md.push_str(&format!("\n```\n{}\n```\n", synopsis));
+    }
+
+    // Subcommands section
+    if !func.usage_entries.is_empty() {
+        let visible: Vec<_> = func
+            .usage_entries
+            .iter()
+            .filter(|e| !e.is_group_separator && !e.hidden)
+            .collect();
+        if !visible.is_empty() {
+            md.push_str("\n**Commands:**\n\n");
+            // Find max name width for alignment
+            let max_width = visible
+                .iter()
+                .map(|e| e.name.len())
+                .max()
+                .unwrap_or(0)
+                .max(4);
+            for entry in &visible {
+                let padded = format!("{:<width$}", entry.name, width = max_width);
+                md.push_str(&format!("    {}    {}\n", padded, entry.description));
+            }
+        }
+
+        let subcmd_count = func
+            .usage_entries
+            .iter()
+            .filter(|e| !e.is_group_separator)
+            .count();
+        md.push_str(&format!("\n---\n*{} subcommand{}*\n", subcmd_count, if subcmd_count == 1 { "" } else { "s" }));
+    }
+
+    // Flags/options section
+    if !func.args_entries.is_empty() {
+        let flags: Vec<_> = func
+            .args_entries
+            .iter()
+            .filter(|e| e.spec != "-" && e.parsed.is_ok())
+            .collect();
+        if !flags.is_empty() {
+            md.push_str("\n**Options:**\n\n");
+            for entry in &flags {
+                if let Ok(ref field) = entry.parsed {
+                    let type_str = if field.is_boolean {
+                        String::new()
+                    } else {
+                        format!(" {}", field.type_name)
+                    };
+
+                    let flag_str = if field.is_positional {
+                        format!("  <{}>", field.display_name)
+                    } else if let Some(ref short) = field.short {
+                        format!("  -{}, --{}{}", short, field.display_name, type_str)
+                    } else {
+                        format!("      --{}{}", field.display_name, type_str)
+                    };
+
+                    let desc = &entry.description;
+                    md.push_str(&format!("    {}    {}\n", flag_str, desc));
+                }
+            }
+        }
+
+        let flag_count = func
+            .args_entries
+            .iter()
+            .filter(|e| e.spec != "-")
+            .count();
+        let req_count = func
+            .args_entries
+            .iter()
+            .filter(|e| e.parsed.as_ref().map(|f| f.required).unwrap_or(false))
+            .count();
+        md.push_str(&format!(
+            "\n---\n*{} flag{}, {} required*\n",
+            flag_count,
+            if flag_count == 1 { "" } else { "s" },
+            req_count
+        ));
+    }
+
+    md
 }
 
 /// Hover on an args entry spec string.
@@ -327,22 +398,21 @@ fn hover_args_entry(
         field.type_name.clone()
     };
 
-    let mut md = format!("**arg** `{}`\n\n", entry.spec);
-    md.push_str(&format!("- **Name:** `{}`\n", field.name));
-    md.push_str(&format!("- **Type:** `{}`\n", type_str));
-    if field.required {
-        md.push_str("- **Required**\n");
-    }
+    // Build the flag header like: **--port, -p** `int`
+    let flag_header = if field.is_positional {
+        format!("**<{}>**", field.display_name)
+    } else if let Some(ref short) = field.short {
+        format!("**--{}, -{}**", field.display_name, short)
+    } else {
+        format!("**--{}**", field.display_name)
+    };
+
+    let mut md = format!("{} `{}`\n\n", flag_header, type_str);
+    md.push_str(&format!("{}\n", entry.description));
+    md.push_str(&format!("\n*Required: {}*", if field.required { "yes" } else { "no" }));
     if field.hidden {
-        md.push_str("- **Hidden**\n");
+        md.push_str("\n*Hidden: yes*");
     }
-    if field.is_positional {
-        md.push_str("- **Positional**\n");
-    }
-    if let Some(ref short) = field.short {
-        md.push_str(&format!("- **Short:** `-{}`\n", short));
-    }
-    md.push_str(&format!("\n{}", entry.description));
 
     Some(Hover {
         contents: HoverContents::Markup(MarkupContent {

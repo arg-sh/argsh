@@ -1,0 +1,456 @@
+//! Generate an HTML preview of an argsh script for the VSCode webview.
+
+use argsh_syntax::document::DocumentAnalysis;
+
+/// Generate a self-contained HTML preview of the analysed argsh script.
+///
+/// Includes: script overview, command tree, flags per command, MCP tool schema
+/// preview, and docgen YAML preview. Styled with inline CSS using a dark theme.
+pub fn generate_preview(analysis: &DocumentAnalysis, content: &str) -> String {
+    let mut html = String::new();
+
+    // Document title from the first function with a title, or fallback
+    let script_title = analysis
+        .functions
+        .iter()
+        .find_map(|f| f.title.as_deref())
+        .unwrap_or("argsh Script");
+
+    let script_name = analysis
+        .functions
+        .iter()
+        .find(|f| f.calls_usage || f.calls_args)
+        .map(|f| f.name.as_str())
+        .unwrap_or("script");
+
+    html.push_str(&format!(
+        r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{title} - argsh Preview</title>
+<style>
+:root {{
+    --bg: #1e1e1e;
+    --bg-card: #252526;
+    --bg-code: #1a1a1a;
+    --border: #3c3c3c;
+    --text: #cccccc;
+    --text-dim: #888888;
+    --text-bright: #e0e0e0;
+    --accent: #569cd6;
+    --accent2: #4ec9b0;
+    --accent3: #dcdcaa;
+    --required: #f44747;
+    --hidden: #6a6a6a;
+}}
+* {{ box-sizing: border-box; margin: 0; padding: 0; }}
+body {{
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 24px;
+    line-height: 1.6;
+}}
+h1 {{
+    color: var(--text-bright);
+    font-size: 1.5em;
+    margin-bottom: 4px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 12px;
+}}
+h1 small {{
+    font-weight: 400;
+    color: var(--text-dim);
+    font-size: 0.65em;
+    margin-left: 8px;
+}}
+h2 {{
+    color: var(--accent);
+    font-size: 1.1em;
+    margin: 24px 0 12px 0;
+}}
+.card {{
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px;
+    margin-bottom: 16px;
+}}
+.description {{
+    color: var(--text-dim);
+    font-style: italic;
+    margin-bottom: 16px;
+}}
+.cmd-tree {{
+    list-style: none;
+    padding-left: 0;
+}}
+.cmd-tree li {{
+    padding: 4px 0;
+}}
+.cmd-tree li::before {{
+    content: "\25B8 ";
+    color: var(--accent);
+}}
+.cmd-name {{
+    color: var(--accent3);
+    font-family: 'Cascadia Code', 'Fira Code', monospace;
+    font-weight: 600;
+}}
+.cmd-desc {{
+    color: var(--text-dim);
+    margin-left: 8px;
+}}
+.cmd-hidden {{
+    opacity: 0.5;
+}}
+table {{
+    width: 100%;
+    border-collapse: collapse;
+    margin: 8px 0;
+    font-size: 0.9em;
+}}
+th {{
+    text-align: left;
+    color: var(--text-dim);
+    font-weight: 600;
+    border-bottom: 1px solid var(--border);
+    padding: 6px 12px 6px 0;
+    font-size: 0.85em;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}}
+td {{
+    padding: 5px 12px 5px 0;
+    border-bottom: 1px solid #2a2a2a;
+    vertical-align: top;
+}}
+td:first-child {{
+    font-family: 'Cascadia Code', 'Fira Code', monospace;
+    color: var(--accent2);
+    white-space: nowrap;
+}}
+.type-badge {{
+    display: inline-block;
+    background: #2d2d2d;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 1px 6px;
+    font-size: 0.85em;
+    font-family: 'Cascadia Code', 'Fira Code', monospace;
+    color: var(--accent);
+}}
+.req {{
+    color: var(--required);
+    font-weight: 600;
+}}
+pre {{
+    background: var(--bg-code);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 12px;
+    overflow-x: auto;
+    font-family: 'Cascadia Code', 'Fira Code', monospace;
+    font-size: 0.85em;
+    line-height: 1.5;
+    color: var(--text);
+}}
+.section-count {{
+    color: var(--text-dim);
+    font-size: 0.85em;
+    margin-left: 8px;
+}}
+</style>
+</head>
+<body>
+<h1>{title}<small>{name}</small></h1>
+"#,
+        title = html_escape(script_title),
+        name = html_escape(script_name),
+    ));
+
+    // Description
+    if let Some(desc) = analysis.functions.iter().find_map(|f| f.title.as_deref()) {
+        html.push_str(&format!(
+            "<p class=\"description\">{}</p>\n",
+            html_escape(desc)
+        ));
+    }
+
+    // Shebang / source info
+    if let Some(ref shebang) = analysis.shebang {
+        html.push_str(&format!(
+            "<p style=\"color: var(--text-dim); font-size: 0.85em;\"><code>{}</code></p>\n",
+            html_escape(shebang)
+        ));
+    }
+
+    // Command tree
+    let usage_funcs: Vec<_> = analysis
+        .functions
+        .iter()
+        .filter(|f| !f.usage_entries.is_empty())
+        .collect();
+
+    if !usage_funcs.is_empty() {
+        let total_cmds: usize = usage_funcs
+            .iter()
+            .map(|f| {
+                f.usage_entries
+                    .iter()
+                    .filter(|e| !e.is_group_separator)
+                    .count()
+            })
+            .sum();
+        html.push_str(&format!(
+            "<h2>Command Tree<span class=\"section-count\">{} command{}</span></h2>\n<div class=\"card\">\n",
+            total_cmds,
+            if total_cmds == 1 { "" } else { "s" }
+        ));
+
+        for func in &usage_funcs {
+            html.push_str(&format!(
+                "<p><span class=\"cmd-name\">{}</span></p>\n<ul class=\"cmd-tree\">\n",
+                html_escape(&func.name)
+            ));
+            for entry in &func.usage_entries {
+                if entry.is_group_separator {
+                    continue;
+                }
+                let class = if entry.hidden { " class=\"cmd-hidden\"" } else { "" };
+                let aliases = if entry.aliases.len() > 1 {
+                    let a: Vec<&str> = entry.aliases[1..].iter().map(|s| s.as_str()).collect();
+                    format!(" <span style=\"color: var(--text-dim);\">({})</span>", html_escape(&a.join(", ")))
+                } else {
+                    String::new()
+                };
+                html.push_str(&format!(
+                    "  <li{}><span class=\"cmd-name\">{}</span>{}<span class=\"cmd-desc\"> &mdash; {}</span></li>\n",
+                    class,
+                    html_escape(&entry.name),
+                    aliases,
+                    html_escape(&entry.description)
+                ));
+            }
+            html.push_str("</ul>\n");
+        }
+        html.push_str("</div>\n");
+    }
+
+    // Flags per command
+    let args_funcs: Vec<_> = analysis
+        .functions
+        .iter()
+        .filter(|f| !f.args_entries.is_empty())
+        .collect();
+
+    if !args_funcs.is_empty() {
+        html.push_str("<h2>Flags &amp; Options</h2>\n");
+        for func in &args_funcs {
+            let flag_count = func.args_entries.iter().filter(|e| e.spec != "-").count();
+            html.push_str(&format!(
+                "<div class=\"card\">\n<p><span class=\"cmd-name\">{}</span><span class=\"section-count\">{} flag{}</span></p>\n",
+                html_escape(&func.name),
+                flag_count,
+                if flag_count == 1 { "" } else { "s" }
+            ));
+            html.push_str("<table>\n<tr><th>Flag</th><th>Type</th><th>Required</th><th>Description</th></tr>\n");
+            for entry in &func.args_entries {
+                if entry.spec == "-" {
+                    continue;
+                }
+                if let Ok(ref field) = entry.parsed {
+                    let flag_str = if field.is_positional {
+                        format!("&lt;{}&gt;", html_escape(&field.display_name))
+                    } else if let Some(ref short) = field.short {
+                        format!("--{}, -{}", html_escape(&field.display_name), html_escape(short))
+                    } else {
+                        format!("--{}", html_escape(&field.display_name))
+                    };
+                    let type_str = if field.is_boolean {
+                        "boolean".to_string()
+                    } else {
+                        field.type_name.clone()
+                    };
+                    let req_str = if field.required {
+                        "<span class=\"req\">yes</span>"
+                    } else {
+                        "no"
+                    };
+                    html.push_str(&format!(
+                        "<tr><td>{}</td><td><span class=\"type-badge\">{}</span></td><td>{}</td><td>{}</td></tr>\n",
+                        flag_str,
+                        html_escape(&type_str),
+                        req_str,
+                        html_escape(&entry.description)
+                    ));
+                }
+            }
+            html.push_str("</table>\n</div>\n");
+        }
+    }
+
+    // MCP tool schema preview
+    let mcp_tools = build_mcp_tools(analysis);
+    if !mcp_tools.is_empty() {
+        html.push_str("<h2>MCP Tool Schema Preview</h2>\n<div class=\"card\">\n<pre>");
+        html.push_str(&html_escape(&mcp_tools));
+        html.push_str("</pre>\n</div>\n");
+    }
+
+    // Docgen YAML preview
+    let docgen = build_docgen_yaml(analysis, content);
+    if !docgen.is_empty() {
+        html.push_str("<h2>Docgen YAML Preview</h2>\n<div class=\"card\">\n<pre>");
+        html.push_str(&html_escape(&docgen));
+        html.push_str("</pre>\n</div>\n");
+    }
+
+    html.push_str("</body>\n</html>");
+    html
+}
+
+/// Build a JSON string representing what `tools/list` would return.
+fn build_mcp_tools(analysis: &DocumentAnalysis) -> String {
+    let mut tools = Vec::new();
+
+    for func in &analysis.functions {
+        if !func.calls_args && !func.calls_usage {
+            continue;
+        }
+
+        let description = func.title.as_deref().unwrap_or("");
+
+        let mut properties = serde_json::Map::new();
+        let mut required_list = Vec::new();
+
+        for entry in &func.args_entries {
+            if entry.spec == "-" {
+                continue;
+            }
+            if let Ok(ref field) = entry.parsed {
+                let json_type = match field.type_name.as_str() {
+                    "int" => "integer",
+                    "float" => "number",
+                    "boolean" => "boolean",
+                    _ => "string",
+                };
+                let mut prop = serde_json::Map::new();
+                prop.insert("type".to_string(), serde_json::Value::String(json_type.to_string()));
+                prop.insert("description".to_string(), serde_json::Value::String(entry.description.clone()));
+                properties.insert(field.name.clone(), serde_json::Value::Object(prop));
+                if field.required {
+                    required_list.push(serde_json::Value::String(field.name.clone()));
+                }
+            }
+        }
+
+        let mut schema = serde_json::Map::new();
+        schema.insert("type".to_string(), serde_json::Value::String("object".to_string()));
+        schema.insert("properties".to_string(), serde_json::Value::Object(properties));
+        if !required_list.is_empty() {
+            schema.insert("required".to_string(), serde_json::Value::Array(required_list));
+        }
+
+        let mut tool = serde_json::Map::new();
+        tool.insert("name".to_string(), serde_json::Value::String(func.name.clone()));
+        tool.insert("description".to_string(), serde_json::Value::String(description.to_string()));
+        tool.insert("inputSchema".to_string(), serde_json::Value::Object(schema));
+
+        // Annotations from usage entries
+        for entry in &func.usage_entries {
+            for ann in &entry.annotations {
+                let hint_key = format!("{}Hint", ann);
+                tool.insert(hint_key, serde_json::Value::Bool(true));
+            }
+        }
+
+        tools.push(serde_json::Value::Object(tool));
+    }
+
+    if tools.is_empty() {
+        return String::new();
+    }
+
+    let output = serde_json::json!({ "tools": tools });
+    serde_json::to_string_pretty(&output).unwrap_or_default()
+}
+
+/// Build a YAML-like string representing docgen output.
+fn build_docgen_yaml(analysis: &DocumentAnalysis, _content: &str) -> String {
+    let mut yaml = String::new();
+
+    for func in &analysis.functions {
+        if !func.calls_args && !func.calls_usage {
+            continue;
+        }
+
+        yaml.push_str(&format!("{}:\n", func.name));
+        if let Some(ref title) = func.title {
+            yaml.push_str(&format!("  description: \"{}\"\n", title));
+        }
+
+        if !func.args_entries.is_empty() {
+            yaml.push_str("  args:\n");
+            for entry in &func.args_entries {
+                if entry.spec == "-" {
+                    continue;
+                }
+                if let Ok(ref field) = entry.parsed {
+                    yaml.push_str(&format!("    {}:\n", field.name));
+                    let type_str = if field.is_boolean {
+                        "boolean"
+                    } else {
+                        &field.type_name
+                    };
+                    yaml.push_str(&format!("      type: {}\n", type_str));
+                    yaml.push_str(&format!("      description: \"{}\"\n", entry.description));
+                    if field.required {
+                        yaml.push_str("      required: true\n");
+                    }
+                    if field.hidden {
+                        yaml.push_str("      hidden: true\n");
+                    }
+                    if let Some(ref short) = field.short {
+                        yaml.push_str(&format!("      short: {}\n", short));
+                    }
+                }
+            }
+        }
+
+        if !func.usage_entries.is_empty() {
+            yaml.push_str("  commands:\n");
+            for entry in &func.usage_entries {
+                if entry.is_group_separator {
+                    continue;
+                }
+                yaml.push_str(&format!("    {}:\n", entry.name));
+                yaml.push_str(&format!("      description: \"{}\"\n", entry.description));
+                if entry.hidden {
+                    yaml.push_str("      hidden: true\n");
+                }
+                if let Some(ref target) = entry.explicit_func {
+                    yaml.push_str(&format!("      function: {}\n", target));
+                }
+                if !entry.annotations.is_empty() {
+                    yaml.push_str(&format!(
+                        "      annotations: [{}]\n",
+                        entry.annotations.join(", ")
+                    ));
+                }
+            }
+        }
+    }
+
+    yaml
+}
+
+/// Simple HTML escaping.
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}

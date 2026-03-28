@@ -9,6 +9,7 @@ use crate::completion;
 use crate::diagnostics;
 use crate::goto_def;
 use crate::hover;
+use crate::preview;
 use crate::symbols;
 
 pub struct Backend {
@@ -86,6 +87,10 @@ impl LanguageServer for Backend {
                 definition_provider: Some(OneOf::Left(true)),
                 document_symbol_provider: Some(OneOf::Left(true)),
                 hover_provider: Some(HoverProviderCapability::Simple(true)),
+                execute_command_provider: Some(ExecuteCommandOptions {
+                    commands: vec!["argsh.preview".to_string()],
+                    ..Default::default()
+                }),
                 ..Default::default()
             },
             server_info: Some(ServerInfo {
@@ -213,5 +218,26 @@ impl LanguageServer for Backend {
             return Ok(hover::hover(&doc.analysis, position, &doc.content));
         }
         Ok(None)
+    }
+
+    async fn execute_command(
+        &self,
+        params: ExecuteCommandParams,
+    ) -> Result<Option<serde_json::Value>> {
+        match params.command.as_str() {
+            "argsh.preview" => {
+                if let Some(uri_val) = params.arguments.first() {
+                    if let Ok(uri) = serde_json::from_value::<Url>(uri_val.clone()) {
+                        if let Some(doc) = self.documents.get(&uri) {
+                            let html =
+                                preview::generate_preview(&doc.analysis, &doc.content);
+                            return Ok(Some(serde_json::Value::String(html)));
+                        }
+                    }
+                }
+                Ok(None)
+            }
+            _ => Ok(None),
+        }
     }
 }

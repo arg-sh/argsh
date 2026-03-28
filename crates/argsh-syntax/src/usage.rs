@@ -165,4 +165,94 @@ mod tests {
         assert_eq!(entry.name, "internal");
         assert_eq!(entry.explicit_func, Some("secret::func".to_string()));
     }
+
+    // --- Additional annotation combination tests ---
+
+    #[test]
+    fn test_annotations_readonly_json() {
+        let entry = parse_usage_entry("list@readonly@json");
+        assert_eq!(entry.name, "list");
+        assert_eq!(entry.annotations, vec!["readonly", "json"]);
+        assert!(!entry.hidden);
+    }
+
+    #[test]
+    fn test_annotations_destructive_idempotent() {
+        let entry = parse_usage_entry("reset@destructive@idempotent");
+        assert_eq!(entry.name, "reset");
+        assert_eq!(entry.annotations, vec!["destructive", "idempotent"]);
+    }
+
+    #[test]
+    fn test_explicit_mapping_with_name() {
+        // cmd:-func::name
+        let entry = parse_usage_entry("cmd:-func::name");
+        assert_eq!(entry.name, "cmd");
+        assert_eq!(entry.explicit_func, Some("func::name".to_string()));
+        assert!(entry.aliases.contains(&"cmd".to_string()));
+    }
+
+    #[test]
+    fn test_alias_with_explicit_func_mapping() {
+        // cmd|alias:-func
+        let entry = parse_usage_entry("cmd|alias:-func");
+        assert_eq!(entry.name, "cmd");
+        assert_eq!(entry.aliases, vec!["cmd", "alias"]);
+        assert_eq!(entry.explicit_func, Some("func".to_string()));
+    }
+
+    #[test]
+    fn test_hidden_entry() {
+        let entry = parse_usage_entry("#hidden");
+        assert!(entry.hidden);
+        assert_eq!(entry.name, "hidden");
+        assert!(entry.annotations.is_empty());
+    }
+
+    #[test]
+    fn test_group_separator_dash() {
+        let entry = parse_usage_entry("-");
+        assert!(entry.is_group_separator);
+        assert_eq!(entry.name, "-");
+        assert!(entry.aliases.is_empty());
+    }
+
+    #[test]
+    fn test_plain_command_no_extras() {
+        let entry = parse_usage_entry("deploy");
+        assert_eq!(entry.name, "deploy");
+        assert_eq!(entry.aliases, vec!["deploy"]);
+        assert!(!entry.hidden);
+        assert!(!entry.is_group_separator);
+        assert!(entry.explicit_func.is_none());
+        assert!(entry.annotations.is_empty());
+    }
+
+    #[test]
+    fn test_no_aliases() {
+        let entry = parse_usage_entry("single");
+        assert_eq!(entry.aliases.len(), 1);
+        assert_eq!(entry.aliases[0], "single");
+    }
+
+    #[test]
+    fn test_multiple_aliases() {
+        let entry = parse_usage_entry("cmd|a|b|c");
+        assert_eq!(entry.name, "cmd");
+        assert_eq!(entry.aliases, vec!["cmd", "a", "b", "c"]);
+    }
+
+    #[test]
+    fn test_hidden_with_annotations() {
+        let entry = parse_usage_entry("#secret@readonly");
+        assert!(entry.hidden);
+        assert_eq!(entry.name, "secret");
+        assert_eq!(entry.annotations, vec!["readonly"]);
+    }
+
+    #[test]
+    fn test_annotations_openworld() {
+        let entry = parse_usage_entry("fetch@openworld");
+        assert_eq!(entry.annotations, vec!["openworld"]);
+    }
 }

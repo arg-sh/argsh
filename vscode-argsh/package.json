@@ -15,6 +15,22 @@
   "activationEvents": ["onLanguage:shellscript"],
   "main": "./out/extension.js",
   "contributes": {
+    "commands": [
+      {
+        "command": "argsh.showPreview",
+        "title": "argsh: Show Script Preview",
+        "icon": "$(preview)"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "argsh.showPreview",
+          "when": "resourceLangId == shellscript",
+          "group": "navigation"
+        }
+      ]
+    },
     "grammars": [
       {
         "scopeName": "source.shell.argsh",

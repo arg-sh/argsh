@@ -49,6 +49,29 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push({
     dispose: () => client?.stop(),
   });
+
+  // Register preview command
+  const previewCmd = vscode.commands.registerCommand('argsh.showPreview', async () => {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor || !client) return;
+
+    const uri = editor.document.uri.toString();
+    const html = await client.sendRequest('workspace/executeCommand', {
+      command: 'argsh.preview',
+      arguments: [uri],
+    });
+
+    if (typeof html === 'string') {
+      const panel = vscode.window.createWebviewPanel(
+        'argshPreview',
+        'argsh Preview',
+        vscode.ViewColumn.Beside,
+        { enableScripts: false }
+      );
+      panel.webview.html = html;
+    }
+  });
+  context.subscriptions.push(previewCmd);
 }
 
 export function deactivate(): Thenable<void> | undefined {

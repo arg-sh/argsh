@@ -777,4 +777,175 @@ and more text" "${@}"
         // the first line portion. This is an acceptable limitation for static analysis.
         assert!(doc.functions[0].calls_usage);
     }
+
+    // --- Additional document analysis tests ---
+
+    #[test]
+    fn test_multi_function_with_nested_namespaces() {
+        let src = r#"#!/usr/bin/env argsh
+
+app::server::start() {
+  local -a args=(
+    'port|p:~int' "Port"
+  )
+  :args "Start server" "${@}"
+}
+
+app::server::stop() {
+  :args "Stop server" "${@}"
+}
+
+app::client::connect() {
+  local host
+  local -a args=(
+    'host|h:!' "Hostname"
+  )
+  :args "Connect" "${@}"
+}
+"#;
+        let doc = analyze(src);
+        assert_eq!(doc.functions.len(), 3);
+        assert_eq!(doc.functions[0].name, "app::server::start");
+        assert_eq!(doc.functions[1].name, "app::server::stop");
+        assert_eq!(doc.functions[2].name, "app::client::connect");
+        assert_eq!(doc.functions[0].args_entries.len(), 1);
+        assert_eq!(doc.functions[2].args_entries.len(), 1);
+    }
+
+    #[test]
+    fn test_file_with_imports() {
+        let src = r#"#!/usr/bin/env argsh
+import string
+import --force utils
+import myfunc otherfunc library
+
+main() {
+  echo "hello"
+}
+"#;
+        let doc = analyze(src);
+        assert_eq!(doc.imports.len(), 3);
+        assert_eq!(doc.imports[0].module, "string");
+        assert!(doc.imports[0].selective.is_empty());
+        assert_eq!(doc.imports[1].module, "utils");
+        assert_eq!(doc.imports[2].module, "library");
+        assert_eq!(doc.imports[2].selective, vec!["myfunc", "otherfunc"]);
+    }
+
+    #[test]
+    fn test_non_argsh_file() {
+        let src = "#!/usr/bin/env bash\necho hello world\nfor i in 1 2 3; do echo $i; done\n";
+        let doc = analyze(src);
+        assert!(!doc.has_argsh_shebang);
+        assert!(!doc.has_source_argsh);
+        // No argsh markers, so not detected as argsh
+        let is_argsh = doc.has_source_argsh
+            || doc.has_argsh_shebang
+            || doc.functions.iter().any(|f| f.calls_args || f.calls_usage);
+        assert!(!is_argsh);
+    }
+
+    #[test]
+    fn test_function_with_both_args_and_usage() {
+        let src = r#"
+hybrid() {
+  local name
+  local -a args=(
+    'name|n:!' "Name"
+  )
+  local -a usage=(
+    'sub1' "Sub one"
+    'sub2' "Sub two"
+  )
+  :usage "Hybrid command" "${@}"
+}
+"#;
+        let doc = analyze(src);
+        let func = &doc.functions[0];
+        assert_eq!(func.name, "hybrid");
+        assert_eq!(func.args_entries.len(), 1);
+        assert_eq!(func.usage_entries.len(), 2);
+        assert!(func.calls_usage);
+        assert!(!func.calls_args);
+    }
+
+    #[test]
+    fn test_function_with_only_locals() {
+        let src = r#"
+helper() {
+  local result=""
+  local -a items
+  echo "no args or usage"
+}
+"#;
+        let doc = analyze(src);
+        let func = &doc.functions[0];
+        assert_eq!(func.name, "helper");
+        assert!(func.args_entries.is_empty());
+        assert!(func.usage_entries.is_empty());
+        assert!(!func.calls_args);
+        assert!(!func.calls_usage);
+        assert!(func.title.is_none());
+        // Should have local vars
+        let names: Vec<&str> = func.local_vars.iter().map(|v| v.name.as_str()).collect();
+        assert!(names.contains(&"result"));
+        assert!(names.contains(&"items"));
+    }
+
+    #[test]
+    fn test_args_call_title_extraction() {
+        let src = r#"
+myfunc() {
+  local -a args=()
+  :args "My Function Title" "${@}"
+}
+"#;
+        let doc = analyze(src);
+        assert!(doc.functions[0].calls_args);
+        assert_eq!(
+            doc.functions[0].title.as_deref(),
+            Some("My Function Title")
+        );
+    }
+
+    #[test]
+    fn test_usage_call_title_extraction() {
+        let src = r#"
+main() {
+  local -a usage=()
+  :usage "Main Application" "${@}"
+}
+"#;
+        let doc = analyze(src);
+        assert!(doc.functions[0].calls_usage);
+        assert_eq!(
+            doc.functions[0].title.as_deref(),
+            Some("Main Application")
+        );
+    }
+
+    #[test]
+    fn test_function_end_line_is_correct() {
+        let src = r#"first() {
+  echo one
+  echo two
+}
+second() {
+  echo three
+}
+"#;
+        let doc = analyze(src);
+        assert_eq!(doc.functions.len(), 2);
+        assert_eq!(doc.functions[0].line, 0);
+        assert_eq!(doc.functions[0].end_line, 3);
+        assert_eq!(doc.functions[1].line, 4);
+        assert_eq!(doc.functions[1].end_line, 6);
+    }
+
+    #[test]
+    fn test_dot_source_argsh() {
+        let src = ". argsh\nmain() { echo hi; }\n";
+        let doc = analyze(src);
+        assert!(doc.has_source_argsh);
+    }
 }

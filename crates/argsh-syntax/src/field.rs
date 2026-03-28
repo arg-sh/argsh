@@ -104,6 +104,10 @@ pub fn parse_field(spec: &str) -> Result<FieldDef, FieldError> {
         let mut chars = mods.chars().peekable();
         while let Some(&c) = chars.peek() {
             match c {
+                // `:` is a separator between chained modifiers (e.g. `:+:!`)
+                ':' => {
+                    chars.next();
+                }
                 '+' => {
                     if !type_name.is_empty() {
                         return Err(FieldError {
@@ -123,10 +127,10 @@ pub fn parse_field(spec: &str) -> Result<FieldDef, FieldError> {
                         });
                     }
                     chars.next();
-                    // Collect type name until next modifier
+                    // Collect type name until next modifier or separator
                     let mut tname = String::new();
                     while let Some(&tc) = chars.peek() {
-                        if tc == '+' || tc == '~' || tc == '!' || tc == '#' {
+                        if tc == '+' || tc == '~' || tc == '!' || tc == '#' || tc == ':' {
                             break;
                         }
                         tname.push(tc);
@@ -315,5 +319,135 @@ mod tests {
         assert!(!def.is_positional);
         assert_eq!(def.type_name, "string");
         assert!(def.short.is_none());
+    }
+
+    // --- Additional modifier combination tests ---
+
+    #[test]
+    fn test_modifier_boolean_required() {
+        // :+:!
+        let def = parse_field("flag|f:+:!").unwrap();
+        assert!(def.is_boolean);
+        assert!(def.required);
+        assert!(!def.hidden);
+    }
+
+    #[test]
+    fn test_modifier_typed_int_required() {
+        // :~int:!
+        let def = parse_field("count|c:~int:!").unwrap();
+        assert_eq!(def.type_name, "int");
+        assert!(def.required);
+        assert!(!def.is_boolean);
+    }
+
+    #[test]
+    fn test_modifier_typed_int_hidden() {
+        // :~int:#
+        let def = parse_field("secret|s:~int:#").unwrap();
+        assert_eq!(def.type_name, "int");
+        assert!(def.hidden);
+        assert!(!def.required);
+    }
+
+    #[test]
+    fn test_modifier_hidden_boolean() {
+        // :#:+
+        let def = parse_field("debug|d:#:+").unwrap();
+        assert!(def.hidden);
+        assert!(def.is_boolean);
+    }
+
+    #[test]
+    fn test_error_boolean_then_typed() {
+        // :+:~int should conflict
+        let err = parse_field("bad|b:+:~int").unwrap_err();
+        assert!(
+            err.message.contains("already flagged as boolean"),
+            "Expected boolean conflict, got: {}",
+            err.message
+        );
+    }
+
+    #[test]
+    fn test_error_unknown_modifier_x() {
+        let err = parse_field("bad|b:x").unwrap_err();
+        assert!(err.message.contains("unknown modifier: x"));
+    }
+
+    #[test]
+    fn test_empty_spec() {
+        // An empty string should produce a positional with empty name
+        let def = parse_field("").unwrap();
+        assert!(def.is_positional);
+        assert_eq!(def.name, "");
+        assert_eq!(def.display_name, "");
+    }
+
+    #[test]
+    fn test_no_short_alias() {
+        let def = parse_field("longflag|:~float").unwrap();
+        assert!(def.short.is_none());
+        assert!(!def.is_positional);
+        assert_eq!(def.type_name, "float");
+    }
+
+    #[test]
+    fn test_dashes_in_name() {
+        let def = parse_field("my-flag|m:~string").unwrap();
+        assert_eq!(def.name, "my_flag"); // dashes become underscores
+        assert_eq!(def.display_name, "my-flag"); // display preserves dashes
+        assert_eq!(def.short, Some("m".to_string()));
+        assert!(!def.is_positional);
+    }
+
+    #[test]
+    fn test_positional_with_type() {
+        let def = parse_field("filename:~file").unwrap();
+        assert!(def.is_positional);
+        assert_eq!(def.type_name, "file");
+        assert!(def.short.is_none());
+    }
+
+    #[test]
+    fn test_hidden_prefix_with_modifiers() {
+        let def = parse_field("#internal|i:~int:!").unwrap();
+        assert!(def.hidden);
+        assert_eq!(def.name, "internal");
+        assert_eq!(def.type_name, "int");
+        assert!(def.required);
+        assert_eq!(def.short, Some("i".to_string()));
+    }
+
+    #[test]
+    fn test_positional_hidden_prefix() {
+        let def = parse_field("#hidden_pos").unwrap();
+        assert!(def.hidden);
+        assert!(def.is_positional);
+        assert_eq!(def.name, "hidden_pos");
+    }
+
+    #[test]
+    fn test_boolean_type_name_is_empty() {
+        let def = parse_field("v|v:+").unwrap();
+        assert!(def.is_boolean);
+        // When boolean, type_name should be empty (it's not "string")
+        assert!(def.type_name.is_empty());
+    }
+
+    #[test]
+    fn test_stdin_type() {
+        let def = parse_field("input|i:~stdin").unwrap();
+        assert_eq!(def.type_name, "stdin");
+    }
+
+    #[test]
+    fn test_all_modifiers_combined() {
+        // :~int:!:# — typed, required, hidden
+        let def = parse_field("combo|c:~int:!:#").unwrap();
+        assert_eq!(def.type_name, "int");
+        assert!(def.required);
+        assert!(def.hidden);
+        assert!(!def.is_boolean);
     }
 }
