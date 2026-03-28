@@ -286,9 +286,6 @@ That being said, most of it is quite rough. But it's a start. The best time that
 #### Short term goals
 
 - [ ] Design a logo
-- [x] Write a language server to lint and format bash code according to the styleguide
-- [x] VSCode extension for the language server
-- [x] Convert [shdoc](https://github.com/reconquest/shdoc) to rust
 - [ ] Bash debugger integration (e.g. with `bashdb`)
 
 &nbsp;

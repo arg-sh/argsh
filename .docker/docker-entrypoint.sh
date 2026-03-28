@@ -10,10 +10,10 @@ argsh::minify() {
   local template out="/dev/stdout"
   # shellcheck disable=SC2034
   local -a files ignore_variable args=(
-    'files'             "Files to minify, can be a glob pattern"
-    'template|t:~file'  "Path to a template file to use for the minified file"
-    'out|o'             "Path to the output file"
-    'ignore-variable|i' "Ignores specific variable names from obfuscation"
+    'files'              "Files to minify, can be a glob pattern"
+    'template|t:~file'   "Path to a template file to use for the minified file"
+    'out|o'              "Path to the output file"
+    'ignore-variable|i'  "Ignores specific variable names from obfuscation"
   )
   :args "Minify Bash files" "${@}"
   ! is::uninitialized files || {
@@ -67,7 +67,7 @@ argsh::minify() {
 argsh::lint() {
   # shellcheck disable=SC2034
   local -a files args=(
-    'files' "Files to lint, can be a glob pattern"
+    'files'  "Files to lint, can be a glob pattern"
   )
   :args "Lint Bash files" "${@}"
   ! is::uninitialized files || {
@@ -139,9 +139,9 @@ argsh::docs() {
   local in out prefix=""
   # shellcheck disable=SC2034
   local -a args=(
-    'in'     "Path to the source files to generate documentation from, can be a glob pattern"
-    'out'    "Path to the output directory"
-    'prefix' "Prefix for each md file"
+    'in'      "Path to the source files to generate documentation from, can be a glob pattern"
+    'out'     "Path to the output directory"
+    'prefix'  "Prefix for each md file"
   )
   :args "Generate documentation" "${@}"
   [[ -d "${out}" ]] || {
@@ -157,15 +157,15 @@ argsh::docs() {
 
 argsh::main() {
   local -a usage=(
-    '-'                             "Tools"
-    'minify:-argsh::minify'         "Minify Bash files"
-    'lint:-argsh::lint'             "Lint Bash files"
-    'test:-argsh::test'             "Run tests"
-    'coverage:-argsh::coverage'     "Generate coverage report for your Bash scripts"
-    'docs:-argsh::docs'             "Generate documentation"
-    '-'                             "Management"
-    'builtin:-argsh::builtin'       "Manage native builtins (.so)"
-    'status:-argsh::status'         "Show argsh runtime status"
+    '-'                          "Tools"
+    'minify:-argsh::minify'      "Minify Bash files"
+    'lint:-argsh::lint'          "Lint Bash files"
+    'test:-argsh::test'          "Run tests"
+    'coverage:-argsh::coverage'  "Generate coverage report for your Bash scripts"
+    'docs:-argsh::docs'          "Generate documentation"
+    '-'                          "Management"
+    'builtin:-argsh::builtin'    "Manage native builtins (.so)"
+    'status:-argsh::status'      "Show argsh runtime status"
   )
   :usage "Enhance your Bash scripting by promoting structure and maintainability,
           making it easier to write, understand,
