@@ -1,6 +1,21 @@
 use tower_lsp::lsp_types::*;
 
-use argsh_syntax::document::{DocumentAnalysis, FunctionInfo};
+use argsh_syntax::document::{ArgsArrayEntry, DocumentAnalysis, FunctionInfo};
+use argsh_syntax::field::FieldDef;
+
+/// Format a type string, appending `[]` when the field backs an array variable.
+fn format_type(field: &FieldDef, is_array: bool) -> String {
+    let base = if field.is_boolean {
+        "boolean".to_string()
+    } else {
+        field.type_name.clone()
+    };
+    if is_array {
+        format!("{}[]", base)
+    } else {
+        base
+    }
+}
 
 /// Provide hover information for the symbol under the cursor.
 pub fn hover(
@@ -341,10 +356,10 @@ fn render_help_preview(func: &FunctionInfo, _analysis: &DocumentAnalysis) -> Str
             md.push_str("\n**Options:**\n\n");
             for entry in &flags {
                 if let Ok(ref field) = entry.parsed {
-                    let type_str = if field.is_boolean {
+                    let type_str = if field.is_boolean && !entry.is_array {
                         String::new()
                     } else {
-                        format!(" {}", field.type_name)
+                        format!(" {}", format_type(field, entry.is_array))
                     };
 
                     let flag_str = if field.is_positional {
@@ -415,11 +430,7 @@ fn hover_array_overview(
                         format!("`--{}`", field.display_name)
                     };
 
-                    let type_str = if field.is_boolean {
-                        "boolean".to_string()
-                    } else {
-                        format!("`{}`", field.type_name)
-                    };
+                    let type_str = format!("`{}`", format_type(field, entry.is_array));
 
                     let mut desc = entry.description.clone();
                     if field.required {
@@ -514,15 +525,13 @@ fn hover_args_entry(
         .iter()
         .find(|e| e.spec == word || e.spec.starts_with(&format!("{}|", word)) || e.spec.starts_with(&format!("{}:", word)))?;
 
-    let Ok(ref field) = entry.parsed else {
-        return None;
-    };
+    Some(render_args_entry_detail(entry))
+}
 
-    let type_str = if field.is_boolean {
-        "boolean".to_string()
-    } else {
-        field.type_name.clone()
-    };
+/// Render hover markdown for a single args entry.
+fn render_args_entry_detail(entry: &ArgsArrayEntry) -> Hover {
+    let field = entry.parsed.as_ref().ok().unwrap();
+    let type_str = format_type(field, entry.is_array);
 
     // Build the flag header like: **--port, -p** `int`
     let flag_header = if field.is_positional {
@@ -535,18 +544,21 @@ fn hover_args_entry(
 
     let mut md = format!("{} `{}`\n\n", flag_header, type_str);
     md.push_str(&format!("{}\n", entry.description));
-    md.push_str(&format!("\n*Required: {}*", if field.required { "yes" } else { "no" }));
+    md.push_str(&format!(
+        "\n*Required: {}*",
+        if field.required { "yes" } else { "no" }
+    ));
     if field.hidden {
         md.push_str("\n*Hidden: yes*");
     }
 
-    Some(Hover {
+    Hover {
         contents: HoverContents::Markup(MarkupContent {
             kind: MarkupKind::Markdown,
             value: md,
         }),
         range: None,
-    })
+    }
 }
 
 /// Hover on a usage entry name.
@@ -648,38 +660,10 @@ fn hover_inside_array(
     // Try as args entry
     for entry in &func.args_entries {
         if entry.spec == spec {
-            let Ok(ref field) = entry.parsed else {
+            if entry.parsed.is_err() {
                 continue;
-            };
-
-            let type_str = if field.is_boolean {
-                "boolean".to_string()
-            } else {
-                field.type_name.clone()
-            };
-
-            let flag_header = if field.is_positional {
-                format!("**<{}>**", field.display_name)
-            } else if let Some(ref short) = field.short {
-                format!("**--{}, -{}**", field.display_name, short)
-            } else {
-                format!("**--{}**", field.display_name)
-            };
-
-            let mut md = format!("{} `{}`\n\n", flag_header, type_str);
-            md.push_str(&format!("{}\n", entry.description));
-            md.push_str(&format!("\n*Required: {}*", if field.required { "yes" } else { "no" }));
-            if field.hidden {
-                md.push_str("\n*Hidden: yes*");
             }
-
-            return Some(Hover {
-                contents: HoverContents::Markup(MarkupContent {
-                    kind: MarkupKind::Markdown,
-                    value: md,
-                }),
-                range: None,
-            });
+            return Some(render_args_entry_detail(entry));
         }
     }
 

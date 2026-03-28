@@ -56,6 +56,9 @@ pub struct ArgsArrayEntry {
     pub parsed: Result<FieldDef, String>,
     /// 0-based line number where the spec appeared.
     pub line: usize,
+    /// Whether the corresponding variable is declared as `local -a` (array).
+    /// When true, the flag accepts multiple values (e.g. `--files a --files b`).
+    pub is_array: bool,
 }
 
 /// Result of analysing a source file.
@@ -149,7 +152,7 @@ fn find_functions(lines: &[&str]) -> Vec<FunctionInfo> {
         };
         let body_start = i + 1;
 
-        let args_entries = extract_array_entries(lines, body, body_start, "args");
+        let mut args_entries = extract_array_entries(lines, body, body_start, "args");
         let usage_specs = extract_array_entries(lines, body, body_start, "usage");
 
         let usage_entries: Vec<UsageEntry> = usage_specs
@@ -162,6 +165,13 @@ fn find_functions(lines: &[&str]) -> Vec<FunctionInfo> {
             .collect();
 
         let local_vars = extract_locals(body, body_start);
+
+        // Enrich args entries: check if the variable is declared as an array
+        for entry in &mut args_entries {
+            if let Ok(ref field) = entry.parsed {
+                entry.is_array = local_vars.iter().any(|v| v.name == field.name && v.is_array);
+            }
+        }
 
         let (calls_args, args_title) = find_call(body, ":args");
         let (calls_usage, usage_title) = find_call(body, ":usage");
@@ -373,6 +383,7 @@ fn add_paired_entries(entries: &mut Vec<ArgsArrayEntry>, tokens: &[String], base
             description: desc,
             parsed,
             line: base_line,
+            is_array: false, // enriched later from local_vars
         });
         i += 2;
     }
@@ -969,5 +980,32 @@ second() {
         let src = ". argsh\nmain() { echo hi; }\n";
         let doc = analyze(src);
         assert!(doc.has_source_argsh);
+    }
+
+    #[test]
+    fn test_args_entry_is_array_from_local() {
+        let src = r#"
+f() {
+  local -a files
+  local output
+  local -a args=(
+    'files' "Input files"
+    'output|o' "Output path"
+  )
+  :args "T" "${@}"
+}
+"#;
+        let doc = analyze(src);
+        let func = &doc.functions[0];
+        // 'files' is local -a -> is_array should be true
+        assert!(
+            func.args_entries[0].is_array,
+            "files should be detected as array"
+        );
+        // 'output' is plain local -> is_array should be false
+        assert!(
+            !func.args_entries[1].is_array,
+            "output should not be array"
+        );
     }
 }

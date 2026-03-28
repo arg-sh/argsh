@@ -1112,3 +1112,52 @@ fn test_code_lens_shows_counts() {
 
     client.shutdown();
 }
+
+#[test]
+fn test_completion_library_functions() {
+    let mut client = LspTestClient::new();
+    client.initialize();
+
+    let content = "#!/usr/bin/env bash\nsource argsh\nf() {\n  is::\n}\n";
+    client.open_document("file:///test.sh", content);
+    // cursor after "is::" (line 3, col 6)
+    let resp = client.completion("file:///test.sh", 3, 6);
+    assert!(resp.get("error").is_none());
+    let items = extract_completion_items(&resp);
+    assert!(
+        !items.is_empty(),
+        "Expected library function completions for is::"
+    );
+    // Should suggest is::array, is::set, etc.
+    let labels: Vec<String> = items
+        .iter()
+        .filter_map(|v| v["label"].as_str().map(String::from))
+        .collect();
+    assert!(
+        labels.iter().any(|l| l.contains("array")),
+        "Should suggest is::array, got: {:?}",
+        labels
+    );
+
+    client.shutdown();
+}
+
+#[test]
+fn test_hover_shows_array_type() {
+    let mut client = LspTestClient::new();
+    client.initialize();
+
+    let content = "#!/usr/bin/env bash\nsource argsh\nf() {\n  local -a files\n  local -a args=(\n    'files' \"Input files\"\n  )\n  :args \"T\" \"${@}\"\n}\n";
+    client.open_document("file:///test.sh", content);
+    // Hover on 'args' to see overview
+    let resp = client.hover("file:///test.sh", 4, 12);
+    assert!(resp.get("error").is_none());
+    let content_str = format!("{}", resp["result"]);
+    assert!(
+        content_str.contains("string[]") || content_str.contains("[]"),
+        "Array field should show type[], got: {}",
+        content_str
+    );
+
+    client.shutdown();
+}

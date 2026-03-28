@@ -34,6 +34,7 @@ pub fn completions(
         Context::UsageFuncMapping => complete_function_names(analysis),
         Context::ImportKeyword => complete_import_modules(),
         Context::UsageCommandName => complete_function_names(analysis),
+        Context::LibraryFunction(ref prefix) => complete_library_functions(prefix),
         Context::None => vec![],
     }
 }
@@ -52,13 +53,15 @@ enum Context {
     ImportKeyword,
     /// Inside a usage array, at command name position.
     UsageCommandName,
+    /// After a library prefix like `is::`, `to::`, `string::`.
+    LibraryFunction(String),
     /// No recognizable context.
     None,
 }
 
 /// Determine what kind of completion context the cursor is in.
 fn detect_context(
-    analysis: &DocumentAnalysis,
+    _analysis: &DocumentAnalysis,
     line_idx: usize,
     prefix: &str,
     lines: &[&str],
@@ -119,9 +122,21 @@ fn detect_context(
             Context::None
         }
         _ => {
-            // Check if the line references a function pattern like 'func::name'
-            // or we are inside an args/usage array on the same line
-            let _ = analysis;
+            // Check if cursor is after a library prefix like "is::", "to::", "string::"
+            if trimmed.ends_with("::") || prefix.ends_with("::") {
+                let module = prefix.trim_start().trim_end_matches("::");
+                // Extract just the last word (the module name)
+                let module = module.rsplit(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+                    .next()
+                    .unwrap_or(module);
+                return Context::LibraryFunction(format!("{}::", module));
+            }
+            // Also check for partial: "is::arr" -> still library function context
+            let re = regex::Regex::new(r"\b(\w+)::\w*$").unwrap();
+            if let Some(cap) = re.captures(prefix) {
+                let module = cap.get(1).unwrap().as_str();
+                return Context::LibraryFunction(format!("{}::", module));
+            }
             Context::None
         }
     }
@@ -368,6 +383,81 @@ fn complete_function_names(analysis: &DocumentAnalysis) -> Vec<CompletionItem> {
             ..Default::default()
         })
         .collect()
+}
+
+fn complete_library_functions(prefix: &str) -> Vec<CompletionItem> {
+    let functions: &[(&str, &[(&str, &str)])] = &[
+        ("is", &[
+            ("array", "Test if a variable is an array"),
+            ("uninitialized", "Test if a variable is uninitialized"),
+            ("set", "Test if a variable is set"),
+            ("tty", "Test if stdout is a terminal"),
+        ]),
+        ("to", &[
+            ("int", "Validate integer"),
+            ("float", "Validate float"),
+            ("boolean", "Convert to boolean (0/1)"),
+            ("file", "Validate file path exists"),
+            ("string", "Identity conversion"),
+        ]),
+        ("string", &[
+            ("trim", "Trim whitespace from both ends"),
+            ("trim-left", "Trim leading whitespace"),
+            ("trim-right", "Trim trailing whitespace"),
+            ("random", "Generate random string"),
+            ("indent", "Indent text"),
+            ("drop-index", "Remove characters at index"),
+        ]),
+        ("array", &[
+            ("contains", "Check if array contains value"),
+            ("join", "Join array with delimiter"),
+            ("nth", "Get every Nth element"),
+        ]),
+        ("fmt", &[
+            ("tty", "Format for terminal output"),
+        ]),
+        ("error", &[
+            ("stacktrace", "Print error with stacktrace"),
+        ]),
+        ("bash", &[
+            ("version", "Check bash version requirement"),
+        ]),
+        ("binary", &[
+            ("exists", "Check if command exists"),
+            ("arch", "Detect architecture"),
+            ("github", "Download from GitHub release"),
+        ]),
+        ("docker", &[
+            ("user", "Get current user flags for docker"),
+        ]),
+        ("github", &[
+            ("latest", "Get latest release tag"),
+        ]),
+        ("args", &[
+            ("field_name", "Extract variable name from field spec"),
+            ("run", "Run conditional blocks"),
+        ]),
+    ];
+
+    // Find matching module
+    let module = prefix.strip_suffix("::").unwrap_or(prefix);
+
+    for (name, funcs) in functions {
+        if *name == module {
+            return funcs
+                .iter()
+                .map(|(fname, desc)| CompletionItem {
+                    label: format!("{}::{}", name, fname),
+                    kind: Some(CompletionItemKind::FUNCTION),
+                    detail: Some(desc.to_string()),
+                    insert_text: Some(fname.to_string()),
+                    ..Default::default()
+                })
+                .collect();
+        }
+    }
+
+    vec![]
 }
 
 fn complete_import_modules() -> Vec<CompletionItem> {

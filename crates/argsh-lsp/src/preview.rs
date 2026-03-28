@@ -1,12 +1,27 @@
 //! Generate an HTML preview of an argsh script for the VSCode webview.
 
 use argsh_syntax::document::DocumentAnalysis;
+use argsh_syntax::field::FieldDef;
+
+/// Format a type string, appending `[]` when the field backs an array variable.
+fn format_type(field: &FieldDef, is_array: bool) -> String {
+    let base = if field.is_boolean {
+        "boolean".to_string()
+    } else {
+        field.type_name.clone()
+    };
+    if is_array {
+        format!("{}[]", base)
+    } else {
+        base
+    }
+}
 
 /// Generate a self-contained HTML preview of the analysed argsh script.
 ///
 /// Includes: script overview, command tree, flags per command, MCP tool schema
 /// preview, and docgen YAML preview. Styled with inline CSS using a dark theme.
-pub fn generate_preview(analysis: &DocumentAnalysis, content: &str) -> String {
+pub fn generate_preview(analysis: &DocumentAnalysis, _content: &str) -> String {
     let mut html = String::new();
 
     // Document title from the first function with a title, or fallback
@@ -269,11 +284,7 @@ pre {{
                     } else {
                         format!("--{}", html_escape(&field.display_name))
                     };
-                    let type_str = if field.is_boolean {
-                        "boolean".to_string()
-                    } else {
-                        field.type_name.clone()
-                    };
+                    let type_str = format_type(field, entry.is_array);
                     let req_str = if field.required {
                         "<span class=\"req\">yes</span>"
                     } else {
@@ -316,10 +327,10 @@ pre {{
                         } else {
                             format!("--{}", field.display_name)
                         };
-                        let typ = if field.is_boolean { "boolean" } else { &field.type_name };
+                        let typ = format_type(field, entry.is_array);
                         html.push_str(&format!(
                             "<tr><td>{}</td><td><span class=\"type-badge\">{}</span></td><td>{}</td></tr>\n",
-                            html_escape(&flag), html_escape(typ), html_escape(&entry.description)
+                            html_escape(&flag), html_escape(&typ), html_escape(&entry.description)
                         ));
                     }
                 }
@@ -430,11 +441,7 @@ fn build_docgen_yaml(analysis: &DocumentAnalysis, _content: &str) -> String {
                 }
                 if let Ok(ref field) = entry.parsed {
                     yaml.push_str(&format!("    {}:\n", field.name));
-                    let type_str = if field.is_boolean {
-                        "boolean"
-                    } else {
-                        &field.type_name
-                    };
+                    let type_str = format_type(field, entry.is_array);
                     yaml.push_str(&format!("      type: {}\n", type_str));
                     yaml.push_str(&format!("      description: \"{}\"\n", entry.description));
                     if field.required {
@@ -505,7 +512,7 @@ pub fn export_docgen_json(analysis: &DocumentAnalysis) -> String {
                     let mut m = serde_json::Map::new();
                     m.insert("name".to_string(), serde_json::Value::String(field.name.clone()));
                     m.insert("type".to_string(), serde_json::Value::String(
-                        if field.is_boolean { "boolean".to_string() } else { field.type_name.clone() }
+                        format_type(field, e.is_array)
                     ));
                     m.insert("description".to_string(), serde_json::Value::String(e.description.clone()));
                     if field.required { m.insert("required".to_string(), serde_json::Value::Bool(true)); }
