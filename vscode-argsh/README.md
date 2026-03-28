@@ -44,7 +44,7 @@ Language support for [argsh](https://arg.sh) — the structured Bash scripting f
 
 ```bash
 # Build the LSP binary
-cd crates/argsh-lsp && cargo build --release
+cargo build --release --manifest-path crates/argsh-lsp/Cargo.toml
 
 # Set up for the extension
 mkdir -p vscode-argsh/bin

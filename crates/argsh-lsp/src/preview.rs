@@ -423,11 +423,14 @@ fn build_mcp_tools(analysis: &DocumentAnalysis) -> String {
                 continue;
             }
             if let Ok(ref field) = entry.parsed {
-                let json_type = match field.type_name.as_str() {
-                    "int" => "integer",
-                    "float" => "number",
-                    "boolean" => "boolean",
-                    _ => "string",
+                let json_type = if field.is_boolean {
+                    "boolean"
+                } else {
+                    match field.type_name.as_str() {
+                        "int" => "integer",
+                        "float" => "number",
+                        _ => "string",
+                    }
                 };
                 let mut prop = serde_json::Map::new();
                 prop.insert("type".to_string(), serde_json::Value::String(json_type.to_string()));

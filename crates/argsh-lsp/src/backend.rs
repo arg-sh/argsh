@@ -96,6 +96,7 @@ impl LanguageServer for Backend {
                         "@".to_string(),
                         ":".to_string(),
                         "~".to_string(),
+                        "-".to_string(),
                     ]),
                     resolve_provider: Some(false),
                     ..Default::default()

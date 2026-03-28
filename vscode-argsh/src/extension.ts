@@ -1,3 +1,4 @@
+import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import {
@@ -110,11 +111,12 @@ export function activate(context: vscode.ExtensionContext) {
   // Find the LSP binary
   let serverPath = config.get<string>('lsp.path', '');
   if (!serverPath) {
-    const candidates = [
-      path.join(context.extensionPath, 'bin', 'argsh-lsp'),
-      'argsh-lsp',
-    ];
-    serverPath = candidates[0];
+    const bundled = path.join(context.extensionPath, 'bin', 'argsh-lsp');
+    if (fs.existsSync(bundled)) {
+      serverPath = bundled;
+    } else {
+      serverPath = 'argsh-lsp'; // Fall back to PATH
+    }
   }
 
   const serverOptions: ServerOptions = {
@@ -140,46 +142,54 @@ export function activate(context: vscode.ExtensionContext) {
 
   // --- Command Tree ---
 
-  const treeProvider = new ArgshCommandTreeProvider();
-  const treeView = vscode.window.createTreeView('argsh.commandTree', {
-    treeDataProvider: treeProvider,
-    showCollapseAll: true,
-  });
-  context.subscriptions.push(treeView);
+  if (config.get<boolean>('commandTree.enabled', true)) {
+    const treeProvider = new ArgshCommandTreeProvider();
+    const treeView = vscode.window.createTreeView('argsh.commandTree', {
+      treeDataProvider: treeProvider,
+      showCollapseAll: true,
+    });
+    context.subscriptions.push(treeView);
 
-  // Update tree when active editor changes or document is saved
-  const updateTree = async () => {
-    const editor = vscode.window.activeTextEditor;
-    if (!editor || !client || editor.document.languageId !== 'shellscript') {
-      treeProvider.refresh([], '');
-      return;
-    }
-
-    try {
-      const symbols = await client.sendRequest('textDocument/documentSymbol', {
-        textDocument: { uri: editor.document.uri.toString() },
-      }) as CommandTreeItem[] | null;
-
-      if (symbols && Array.isArray(symbols)) {
-        treeProvider.refresh(symbols, editor.document.uri.toString());
-      } else {
+    // Update tree when active editor changes or document is saved
+    const updateTree = async () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor || !client || editor.document.languageId !== 'shellscript') {
         treeProvider.refresh([], '');
+        return;
       }
-    } catch {
-      // LSP not ready yet
-    }
-  };
 
-  // Highlight current function when cursor moves
-  const updateHighlight = () => {
-    const editor = vscode.window.activeTextEditor;
-    if (editor && editor.document.languageId === 'shellscript') {
-      treeProvider.highlightFunction(editor.selection.active.line);
-    }
-  };
+      try {
+        const symbols = await client.sendRequest('textDocument/documentSymbol', {
+          textDocument: { uri: editor.document.uri.toString() },
+        }) as CommandTreeItem[] | null;
 
-  // Initial update after a short delay (LSP needs time to start)
-  setTimeout(() => updateTree(), 1500);
+        if (symbols && Array.isArray(symbols)) {
+          treeProvider.refresh(symbols, editor.document.uri.toString());
+        } else {
+          treeProvider.refresh([], '');
+        }
+      } catch {
+        // LSP not ready yet
+      }
+    };
+
+    // Highlight current function when cursor moves
+    const updateHighlight = () => {
+      const editor = vscode.window.activeTextEditor;
+      if (editor && editor.document.languageId === 'shellscript') {
+        treeProvider.highlightFunction(editor.selection.active.line);
+      }
+    };
+
+    // Initial update after a short delay (LSP needs time to start)
+    setTimeout(() => updateTree(), 1500);
+
+    context.subscriptions.push(
+      vscode.window.onDidChangeActiveTextEditor(() => { updateTree(); }),
+      vscode.workspace.onDidSaveTextDocument(() => { updateTree(); }),
+      vscode.window.onDidChangeTextEditorSelection(() => { updateHighlight(); }),
+    );
+  }
 
   // Format on save
   context.subscriptions.push(
@@ -205,12 +215,6 @@ export function activate(context: vscode.ExtensionContext) {
         }).catch(() => [])
       );
     }),
-  );
-
-  context.subscriptions.push(
-    vscode.window.onDidChangeActiveTextEditor(() => { updateTree(); }),
-    vscode.workspace.onDidSaveTextDocument(() => { updateTree(); }),
-    vscode.window.onDidChangeTextEditorSelection(() => { updateHighlight(); }),
   );
 
   // Go to symbol command (used by tree item clicks)

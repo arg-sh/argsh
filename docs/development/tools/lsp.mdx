@@ -149,7 +149,7 @@ Each opens in a new editor tab.
 
 ```bash
 # Build the LSP binary
-cd crates/argsh-lsp && cargo build --release
+cargo build --release --manifest-path crates/argsh-lsp/Cargo.toml
 
 # Set up the binary for the extension
 mkdir -p vscode-argsh/bin

@@ -137,7 +137,7 @@ fn hover_modifier(
 ) -> Option<Hover> {
     // Only relevant inside args arrays
     let array_kind = find_enclosing_array(lines, line_idx);
-    if array_kind.as_deref() != Some("args") {
+    if array_kind != Some("args") {
         return None;
     }
 
@@ -203,7 +203,7 @@ fn hover_modifier(
             Some(("`:!` Required field", "The argument must be provided. An error is raised if it is missing."))
         }
         (Some(':'), '#') | (_, '#') if is_after_colon_in_spec(line, col) => {
-            Some(("`:# ` Hidden field", "The field is hidden from help text output but still functional."))
+            Some(("`:#` Hidden field", "The field is hidden from help text output but still functional."))
         }
         _ => None,
     };
@@ -875,7 +875,7 @@ fn extract_single_quoted_at(line: &str, col: usize) -> Option<String> {
 }
 
 /// Walk backwards to find if we're inside an args or usage array.
-fn find_enclosing_array<'a>(lines: &[&str], line_idx: usize) -> Option<&'a str> {
+fn find_enclosing_array(lines: &[&str], line_idx: usize) -> Option<&'static str> {
     let mut paren_depth: i32 = 0;
     for i in (0..=line_idx).rev() {
         let trimmed = lines[i].trim();

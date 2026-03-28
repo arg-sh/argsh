@@ -9,7 +9,7 @@
     "url": "https://github.com/arg-sh/argsh"
   },
   "engines": {
-    "vscode": "^1.80.0"
+    "vscode": "^1.82.0"
   },
   "icon": "icon.png",
   "categories": ["Programming Languages", "Linters", "Snippets"],
@@ -154,8 +154,7 @@
   "devDependencies": {
     "@types/vscode": "^1.80.0",
     "@types/node": "^20.0.0",
-    "typescript": "^5.0.0",
-    "vscode-languageclient": "^9.0.0"
+    "typescript": "^5.0.0"
   },
   "dependencies": {
     "vscode-languageclient": "^9.0.0"
