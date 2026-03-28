@@ -181,6 +181,32 @@ export function activate(context: vscode.ExtensionContext) {
   // Initial update after a short delay (LSP needs time to start)
   setTimeout(() => updateTree(), 1500);
 
+  // Format on save
+  context.subscriptions.push(
+    vscode.workspace.onWillSaveTextDocument((e) => {
+      const cfg = vscode.workspace.getConfiguration('argsh');
+      if (!cfg.get<boolean>('formatOnSave', false)) return;
+      if (e.document.languageId !== 'shellscript') return;
+      if (!client) return;
+
+      e.waitUntil(
+        client.sendRequest('textDocument/formatting', {
+          textDocument: { uri: e.document.uri.toString() },
+          options: { tabSize: 2, insertSpaces: true },
+        }).then((edits: any) => {
+          if (!edits || !Array.isArray(edits) || edits.length === 0) return [];
+          return edits.map((edit: any) => new vscode.TextEdit(
+            new vscode.Range(
+              new vscode.Position(edit.range.start.line, edit.range.start.character),
+              new vscode.Position(edit.range.end.line, edit.range.end.character),
+            ),
+            edit.newText,
+          ));
+        }).catch(() => [])
+      );
+    }),
+  );
+
   context.subscriptions.push(
     vscode.window.onDidChangeActiveTextEditor(() => { updateTree(); }),
     vscode.workspace.onDidSaveTextDocument(() => { updateTree(); }),
