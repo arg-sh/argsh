@@ -252,9 +252,22 @@ fn extract_array_entries(
 
         // Check for array declaration
         if re_decl.is_match(line) || re_decl_inline.is_match(line) {
-            // If the opening `(` and closing `)` are on the same line, parse inline
-            if line.contains('(') && line.contains(')') {
-                let content = extract_between_parens(line);
+            // Find where `<name>=(` starts and work from there
+            let needle = format!("{}=(", array_name);
+            let after_open = if let Some(pos) = line.find(&needle) {
+                &line[pos + needle.len()..]
+            } else {
+                ""
+            };
+
+            // Check if the array closes on the same line (after the opening)
+            if !after_open.is_empty() && after_open.contains(')') {
+                // Inline: content is between the opening and closing paren
+                let content = if let Some(close) = after_open.find(')') {
+                    after_open[..close].to_string()
+                } else {
+                    after_open.to_string()
+                };
                 let tokens = tokenize_array_content(&content);
                 add_paired_entries(&mut entries, &tokens, body_start + i);
                 i += 1;
@@ -263,6 +276,11 @@ fn extract_array_entries(
 
             // Multi-line: collect until closing `)`
             let mut content = String::new();
+            // Include any content after the opening paren on the same line
+            if !after_open.is_empty() {
+                content.push_str(after_open.trim());
+                content.push('\n');
+            }
             let array_line = body_start + i;
             i += 1;
             while i < body.len() {
@@ -1007,5 +1025,28 @@ f() {
             !func.args_entries[1].is_array,
             "output should not be array"
         );
+    }
+}
+
+#[cfg(test)]
+mod regression_tests {
+    use super::*;
+
+    #[test]
+    fn test_args_after_inline_array_assignment() {
+        let src = r#"
+f() {
+  local -a tests=(".") args=(
+    'tests' "Path to test files"
+  )
+  :args "Run tests" "${@}"
+}
+"#;
+        let doc = analyze(src);
+        assert_eq!(doc.functions.len(), 1);
+        let func = &doc.functions[0];
+        assert!(func.calls_args, "should detect :args call");
+        assert!(!func.args_entries.is_empty(), "should find args entries, got none");
+        assert_eq!(func.args_entries[0].spec, "tests");
     }
 }
