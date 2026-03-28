@@ -292,21 +292,51 @@ pre {{
         }
     }
 
-    // MCP tool schema preview
-    let mcp_tools = build_mcp_tools(analysis);
-    if !mcp_tools.is_empty() {
-        html.push_str("<h2>MCP Tool Schema Preview</h2>\n<div class=\"card\">\n<pre>");
-        html.push_str(&html_escape(&mcp_tools));
-        html.push_str("</pre>\n</div>\n");
+    // MCP tools — show as readable command table (not raw JSON)
+    let leaf_funcs: Vec<_> = analysis.functions.iter()
+        .filter(|f| f.calls_args && !f.usage_entries.is_empty() == false)
+        .filter(|f| !f.args_entries.is_empty() || f.calls_args)
+        .collect();
+    if !leaf_funcs.is_empty() {
+        html.push_str("<h2>MCP Tools</h2>\n<div class=\"card\">\n");
+        html.push_str("<p style=\"color: var(--text-dim); font-size: 0.85em; margin-bottom: 12px;\">Commands exposed via <code>./script mcp</code></p>\n");
+        for func in &leaf_funcs {
+            let desc = func.title.as_deref().unwrap_or("");
+            html.push_str(&format!(
+                "<p><span class=\"cmd-name\">{}</span> <span class=\"cmd-desc\">&mdash; {}</span></p>\n",
+                html_escape(&func.name), html_escape(desc)
+            ));
+            if !func.args_entries.is_empty() {
+                html.push_str("<table style=\"margin-left: 16px; width: calc(100% - 16px);\">\n");
+                for entry in &func.args_entries {
+                    if entry.spec == "-" { continue; }
+                    if let Ok(ref field) = entry.parsed {
+                        let flag = if let Some(ref s) = field.short {
+                            format!("--{}, -{}", field.display_name, s)
+                        } else {
+                            format!("--{}", field.display_name)
+                        };
+                        let typ = if field.is_boolean { "boolean" } else { &field.type_name };
+                        html.push_str(&format!(
+                            "<tr><td>{}</td><td><span class=\"type-badge\">{}</span></td><td>{}</td></tr>\n",
+                            html_escape(&flag), html_escape(typ), html_escape(&entry.description)
+                        ));
+                    }
+                }
+                html.push_str("</table>\n");
+            }
+        }
+        html.push_str("</div>\n");
     }
 
-    // Docgen YAML preview
-    let docgen = build_docgen_yaml(analysis, content);
-    if !docgen.is_empty() {
-        html.push_str("<h2>Docgen YAML Preview</h2>\n<div class=\"card\">\n<pre>");
-        html.push_str(&html_escape(&docgen));
-        html.push_str("</pre>\n</div>\n");
-    }
+    // Export links
+    html.push_str("<h2>Exports</h2>\n<div class=\"card\">\n");
+    html.push_str("<p style=\"color: var(--text-dim); font-size: 0.85em;\">Use the command palette to view export previews:</p>\n");
+    html.push_str("<ul style=\"list-style: none; padding: 8px 0;\">\n");
+    html.push_str("<li style=\"padding: 4px 0;\">&#x1F4CB; <strong>argsh: Export MCP JSON</strong> &mdash; MCP tool schema (JSON-RPC format)</li>\n");
+    html.push_str("<li style=\"padding: 4px 0;\">&#x1F4C4; <strong>argsh: Export YAML</strong> &mdash; Docgen YAML output</li>\n");
+    html.push_str("<li style=\"padding: 4px 0;\">&#x1F4C3; <strong>argsh: Export JSON</strong> &mdash; Docgen JSON output</li>\n");
+    html.push_str("</ul>\n</div>\n");
 
     html.push_str("</body>\n</html>");
     html
@@ -445,6 +475,61 @@ fn build_docgen_yaml(analysis: &DocumentAnalysis, _content: &str) -> String {
     }
 
     yaml
+}
+
+/// Export MCP tool schema as pretty-printed JSON.
+pub fn export_mcp_json(analysis: &DocumentAnalysis) -> String {
+    build_mcp_tools(analysis)
+}
+
+/// Export docgen YAML.
+pub fn export_yaml(analysis: &DocumentAnalysis, content: &str) -> String {
+    build_docgen_yaml(analysis, content)
+}
+
+/// Export docgen as JSON.
+pub fn export_docgen_json(analysis: &DocumentAnalysis) -> String {
+    let mut funcs = Vec::new();
+    for func in &analysis.functions {
+        if !func.calls_args && !func.calls_usage { continue; }
+        let mut obj = serde_json::Map::new();
+        obj.insert("name".to_string(), serde_json::Value::String(func.name.clone()));
+        if let Some(ref title) = func.title {
+            obj.insert("description".to_string(), serde_json::Value::String(title.clone()));
+        }
+        if !func.args_entries.is_empty() {
+            let args: Vec<serde_json::Value> = func.args_entries.iter()
+                .filter(|e| e.spec != "-")
+                .filter_map(|e| {
+                    let field = e.parsed.as_ref().ok()?;
+                    let mut m = serde_json::Map::new();
+                    m.insert("name".to_string(), serde_json::Value::String(field.name.clone()));
+                    m.insert("type".to_string(), serde_json::Value::String(
+                        if field.is_boolean { "boolean".to_string() } else { field.type_name.clone() }
+                    ));
+                    m.insert("description".to_string(), serde_json::Value::String(e.description.clone()));
+                    if field.required { m.insert("required".to_string(), serde_json::Value::Bool(true)); }
+                    if let Some(ref s) = field.short { m.insert("short".to_string(), serde_json::Value::String(s.clone())); }
+                    Some(serde_json::Value::Object(m))
+                })
+                .collect();
+            obj.insert("args".to_string(), serde_json::Value::Array(args));
+        }
+        if !func.usage_entries.is_empty() {
+            let cmds: Vec<serde_json::Value> = func.usage_entries.iter()
+                .filter(|e| !e.is_group_separator)
+                .map(|e| {
+                    let mut m = serde_json::Map::new();
+                    m.insert("name".to_string(), serde_json::Value::String(e.name.clone()));
+                    m.insert("description".to_string(), serde_json::Value::String(e.description.clone()));
+                    serde_json::Value::Object(m)
+                })
+                .collect();
+            obj.insert("commands".to_string(), serde_json::Value::Array(cmds));
+        }
+        funcs.push(serde_json::Value::Object(obj));
+    }
+    serde_json::to_string_pretty(&funcs).unwrap_or_default()
 }
 
 /// Simple HTML escaping.

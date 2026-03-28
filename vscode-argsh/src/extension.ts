@@ -111,7 +111,6 @@ export function activate(context: vscode.ExtensionContext) {
     const editor = vscode.window.activeTextEditor;
     if (!editor || !client) return;
 
-    // Force re-analysis by sending didChange
     const uri = editor.document.uri.toString();
     const text = editor.document.getText();
     await client.sendNotification('textDocument/didChange', {
@@ -121,6 +120,36 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.window.showInformationMessage('argsh: Script validation triggered');
   });
   context.subscriptions.push(validateCmd);
+
+  // Export commands — each opens a new editor tab with the export content
+  const exportHandler = (command: string, title: string, lang: string) => {
+    return vscode.commands.registerCommand(command, async () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor || !client) return;
+
+      const uri = editor.document.uri.toString();
+      const result = await client.sendRequest('workspace/executeCommand', {
+        command: command.replace('argsh.', 'argsh.'),
+        arguments: [uri],
+      });
+
+      if (typeof result === 'string' && result.length > 0) {
+        const doc = await vscode.workspace.openTextDocument({
+          content: result,
+          language: lang,
+        });
+        await vscode.window.showTextDocument(doc, vscode.ViewColumn.Beside);
+      } else {
+        vscode.window.showInformationMessage(`argsh: No ${title} data available`);
+      }
+    });
+  };
+
+  context.subscriptions.push(
+    exportHandler('argsh.exportMcpJson', 'MCP JSON', 'json'),
+    exportHandler('argsh.exportYaml', 'YAML', 'yaml'),
+    exportHandler('argsh.exportJson', 'JSON', 'json'),
+  );
 }
 
 export function deactivate(): Thenable<void> | undefined {

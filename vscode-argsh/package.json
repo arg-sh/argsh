@@ -18,23 +18,38 @@
     "commands": [
       {
         "command": "argsh.showPreview",
-        "title": "argsh: Show Script Preview",
+        "title": "Show Script Preview",
         "icon": "$(preview)",
         "category": "argsh"
       },
       {
         "command": "argsh.showHelp",
-        "title": "argsh: Show Help for Current Function",
+        "title": "Show Help for Current Function",
         "category": "argsh"
       },
       {
         "command": "argsh.validateScript",
-        "title": "argsh: Validate Script",
+        "title": "Validate Script",
         "category": "argsh"
       },
       {
         "command": "argsh.restartServer",
-        "title": "argsh: Restart Language Server",
+        "title": "Restart Language Server",
+        "category": "argsh"
+      },
+      {
+        "command": "argsh.exportMcpJson",
+        "title": "Export MCP JSON",
+        "category": "argsh"
+      },
+      {
+        "command": "argsh.exportYaml",
+        "title": "Export YAML",
+        "category": "argsh"
+      },
+      {
+        "command": "argsh.exportJson",
+        "title": "Export JSON",
         "category": "argsh"
       }
     ],

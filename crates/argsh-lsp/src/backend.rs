@@ -92,7 +92,12 @@ impl LanguageServer for Backend {
                     resolve_provider: Some(false),
                 }),
                 execute_command_provider: Some(ExecuteCommandOptions {
-                    commands: vec!["argsh.preview".to_string()],
+                    commands: vec![
+                        "argsh.preview".to_string(),
+                        "argsh.exportMcpJson".to_string(),
+                        "argsh.exportYaml".to_string(),
+                        "argsh.exportJson".to_string(),
+                    ],
                     ..Default::default()
                 }),
                 ..Default::default()
@@ -245,9 +250,41 @@ impl LanguageServer for Backend {
                 if let Some(uri_val) = params.arguments.first() {
                     if let Ok(uri) = serde_json::from_value::<Url>(uri_val.clone()) {
                         if let Some(doc) = self.documents.get(&uri) {
-                            let html =
-                                preview::generate_preview(&doc.analysis, &doc.content);
+                            let html = preview::generate_preview(&doc.analysis, &doc.content);
                             return Ok(Some(serde_json::Value::String(html)));
+                        }
+                    }
+                }
+                Ok(None)
+            }
+            "argsh.exportMcpJson" => {
+                if let Some(uri_val) = params.arguments.first() {
+                    if let Ok(uri) = serde_json::from_value::<Url>(uri_val.clone()) {
+                        if let Some(doc) = self.documents.get(&uri) {
+                            let json = preview::export_mcp_json(&doc.analysis);
+                            return Ok(Some(serde_json::Value::String(json)));
+                        }
+                    }
+                }
+                Ok(None)
+            }
+            "argsh.exportYaml" => {
+                if let Some(uri_val) = params.arguments.first() {
+                    if let Ok(uri) = serde_json::from_value::<Url>(uri_val.clone()) {
+                        if let Some(doc) = self.documents.get(&uri) {
+                            let yaml = preview::export_yaml(&doc.analysis, &doc.content);
+                            return Ok(Some(serde_json::Value::String(yaml)));
+                        }
+                    }
+                }
+                Ok(None)
+            }
+            "argsh.exportJson" => {
+                if let Some(uri_val) = params.arguments.first() {
+                    if let Ok(uri) = serde_json::from_value::<Url>(uri_val.clone()) {
+                        if let Some(doc) = self.documents.get(&uri) {
+                            let json = preview::export_docgen_json(&doc.analysis);
+                            return Ok(Some(serde_json::Value::String(json)));
                         }
                     }
                 }
