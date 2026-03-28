@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <!-- > chevron -->
+  <path d="M68 152 L172 260 L68 368" stroke="#4ECDA4" stroke-width="42" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- { left brace -->
+  <path d="M232 112 C232 112 208 112 208 144 L208 220 C208 248 188 256 188 256 C188 256 208 264 208 292 L208 368 C208 400 232 400 232 400" stroke="#4ECDA4" stroke-width="36" stroke-linecap="round" fill="none"/>
+
+  <!-- } right brace -->
+  <path d="M384 112 C384 112 408 112 408 144 L408 220 C408 248 428 256 428 256 C428 256 408 264 408 292 L408 368 C408 400 384 400 384 400" stroke="#4ECDA4" stroke-width="36" stroke-linecap="round" fill="none"/>
+
+  <!-- _ underscore/cursor -->
+  <rect x="272" y="290" width="76" height="28" rx="6" fill="#4ECDA4"/>
+</svg>

@@ -11,6 +11,7 @@
   "engines": {
     "vscode": "^1.80.0"
   },
+  "icon": "icon.png",
   "categories": ["Programming Languages", "Linters", "Snippets"],
   "activationEvents": ["onLanguage:shellscript"],
   "main": "./out/extension.js",
