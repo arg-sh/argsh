@@ -174,8 +174,9 @@ fn check_usage_function_targets(
         };
 
         if !known_funcs.contains(target.as_str()) {
+            // Primary hint on the function declaration
             diags.push(Diagnostic {
-                range: line_range(entry.line),
+                range: line_range(func.line),
                 severity: Some(DiagnosticSeverity::HINT),
                 source: Some("argsh".to_string()),
                 message: format!(
@@ -184,6 +185,17 @@ fn check_usage_function_targets(
                 ),
                 ..Default::default()
             });
+            // Secondary hint on the specific usage entry (faded with UNNECESSARY tag)
+            if entry.line != func.line && entry.line > 0 {
+                diags.push(Diagnostic {
+                    range: line_range(entry.line),
+                    severity: Some(DiagnosticSeverity::HINT),
+                    source: Some("argsh".to_string()),
+                    message: format!("'{}' not found in this file", target),
+                    tags: Some(vec![DiagnosticTag::UNNECESSARY]),
+                    ..Default::default()
+                });
+            }
         }
     }
 }
