@@ -1,5 +1,6 @@
 <h3 align="center">
-	<img src="https://bashlogo.com/img/symbol/svg/full_colored_light.svg" width="16" alt="Logo"/>
+	<img src="argsh.svg" width="48" alt="argsh logo"/>
+	<br/>
 	arg.sh
 </h3>
 
@@ -285,7 +286,6 @@ That being said, most of it is quite rough. But it's a start. The best time that
 
 #### Short term goals
 
-- [ ] Design a logo
 - [ ] Bash debugger integration (e.g. with `bashdb`)
 
 &nbsp;

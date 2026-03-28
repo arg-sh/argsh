@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/arg-sh/argsh/main/argsh.svg" width="64" alt="argsh logo"/>
+</p>
+
 # argsh for Visual Studio Code
 
 Language support for [argsh](https://arg.sh) — the structured Bash scripting framework.
