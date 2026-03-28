@@ -1043,3 +1043,72 @@ f() {
         assert_eq!(func.args_entries[0].spec, "tests");
     }
 }
+
+#[cfg(test)]
+mod line_tracking_tests {
+    use super::*;
+
+    #[test]
+    fn test_multiline_args_entries_have_distinct_lines() {
+        let src = r#"
+f() {
+  local port verbose
+  local -a args=(
+    'port|p:~int' "Port number"
+    'verbose|v:+' "Verbose output"
+  )
+  :args "T" "${@}"
+}
+"#;
+        let doc = analyze(src);
+        let func = &doc.functions[0];
+        assert_eq!(func.args_entries.len(), 2);
+        // Each entry should have a different line number
+        assert_ne!(func.args_entries[0].line, func.args_entries[1].line,
+            "Multi-line args entries should have distinct lines: {} vs {}",
+            func.args_entries[0].line, func.args_entries[1].line);
+        // First entry on line 4, second on line 5 (0-indexed)
+        assert_eq!(func.args_entries[0].line, 4);
+        assert_eq!(func.args_entries[1].line, 5);
+    }
+
+    #[test]
+    fn test_multiline_usage_entries_have_distinct_lines() {
+        let src = r#"
+main() {
+  local -a usage=(
+    'serve' "Start server"
+    'build' "Build project"
+    'deploy' "Deploy app"
+  )
+  :usage "App" "${@}"
+  "${usage[@]}"
+}
+"#;
+        let doc = analyze(src);
+        let func = &doc.functions[0];
+        assert_eq!(func.usage_entries.len(), 3);
+        // Each entry should have a different line
+        assert_ne!(func.usage_entries[0].line, func.usage_entries[1].line);
+        assert_ne!(func.usage_entries[1].line, func.usage_entries[2].line);
+        assert_eq!(func.usage_entries[0].line, 3);
+        assert_eq!(func.usage_entries[1].line, 4);
+        assert_eq!(func.usage_entries[2].line, 5);
+    }
+
+    #[test]
+    fn test_inline_args_entries_share_line() {
+        let src = r#"
+f() {
+  local v
+  local -a args=('verbose|v:+' "Verbose")
+  :args "T" "${@}"
+}
+"#;
+        let doc = analyze(src);
+        let func = &doc.functions[0];
+        assert_eq!(func.args_entries.len(), 1);
+        // Inline entry should be on the same line as args=(
+        assert_eq!(func.args_entries[0].line, 3);
+    }
+}
