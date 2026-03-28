@@ -1,5 +1,5 @@
 ---
-description: 'IDE support for argsh -- language server with diagnostics, completions, and more'
+description: 'IDE support for argsh — language server with diagnostics, completions, and more'
 ---
 
 # Language Server & VSCode Extension
@@ -10,14 +10,35 @@ argsh includes a Language Server Protocol (LSP) implementation and VSCode extens
 
 ### Diagnostics
 
-The language server validates your argsh scripts in real-time:
+The language server validates your argsh scripts in real-time. Each diagnostic has a code (AG001–AG010) that can be suppressed.
 
-- **Missing variable declarations** -- warns when an `args` field has no matching `local` declaration
-- **Invalid modifiers** -- errors on conflicting modifiers (`:+` with `:~type`)
-- **Unpaired entries** -- errors when args/usage arrays have odd element counts
-- **Duplicate flags** -- warns on duplicate flag names or short aliases
-- **Missing calls** -- warns when `args=(...)` is declared but `:args` is never called
-- **Unresolved commands** -- warns when a usage entry references a nonexistent function
+| Code | Severity | Description |
+|------|----------|-------------|
+| AG001 | Error | Args entry missing description |
+| AG002 | Error | Usage entry missing description |
+| AG003 | Error | Invalid field spec (bad modifier) |
+| AG004 | Warning | Missing `local` variable declaration for args field |
+| AG005 | Error | Args declared but `:args` never called |
+| AG006 | Error | Usage declared but `:usage` never called |
+| AG007 | Warning | Usage target function not found (searched imports) |
+| AG008 | Warning | Duplicate flag name |
+| AG009 | Warning | Duplicate short alias |
+| AG010 | Warning | Command resolves to bare function (not namespaced) |
+
+#### Suppressing diagnostics
+
+Like shellcheck, add comments to suppress specific diagnostics:
+
+```bash
+# argsh disable=AG004
+local -a args=('port|p:~int' "Port")  # no local port needed
+
+# argsh disable=AG007,AG010           # suppress multiple codes
+
+echo "hello" # argsh disable=AG004    # inline suppression
+
+# argsh disable-file=AG007            # suppress for entire file
+```
 
 ### Completions
 
@@ -28,40 +49,95 @@ Context-aware completions trigger automatically:
 | Inside `args=(...)` after `:` | `:` | `:+`, `:~int`, `:~float`, `:!`, `:#` |
 | After `:~` | `~` | `int`, `float`, `file`, `boolean`, `string`, custom `to::` types |
 | Inside `usage=(...)` after `@` | `@` | `readonly`, `destructive`, `json`, `idempotent`, `openworld` |
-| After `:-` | `-` | Function names in the file |
+| After `:-` | `-` | Function names in the file and imports |
 | After `import` | space | `string`, `array`, `fmt`, `error`, `is`, `to`, ... |
+| After `is::`, `to::`, etc. | `::` | Library functions (e.g. `is::array`, `to::int`) |
+
+Custom `to::` validator functions defined in your file are automatically suggested as types.
 
 ### Help Preview
 
-Hover over any function to see its generated help text -- the same output users see with `--help`:
+Hover over any function to see its generated help text:
 
 - Flag table with types, aliases, and descriptions
+- Array types shown as `type[]`
 - Subcommand list for `:usage` functions
 - Summary counts (flags, required, subcommands)
 
+Hover over the `args` or `usage` keyword to see all defined entries in a table.
+
+Hover over a usage entry to see the target function's full help with its flags and subcommands.
+
+Hover over `:~typename` to see type documentation (built-in or custom validator info).
+
+Hover over `'-'` group separators to see the section heading.
+
 ### Code Lens
 
-Clickable indicators above functions show:
-- Number of flags and required flags
-- Number of subcommands
+Clickable indicators above functions showing:
+- Branch icon for `:usage` dispatchers / leaf icon for `:args` functions
+- `argsh: N params, M flags (R required) · K subcommands · ← parent`
+- Click to open the script preview
 
 ### Script Preview
 
-Use **Ctrl+Shift+A** or the command palette (**argsh: Show Script Preview**) to open a dashboard showing:
+Use **Ctrl+Shift+A** or the command palette to open a dashboard:
 - Command tree with all nested subcommands
-- Flag details per command
-- MCP tool schema preview
-- Docgen YAML preview
+- Flag details per command (with `type[]` for arrays)
+- MCP tools with proper tool names and annotation badges
+- Export links to MCP JSON, YAML, and JSON
 
 ### Go to Definition
 
 **Ctrl+Click** on:
-- A usage entry command name -- jumps to the function
-- A `:-func::name` mapping -- jumps to the target function
+- A usage entry command name — jumps to the target function
+- A `:-func::name` mapping — jumps to the explicit target
+- `:~typename` — jumps to the `to::typename()` function
+- `import module` — opens the imported file
+- Works across files (follows `import` and `source argsh` up to configurable depth)
+
+### Auto Formatter
+
+Aligns args and usage array entries so descriptions start at the same column:
+
+```bash
+# Before
+'port|p:~int' "Port number"
+'verbose|v:+' "Verbose output"
+'config|c' "Config file path"
+
+# After (formatted)
+'port|p:~int'  "Port number"
+'verbose|v:+'  "Verbose output"
+'config|c'     "Config file path"
+```
+
+Triggered via:
+- **Shift+Alt+F** (format document)
+- **argsh: Format argsh Arrays** in command palette
+- Automatically on save (configurable)
+
+### Command Tree Panel
+
+A tree view in the bottom panel showing the command hierarchy:
+- Functions with branch/leaf icons
+- Args entries as field children, usage entries as command children
+- Active function highlighted in green based on cursor position
+- Click to navigate to function
 
 ### Document Symbols
 
-The sidebar outline shows the function hierarchy with `::` namespace nesting, with args and usage entries as children.
+The sidebar outline shows the function hierarchy with `::` namespace nesting.
+
+### Export Commands
+
+| Command | Description |
+|---------|-------------|
+| argsh: Export MCP JSON | MCP tool schema in JSON |
+| argsh: Export YAML | Docgen YAML output |
+| argsh: Export JSON | Docgen JSON output |
+
+Each opens in a new editor tab.
 
 ## Installation
 
@@ -71,11 +147,15 @@ The sidebar outline shows the function hierarchy with `::` namespace nesting, wi
 # Build the LSP binary
 cd crates/argsh-lsp && cargo build --release
 
+# Set up the binary for the extension
+mkdir -p vscode-argsh/bin
+cp crates/argsh-lsp/target/release/argsh-lsp vscode-argsh/bin/
+
 # Install the VSCode extension
 cd vscode-argsh && npm install && npm run compile
 ```
 
-Then in VSCode: **Ctrl+Shift+P** > "Developer: Install Extension from Location..." > select `vscode-argsh/`.
+Then in VSCode: **Ctrl+Shift+P** → "Developer: Install Extension from Location..." → select `vscode-argsh/`.
 
 ### Configuration
 
@@ -83,13 +163,22 @@ Then in VSCode: **Ctrl+Shift+P** > "Developer: Install Extension from Location..
 |---------|---------|-------------|
 | `argsh.lsp.enabled` | `true` | Enable the language server |
 | `argsh.lsp.path` | `""` | Path to `argsh-lsp` binary (auto-detected if empty) |
+| `argsh.commandTree.enabled` | `true` | Show the command tree panel |
+| `argsh.codeLens.enabled` | `true` | Show flag/subcommand counts above functions |
+| `argsh.formatOnSave` | `true` | Auto-format argsh arrays on save |
+| `argsh.resolveDepth` | `2` | Max depth for cross-file import resolution (0–5) |
 
 ## Architecture
 
 ```
-crates/argsh-syntax/  -- shared parsing library (pure Rust, no FFI)
-crates/argsh-lsp/     -- LSP server (tower-lsp)
-vscode-argsh/         -- VSCode extension (TypeScript)
+crates/argsh-syntax/  — shared parsing library (pure Rust, no FFI)
+crates/argsh-lsp/     — LSP server (tower-lsp)
+vscode-argsh/         — VSCode extension (TypeScript)
 ```
 
-The LSP server communicates over stdio and works with any LSP-compatible editor (VSCode, Neovim, Helix, Emacs).
+The LSP server communicates over stdio and works with any LSP-compatible editor (VSCode, Windsurf, Neovim, Helix, Emacs).
+
+### Test Coverage
+
+- **argsh-syntax**: 92 unit tests (field parsing, usage parsing, document analysis, scope chains)
+- **argsh-lsp**: 37 tests (6 format unit + 31 integration over stdio)
