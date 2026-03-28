@@ -42,3 +42,4 @@ vscode-argsh/node_modules/
 .vscode/*
 !.vscode/extensions.json
 !.vscode/launch.json
+vscode-argsh/bin/
