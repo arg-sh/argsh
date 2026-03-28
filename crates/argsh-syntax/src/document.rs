@@ -160,6 +160,7 @@ fn find_functions(lines: &[&str]) -> Vec<FunctionInfo> {
             .map(|ae| {
                 let mut ue = usage::parse_usage_entry(&ae.spec);
                 ue.description = ae.description.clone();
+                ue.line = ae.line;
                 ue
             })
             .collect();

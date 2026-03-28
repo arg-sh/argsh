@@ -20,6 +20,8 @@ pub struct UsageEntry {
     pub hidden: bool,
     /// Entry is `"-"` — a group separator.
     pub is_group_separator: bool,
+    /// 0-based line number where this entry appeared in the source.
+    pub line: usize,
 }
 
 /// Parse annotations from a usage entry name.
@@ -48,6 +50,7 @@ pub fn parse_usage_entry(spec: &str) -> UsageEntry {
             annotations: vec![],
             hidden: false,
             is_group_separator: true,
+            line: 0,
         };
     }
 
@@ -84,6 +87,7 @@ pub fn parse_usage_entry(spec: &str) -> UsageEntry {
         annotations,
         hidden,
         is_group_separator: false,
+        line: 0,
     }
 }
 

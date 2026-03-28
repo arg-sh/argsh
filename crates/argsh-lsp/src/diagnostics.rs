@@ -175,7 +175,7 @@ fn check_usage_function_targets(
 
         if !known_funcs.contains(target.as_str()) {
             diags.push(Diagnostic {
-                range: line_range(func.line),
+                range: line_range(entry.line),
                 severity: Some(DiagnosticSeverity::HINT),
                 source: Some("argsh".to_string()),
                 message: format!(
