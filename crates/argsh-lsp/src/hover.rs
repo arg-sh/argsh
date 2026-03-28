@@ -33,7 +33,12 @@ pub fn hover(
         return Some(h);
     }
 
-    // 4. Hover on a function name
+    // 4. Hover inside an args/usage array (single-quoted spec string)
+    if let Some(h) = hover_inside_array(analysis, line, line_idx, col) {
+        return Some(h);
+    }
+
+    // 5. Hover on a function name
     let word = extract_word_at(line, col);
     if !word.is_empty() {
         // Check if it's a function
@@ -470,16 +475,22 @@ fn hover_usage_entry(
     })
 }
 
-/// Extract word at cursor (same as goto_def).
+/// Extract word at cursor position.
+///
+/// Only includes alphanumeric, underscore, and `::` for namespaces.
+/// Does NOT include `|`, `-`, `#`, `~`, `+`, `!` which are spec
+/// modifiers — those caused false matches when hovering inside
+/// args array entries.
 fn extract_word_at(line: &str, col: usize) -> String {
-    if col > line.len() {
+    if col >= line.len() {
         return String::new();
     }
     let bytes = line.as_bytes();
+    // Simple word extraction: alphanumeric, underscore, and :: for namespaces
     let mut start = col;
     while start > 0 {
         let ch = bytes[start - 1] as char;
-        if ch.is_ascii_alphanumeric() || ch == '_' || ch == ':' || ch == '-' || ch == '|' || ch == '#' {
+        if ch.is_ascii_alphanumeric() || ch == '_' || ch == ':' {
             start -= 1;
         } else {
             break;
@@ -488,17 +499,114 @@ fn extract_word_at(line: &str, col: usize) -> String {
     let mut end = col;
     while end < bytes.len() {
         let ch = bytes[end] as char;
-        if ch.is_ascii_alphanumeric() || ch == '_' || ch == ':' || ch == '-' || ch == '|' || ch == '#' || ch == '~' || ch == '+' || ch == '!' {
+        if ch.is_ascii_alphanumeric() || ch == '_' || ch == ':' {
             end += 1;
         } else {
             break;
         }
     }
-    if start < end {
-        line[start..end].to_string()
-    } else {
-        String::new()
+    line[start..end].to_string()
+}
+
+/// Check if the cursor is inside a single-quoted string within an args/usage array,
+/// and if so, show hover info for that spec entry.
+fn hover_inside_array(
+    analysis: &DocumentAnalysis,
+    line: &str,
+    line_idx: usize,
+    col: usize,
+) -> Option<Hover> {
+    // Find enclosing single-quoted string at cursor position
+    let spec = extract_single_quoted_at(line, col)?;
+
+    // Find which function this line belongs to
+    let func = analysis.functions.iter().find(|f|
+        line_idx >= f.line && line_idx <= f.end_line
+    )?;
+
+    // Try as args entry
+    for entry in &func.args_entries {
+        if entry.spec == spec {
+            let Ok(ref field) = entry.parsed else {
+                continue;
+            };
+
+            let type_str = if field.is_boolean {
+                "boolean".to_string()
+            } else {
+                field.type_name.clone()
+            };
+
+            let flag_header = if field.is_positional {
+                format!("**<{}>**", field.display_name)
+            } else if let Some(ref short) = field.short {
+                format!("**--{}, -{}**", field.display_name, short)
+            } else {
+                format!("**--{}**", field.display_name)
+            };
+
+            let mut md = format!("{} `{}`\n\n", flag_header, type_str);
+            md.push_str(&format!("{}\n", entry.description));
+            md.push_str(&format!("\n*Required: {}*", if field.required { "yes" } else { "no" }));
+            if field.hidden {
+                md.push_str("\n*Hidden: yes*");
+            }
+
+            return Some(Hover {
+                contents: HoverContents::Markup(MarkupContent {
+                    kind: MarkupKind::Markdown,
+                    value: md,
+                }),
+                range: None,
+            });
+        }
     }
+
+    // Try as usage entry
+    for entry in &func.usage_entries {
+        if spec.contains(&entry.name) {
+            let mut md = format!("**subcommand** `{}`\n\n", entry.name);
+            if !entry.description.is_empty() {
+                md.push_str(&format!("{}\n", entry.description));
+            }
+            if entry.hidden {
+                md.push_str("*Hidden*\n");
+            }
+
+            return Some(Hover {
+                contents: HoverContents::Markup(MarkupContent {
+                    kind: MarkupKind::Markdown,
+                    value: md,
+                }),
+                range: None,
+            });
+        }
+    }
+
+    None
+}
+
+/// Extract the content of the single-quoted string that contains the cursor.
+fn extract_single_quoted_at(line: &str, col: usize) -> Option<String> {
+    let bytes = line.as_bytes();
+    let mut in_sq = false;
+    let mut sq_start = 0;
+
+    for (i, &b) in bytes.iter().enumerate() {
+        if b == b'\'' {
+            if in_sq {
+                // Closing quote
+                if col >= sq_start && col <= i {
+                    return Some(line[sq_start + 1..i].to_string());
+                }
+                in_sq = false;
+            } else {
+                in_sq = true;
+                sq_start = i;
+            }
+        }
+    }
+    None
 }
 
 /// Walk backwards to find if we're inside an args or usage array.

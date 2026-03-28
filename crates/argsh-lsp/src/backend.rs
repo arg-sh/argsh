@@ -5,6 +5,7 @@ use tower_lsp::{Client, LanguageServer};
 
 use argsh_syntax::document::{analyze, DocumentAnalysis};
 
+use crate::codelens;
 use crate::completion;
 use crate::diagnostics;
 use crate::goto_def;
@@ -87,6 +88,9 @@ impl LanguageServer for Backend {
                 definition_provider: Some(OneOf::Left(true)),
                 document_symbol_provider: Some(OneOf::Left(true)),
                 hover_provider: Some(HoverProviderCapability::Simple(true)),
+                code_lens_provider: Some(CodeLensOptions {
+                    resolve_provider: Some(false),
+                }),
                 execute_command_provider: Some(ExecuteCommandOptions {
                     commands: vec!["argsh.preview".to_string()],
                     ..Default::default()
@@ -216,6 +220,18 @@ impl LanguageServer for Backend {
                 return Ok(None);
             }
             return Ok(hover::hover(&doc.analysis, position, &doc.content));
+        }
+        Ok(None)
+    }
+
+    async fn code_lens(&self, params: CodeLensParams) -> Result<Option<Vec<CodeLens>>> {
+        let uri = params.text_document.uri;
+        if let Some(doc) = self.documents.get(&uri) {
+            if !doc.is_argsh {
+                return Ok(None);
+            }
+            let lenses = codelens::code_lenses(&doc.analysis, &uri);
+            return Ok(Some(lenses));
         }
         Ok(None)
     }

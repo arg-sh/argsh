@@ -1,6 +1,7 @@
 use tower_lsp::{LspService, Server};
 
 mod backend;
+mod codelens;
 mod completion;
 mod diagnostics;
 mod goto_def;

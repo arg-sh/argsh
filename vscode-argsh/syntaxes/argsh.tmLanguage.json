@@ -29,13 +29,23 @@
       ]
     },
     "argsh-array-declaration": {
-      "comment": "local -a args=(...) and local -a usage=(...) declarations",
-      "match": "(local\\s+-a\\s+(?:\\w+\\s+)*)(args|usage)(=)",
-      "captures": {
-        "1": { "name": "keyword.declaration.argsh" },
-        "2": { "name": "variable.other.argsh.array" },
-        "3": { "name": "keyword.operator.assignment.argsh" }
-      }
+      "comment": "args= and usage= array assignments (with or without local -a prefix)",
+      "patterns": [
+        {
+          "match": "\\b(args)(=\\()",
+          "captures": {
+            "1": { "name": "variable.other.argsh.array" },
+            "2": { "name": "keyword.operator.assignment.argsh" }
+          }
+        },
+        {
+          "match": "\\b(usage)(=\\()",
+          "captures": {
+            "1": { "name": "variable.other.argsh.array" },
+            "2": { "name": "keyword.operator.assignment.argsh" }
+          }
+        }
+      ]
     },
     "argsh-import": {
       "comment": "argsh import statement",
