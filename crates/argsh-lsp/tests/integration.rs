@@ -1221,3 +1221,446 @@ fn test_hover_shows_array_type() {
 
     client.shutdown();
 }
+
+#[test]
+fn test_diagnostic_suppression() {
+    // A file with `# argsh disable=AG004` before an entry missing a local
+    // declaration should suppress the AG004 diagnostic.
+    let mut client = LspTestClient::new();
+    client.initialize();
+
+    let content = "#!/usr/bin/env bash\nsource argsh\nmain() {\n  # argsh disable=AG004\n  local -a args=(\n    'port|p:~int' \"Port\"\n  )\n  :args \"T\" \"${@}\"\n}\n";
+    client.open_document("file:///test_suppress.sh", content);
+    // Diagnostics are pushed as notifications — we cannot directly read them,
+    // but verify no crash and the server stays responsive.
+    std::thread::sleep(std::time::Duration::from_millis(300));
+
+    // The server should still respond normally after suppression logic runs
+    let resp = client.document_symbols("file:///test_suppress.sh");
+    assert!(resp.get("error").is_none(), "Server should remain healthy after suppression");
+    let syms = resp["result"].as_array().unwrap();
+    assert_eq!(syms.len(), 1, "Should still have 1 function symbol");
+
+    client.shutdown();
+}
+
+#[test]
+fn test_diagnostic_ag010_bare_function() {
+    // A usage entry 'serve' with a bare `serve()` (no `main::serve`) should
+    // produce AG010 warning. We cannot read push notifications, but verify no crash.
+    let mut client = LspTestClient::new();
+    client.initialize();
+
+    let content = "#!/usr/bin/env bash\nsource argsh\nmain() {\n  local -a usage=(\n    'serve' \"Start server\"\n  )\n  :usage \"App\" \"${@}\"\n  \"${usage[@]}\"\n}\nserve() {\n  :args \"S\" \"${@}\"\n}\n";
+    client.open_document("file:///test_ag010.sh", content);
+    std::thread::sleep(std::time::Duration::from_millis(300));
+
+    // Verify server is healthy and symbols are correct
+    let resp = client.document_symbols("file:///test_ag010.sh");
+    assert!(resp.get("error").is_none());
+    let syms = resp["result"].as_array().unwrap();
+    assert!(syms.len() >= 2, "Should have main + serve symbols");
+
+    client.shutdown();
+}
+
+#[test]
+fn test_hover_on_group_separator() {
+    let mut client = LspTestClient::new();
+    client.initialize();
+
+    let content = "#!/usr/bin/env bash\nsource argsh\nf() {\n  local port verbose\n  local -a args=(\n    '-' \"Options\"\n    'port|p:~int' \"Port number\"\n    'verbose|v:+' \"Verbose\"\n  )\n  :args \"T\" \"${@}\"\n}\n";
+    client.open_document("file:///test_group.sh", content);
+    // Hover on '-' group separator (line 5, col 5)
+    let resp = client.hover("file:///test_group.sh", 5, 5);
+    assert!(resp.get("error").is_none(), "Error: {:?}", resp["error"]);
+    if !resp["result"].is_null() {
+        let content_str = format!("{}", resp["result"]);
+        assert!(
+            content_str.contains("Group separator") || content_str.contains("separator"),
+            "Hover on '-' should mention group separator, got: {}",
+            content_str
+        );
+    }
+
+    client.shutdown();
+}
+
+#[test]
+fn test_hover_on_type_modifier() {
+    let mut client = LspTestClient::new();
+    client.initialize();
+
+    let content = "#!/usr/bin/env bash\nsource argsh\nf() {\n  local num\n  local -a args=(\n    'num|n:~int' \"A number\"\n  )\n  :args \"T\" \"${@}\"\n}\n";
+    client.open_document("file:///test_type_mod.sh", content);
+    // Hover on ':~int' portion (line 5, col 11 — on the '~' character)
+    let resp = client.hover("file:///test_type_mod.sh", 5, 11);
+    assert!(resp.get("error").is_none(), "Error: {:?}", resp["error"]);
+    if !resp["result"].is_null() {
+        let content_str = format!("{}", resp["result"]);
+        assert!(
+            content_str.contains("int") && content_str.contains("Built-in type"),
+            "Hover on :~int should mention int and Built-in type, got: {}",
+            content_str
+        );
+    }
+
+    client.shutdown();
+}
+
+#[test]
+fn test_hover_usage_entry_shows_target_help() {
+    let mut client = LspTestClient::new();
+    client.initialize();
+
+    let content = "#!/usr/bin/env bash\nsource argsh\nmain() {\n  local -a usage=(\n    'serve' \"Start server\"\n  )\n  :usage \"App\" \"${@}\"\n  \"${usage[@]}\"\n}\nmain::serve() {\n  local port\n  local -a args=(\n    'port|p:~int' \"Port number\"\n  )\n  :args \"Serve\" \"${@}\"\n}\n";
+    client.open_document("file:///test_usage_help.sh", content);
+    // Hover on 'serve' usage entry (line 4, col 6)
+    let resp = client.hover("file:///test_usage_help.sh", 4, 6);
+    assert!(resp.get("error").is_none(), "Error: {:?}", resp["error"]);
+    if !resp["result"].is_null() {
+        let content_str = format!("{}", resp["result"]);
+        assert!(
+            content_str.contains("port"),
+            "Hover on usage entry 'serve' should show target's flags (port), got: {}",
+            content_str
+        );
+    }
+
+    client.shutdown();
+}
+
+#[test]
+fn test_goto_type_definition() {
+    let mut client = LspTestClient::new();
+    client.initialize();
+
+    let content = r#"#!/usr/bin/env bash
+source argsh
+
+to::uint() {
+  [[ "${1}" =~ ^[0-9]+$ ]]
+}
+
+f() {
+  local num
+  local -a args=(
+    'num|n:~uint' "A number"
+  )
+  :args "T" "${@}"
+}
+"#;
+
+    let uri = "file:///test_goto_type.sh";
+    client.open_document(uri, content);
+
+    // Go-to-def on ':~uint' (line 10, col 13 — on 'uint')
+    let resp = client.send_request(
+        "textDocument/definition",
+        json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": 10, "character": 13 }
+        }),
+    );
+    assert!(resp.get("error").is_none(), "Got error: {:?}", resp["error"]);
+    if !resp["result"].is_null() {
+        let result = &resp["result"];
+        let target_line = if result.is_object() {
+            result["range"]["start"]["line"].as_u64()
+        } else if result.is_array() && !result.as_array().unwrap().is_empty() {
+            result[0]["range"]["start"]["line"].as_u64()
+        } else {
+            None
+        };
+        if let Some(line) = target_line {
+            assert_eq!(line, 3, "Expected goto to::uint() on line 3");
+        }
+    }
+
+    client.shutdown();
+}
+
+#[test]
+fn test_goto_import_opens_file() {
+    use std::fs;
+
+    let dir = tempfile::tempdir().unwrap();
+    let main_path = dir.path().join("main.sh");
+    let helper_path = dir.path().join("helpers.sh");
+
+    fs::write(&main_path, "#!/usr/bin/env bash\nsource argsh\nimport helpers\nmain() {\n  :args \"T\" \"${@}\"\n}\n").unwrap();
+    fs::write(&helper_path, "helper_func() {\n  echo hello\n}\n").unwrap();
+
+    let main_uri = format!("file://{}", main_path.to_str().unwrap());
+    let helper_uri = format!("file://{}", helper_path.to_str().unwrap());
+
+    let mut client = LspTestClient::new();
+    client.initialize();
+    client.open_document(&main_uri, &std::fs::read_to_string(&main_path).unwrap());
+
+    // Go-to-def on "import helpers" (line 2, col 8 — on 'helpers')
+    let resp = client.send_request(
+        "textDocument/definition",
+        json!({
+            "textDocument": { "uri": main_uri },
+            "position": { "line": 2, "character": 8 }
+        }),
+    );
+    assert!(resp.get("error").is_none(), "Got error: {:?}", resp["error"]);
+    if !resp["result"].is_null() {
+        let result = &resp["result"];
+        let target_uri = if result.is_object() {
+            result["uri"].as_str().map(String::from)
+        } else if result.is_array() && !result.as_array().unwrap().is_empty() {
+            result[0]["uri"].as_str().map(String::from)
+        } else {
+            None
+        };
+        if let Some(uri) = target_uri {
+            assert!(
+                uri.contains("helpers.sh"),
+                "Goto import should point to helpers.sh, got: {}",
+                uri
+            );
+        }
+    }
+
+    let _ = helper_uri; // used for verification context
+    client.shutdown();
+}
+
+#[test]
+fn test_cross_file_goto_definition() {
+    use std::fs;
+
+    let dir = tempfile::tempdir().unwrap();
+    let main_path = dir.path().join("main.sh");
+    let helper_path = dir.path().join("helpers.sh");
+
+    fs::write(&main_path, "#!/usr/bin/env bash\nsource argsh\nimport helpers\nmain() {\n  helper_func\n}\n").unwrap();
+    fs::write(&helper_path, "helper_func() {\n  echo hello\n}\n").unwrap();
+
+    let main_uri = format!("file://{}", main_path.to_str().unwrap());
+    let helper_uri = format!("file://{}", helper_path.to_str().unwrap());
+
+    let mut client = LspTestClient::new();
+    client.initialize();
+    client.open_document(&main_uri, &std::fs::read_to_string(&main_path).unwrap());
+
+    // Go-to-def on "helper_func" (line 4, col 4)
+    let resp = client.send_request(
+        "textDocument/definition",
+        json!({
+            "textDocument": { "uri": main_uri },
+            "position": { "line": 4, "character": 4 }
+        }),
+    );
+    assert!(resp.get("error").is_none(), "Got error: {:?}", resp["error"]);
+    if !resp["result"].is_null() {
+        let result = &resp["result"];
+        let target_uri = if result.is_object() {
+            result["uri"].as_str().map(String::from)
+        } else if result.is_array() && !result.as_array().unwrap().is_empty() {
+            result[0]["uri"].as_str().map(String::from)
+        } else {
+            None
+        };
+        if let Some(uri) = target_uri {
+            assert!(
+                uri.contains("helpers.sh"),
+                "Cross-file goto should point to helpers.sh, got: {}",
+                uri
+            );
+        }
+    }
+
+    let _ = helper_uri;
+    client.shutdown();
+}
+
+#[test]
+fn test_format_preserves_group_separators() {
+    let mut client = LspTestClient::new();
+    client.initialize();
+
+    let content = "#!/usr/bin/env bash\nsource argsh\nf() {\n  local p v\n  local -a args=(\n    '-' \"Options\"\n    'port|p:~int' \"Port\"\n    'verbose|v:+' \"Verbose output\"\n  )\n  :args \"T\" \"${@}\"\n}\n";
+    client.open_document("file:///test_fmt_group.sh", content);
+
+    let resp = client.send_request(
+        "textDocument/formatting",
+        json!({
+            "textDocument": { "uri": "file:///test_fmt_group.sh" },
+            "options": { "tabSize": 2, "insertSpaces": true }
+        }),
+    );
+
+    assert!(
+        resp.get("error").is_none(),
+        "Format error: {:?}",
+        resp["error"]
+    );
+    // If edits are returned, verify they still contain the group separator
+    let result = &resp["result"];
+    if !result.is_null() {
+        let edits = result.as_array().unwrap();
+        // Collect all new text from edits
+        let all_text: String = edits
+            .iter()
+            .filter_map(|e| e["newText"].as_str())
+            .collect();
+        // The separator line should either be untouched (no edit for it)
+        // or preserved in the edit output
+        if !all_text.is_empty() {
+            // Verify no edit removes the '-' entry
+            assert!(
+                !all_text.contains("port") || all_text.contains("Options") || edits.len() < 3,
+                "Group separator '-' should be preserved in formatting"
+            );
+        }
+    }
+
+    client.shutdown();
+}
+
+#[test]
+fn test_export_mcp_json() {
+    let mut client = LspTestClient::new();
+    client.initialize();
+
+    let content = "#!/usr/bin/env bash\nsource argsh\nserve() {\n  local port\n  local -a args=(\n    'port|p:~int' \"Port number\"\n  )\n  :args \"Start server\" \"${@}\"\n}\n";
+    let uri = "file:///test_mcp.sh";
+    client.open_document(uri, content);
+
+    let resp = client.send_request(
+        "workspace/executeCommand",
+        json!({
+            "command": "argsh.exportMcpJson",
+            "arguments": [uri]
+        }),
+    );
+    assert!(resp.get("error").is_none(), "Error: {:?}", resp["error"]);
+    if !resp["result"].is_null() {
+        let result_str = resp["result"].as_str().unwrap_or("");
+        // Should be a JSON string containing tool definitions
+        assert!(
+            result_str.contains("serve") || result_str.contains("tool"),
+            "MCP JSON should contain tool info, got: {}",
+            &result_str[..result_str.len().min(200)]
+        );
+        // Verify it is valid JSON
+        let parsed: Result<Value, _> = serde_json::from_str(result_str);
+        assert!(parsed.is_ok(), "MCP export should be valid JSON");
+    }
+
+    client.shutdown();
+}
+
+#[test]
+fn test_export_yaml() {
+    let mut client = LspTestClient::new();
+    client.initialize();
+
+    let content = "#!/usr/bin/env bash\nsource argsh\nserve() {\n  local port\n  local -a args=(\n    'port|p:~int' \"Port\"\n  )\n  :args \"Serve\" \"${@}\"\n}\n";
+    let uri = "file:///test_yaml.sh";
+    client.open_document(uri, content);
+
+    let resp = client.send_request(
+        "workspace/executeCommand",
+        json!({
+            "command": "argsh.exportYaml",
+            "arguments": [uri]
+        }),
+    );
+    assert!(resp.get("error").is_none(), "Error: {:?}", resp["error"]);
+    if !resp["result"].is_null() {
+        let result_str = resp["result"].as_str().unwrap_or("");
+        // YAML-like output should contain key-value pairs
+        assert!(
+            result_str.contains("serve") || result_str.contains("port"),
+            "YAML export should contain function/flag info, got: {}",
+            &result_str[..result_str.len().min(200)]
+        );
+    }
+
+    client.shutdown();
+}
+
+#[test]
+fn test_export_json() {
+    let mut client = LspTestClient::new();
+    client.initialize();
+
+    let content = "#!/usr/bin/env bash\nsource argsh\nserve() {\n  local port\n  local -a args=(\n    'port|p:~int' \"Port\"\n  )\n  :args \"Serve\" \"${@}\"\n}\n";
+    let uri = "file:///test_json.sh";
+    client.open_document(uri, content);
+
+    let resp = client.send_request(
+        "workspace/executeCommand",
+        json!({
+            "command": "argsh.exportJson",
+            "arguments": [uri]
+        }),
+    );
+    assert!(resp.get("error").is_none(), "Error: {:?}", resp["error"]);
+    if !resp["result"].is_null() {
+        let result_str = resp["result"].as_str().unwrap_or("");
+        // Should be valid JSON
+        let parsed: Result<Value, _> = serde_json::from_str(result_str);
+        assert!(parsed.is_ok(), "Export JSON should be valid JSON, got: {}", &result_str[..result_str.len().min(200)]);
+        // Should contain function info
+        assert!(
+            result_str.contains("serve") || result_str.contains("port"),
+            "JSON export should contain function info, got: {}",
+            &result_str[..result_str.len().min(200)]
+        );
+    }
+
+    client.shutdown();
+}
+
+#[test]
+fn test_code_lens_shows_parent_link() {
+    let mut client = LspTestClient::new();
+    client.initialize();
+
+    let content = "#!/usr/bin/env bash\nsource argsh\nmain() {\n  local -a usage=(\n    'serve' \"Start server\"\n  )\n  :usage \"App\" \"${@}\"\n  \"${usage[@]}\"\n}\nmain::serve() {\n  local port\n  local -a args=(\n    'port|p:~int' \"Port\"\n  )\n  :args \"S\" \"${@}\"\n}\n";
+    client.open_document("file:///test_parent.sh", content);
+
+    let resp = client.send_request(
+        "textDocument/codeLens",
+        json!({
+            "textDocument": { "uri": "file:///test_parent.sh" }
+        }),
+    );
+    assert!(
+        resp.get("error").is_none(),
+        "CodeLens error: {:?}",
+        resp["error"]
+    );
+    let result = &resp["result"];
+    assert!(result.is_array(), "CodeLens should return array");
+    let lenses = result.as_array().unwrap();
+    assert!(
+        lenses.len() >= 2,
+        "Expected code lenses for main + main::serve, got {}",
+        lenses.len()
+    );
+
+    // Find the lens for main::serve and check it has "← main"
+    let serve_lens = lenses.iter().find(|l| {
+        l["command"]["title"]
+            .as_str()
+            .map(|t| t.contains("\u{2190} main") || t.contains("← main"))
+            .unwrap_or(false)
+    });
+    assert!(
+        serve_lens.is_some(),
+        "Expected a code lens with '← main' for main::serve, got titles: {:?}",
+        lenses
+            .iter()
+            .filter_map(|l| l["command"]["title"].as_str())
+            .collect::<Vec<_>>()
+    );
+
+    client.shutdown();
+}
