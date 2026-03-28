@@ -1,0 +1,77 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "scopeName": "source.shell.argsh",
+  "injectionSelector": "L:source.shell",
+  "patterns": [
+    { "include": "#argsh-function-calls" },
+    { "include": "#argsh-import" },
+    { "include": "#argsh-namespace-separator" },
+    { "include": "#argsh-annotations" },
+    { "include": "#argsh-field-modifiers" },
+    { "include": "#argsh-source-argsh" }
+  ],
+  "repository": {
+    "argsh-function-calls": {
+      "comment": "argsh framework function calls: :args, :usage, :usage::help, etc.",
+      "match": "\\b(:args|:usage(?:::\\w+)*|args::field_name)\\b",
+      "name": "support.function.argsh"
+    },
+    "argsh-import": {
+      "comment": "argsh import statement (without path separators)",
+      "match": "^\\s*(import)\\s+(\\w+)",
+      "captures": {
+        "1": { "name": "keyword.control.import.argsh" },
+        "2": { "name": "entity.name.module.argsh" }
+      }
+    },
+    "argsh-namespace-separator": {
+      "comment": ":: namespace separator in function names",
+      "match": "(\\w+)(::)(\\w+)",
+      "captures": {
+        "1": { "name": "entity.name.function.argsh" },
+        "2": { "name": "punctuation.separator.namespace.argsh" },
+        "3": { "name": "entity.name.function.argsh" }
+      }
+    },
+    "argsh-annotations": {
+      "comment": "@readonly, @destructive, @json, @idempotent, @openworld in strings",
+      "match": "@(readonly|destructive|json|idempotent|openworld)",
+      "name": "storage.modifier.annotation.argsh"
+    },
+    "argsh-field-modifiers": {
+      "comment": "Field modifiers in args array entries: :+, :~type, :!, :#",
+      "patterns": [
+        {
+          "comment": "Boolean modifier :+",
+          "match": ":\\+",
+          "name": "keyword.operator.boolean.argsh"
+        },
+        {
+          "comment": "Type modifier :~type",
+          "match": ":~(int|float|file|boolean|string|stdin|\\w+)",
+          "captures": {
+            "0": { "name": "storage.type.argsh" }
+          }
+        },
+        {
+          "comment": "Required modifier :!",
+          "match": ":!",
+          "name": "keyword.operator.required.argsh"
+        },
+        {
+          "comment": "Hidden prefix #",
+          "match": "'#",
+          "name": "comment.hidden.argsh"
+        }
+      ]
+    },
+    "argsh-source-argsh": {
+      "comment": "source argsh bootstrap",
+      "match": "\\b(source)\\s+(argsh)\\b",
+      "captures": {
+        "1": { "name": "keyword.control.source.argsh" },
+        "2": { "name": "entity.name.module.argsh" }
+      }
+    }
+  }
+}

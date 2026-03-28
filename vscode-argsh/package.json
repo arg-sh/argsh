@@ -1,0 +1,60 @@
+{
+  "name": "argsh",
+  "displayName": "argsh",
+  "description": "Language support for argsh — structured Bash scripting framework",
+  "version": "0.1.0",
+  "publisher": "arg-sh",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/arg-sh/argsh"
+  },
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": ["Programming Languages", "Linters", "Snippets"],
+  "activationEvents": ["onLanguage:shellscript"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "grammars": [
+      {
+        "scopeName": "source.shell.argsh",
+        "path": "./syntaxes/argsh.tmLanguage.json",
+        "injectTo": ["source.shell"]
+      }
+    ],
+    "snippets": [
+      {
+        "language": "shellscript",
+        "path": "./snippets/argsh.json"
+      }
+    ],
+    "configuration": {
+      "title": "argsh",
+      "properties": {
+        "argsh.lsp.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable the argsh language server"
+        },
+        "argsh.lsp.path": {
+          "type": "string",
+          "default": "",
+          "description": "Path to argsh-lsp binary (auto-detected if empty)"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.80.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0",
+    "vscode-languageclient": "^9.0.0"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.0"
+  }
+}
