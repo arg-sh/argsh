@@ -1713,3 +1713,53 @@ fn test_settings_code_lens_disabled() {
 
     client.shutdown();
 }
+
+#[test]
+fn test_rename_function() {
+    let mut client = LspTestClient::new();
+    client.initialize();
+
+    let content = "#!/usr/bin/env bash\nsource argsh\nmain() {\n  local -a usage=(\n    'serve' \"Start\"\n  )\n  :usage \"App\" \"${@}\"\n  \"${usage[@]}\"\n}\nmain::serve() {\n  :args \"S\" \"${@}\"\n}\n";
+    client.open_document("file:///test.sh", content);
+
+    // Prepare rename on "main::serve" (line 9, col 5)
+    let resp = client.send_request("textDocument/prepareRename", serde_json::json!({
+        "textDocument": { "uri": "file:///test.sh" },
+        "position": { "line": 9, "character": 5 }
+    }));
+    assert!(resp.get("error").is_none(), "prepareRename error: {:?}", resp["error"]);
+    // Should return a range (the function is renameable)
+    assert!(!resp["result"].is_null(), "Should be renameable");
+
+    // Execute rename
+    let resp = client.send_request("textDocument/rename", serde_json::json!({
+        "textDocument": { "uri": "file:///test.sh" },
+        "position": { "line": 9, "character": 5 },
+        "newName": "main::start"
+    }));
+    assert!(resp.get("error").is_none(), "rename error: {:?}", resp["error"]);
+    let result = &resp["result"];
+    assert!(!result.is_null(), "Should return workspace edit");
+
+    client.shutdown();
+}
+
+#[test]
+fn test_rename_non_function_returns_null() {
+    let mut client = LspTestClient::new();
+    client.initialize();
+
+    let content = "#!/usr/bin/env bash\nsource argsh\necho hello\n";
+    client.open_document("file:///test.sh", content);
+
+    // Try to rename "echo" — not a function
+    let resp = client.send_request("textDocument/prepareRename", serde_json::json!({
+        "textDocument": { "uri": "file:///test.sh" },
+        "position": { "line": 2, "character": 1 }
+    }));
+    assert!(resp.get("error").is_none());
+    // Should return null (not renameable)
+    assert!(resp["result"].is_null(), "Non-function should not be renameable");
+
+    client.shutdown();
+}

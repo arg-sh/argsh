@@ -11,6 +11,7 @@ use crate::diagnostics;
 use crate::goto_def;
 use crate::hover;
 use crate::preview;
+use crate::rename;
 use crate::resolver::{self, ResolvedImports};
 use crate::symbols;
 
@@ -132,6 +133,7 @@ impl LanguageServer for Backend {
                     ..Default::default()
                 }),
                 definition_provider: Some(OneOf::Left(true)),
+                rename_provider: Some(OneOf::Left(true)),
                 document_symbol_provider: Some(OneOf::Left(true)),
                 hover_provider: Some(HoverProviderCapability::Simple(true)),
                 document_formatting_provider: Some(OneOf::Left(true)),
@@ -353,6 +355,40 @@ impl LanguageServer for Backend {
                 return Ok(None);
             }
             return Ok(Some(edits));
+        }
+        Ok(None)
+    }
+
+    async fn prepare_rename(
+        &self,
+        params: TextDocumentPositionParams,
+    ) -> Result<Option<PrepareRenameResponse>> {
+        let uri = params.text_document.uri;
+        let position = params.position;
+        if let Some(doc) = self.documents.get(&uri) {
+            if !doc.is_argsh {
+                return Ok(None);
+            }
+            return Ok(rename::prepare_rename(&doc.analysis, position, &doc.content));
+        }
+        Ok(None)
+    }
+
+    async fn rename(&self, params: RenameParams) -> Result<Option<WorkspaceEdit>> {
+        let uri = params.text_document_position.text_document.uri;
+        let position = params.text_document_position.position;
+        let new_name = params.new_name;
+        if let Some(doc) = self.documents.get(&uri) {
+            if !doc.is_argsh {
+                return Ok(None);
+            }
+            return Ok(rename::rename(
+                &doc.analysis,
+                position,
+                &new_name,
+                &doc.content,
+                &uri,
+            ));
         }
         Ok(None)
     }

@@ -34,9 +34,10 @@ class ArgshCommandTreeProvider implements vscode.TreeDataProvider<CommandTreeIte
     vscode.commands.executeCommand('setContext', 'argsh.hasCommands', symbols.length > 0);
   }
 
-  highlightFunction(line: number) {
+  highlightFunction(line: number): CommandTreeItem | undefined {
     this.activeItem = this.findByLine(this.items, line);
     this._onDidChangeTreeData.fire(undefined);
+    return this.activeItem;
   }
 
   private findByLine(items: CommandTreeItem[], line: number): CommandTreeItem | undefined {
@@ -96,6 +97,25 @@ class ArgshCommandTreeProvider implements vscode.TreeDataProvider<CommandTreeIte
   getChildren(element?: CommandTreeItem): CommandTreeItem[] {
     if (!element) return this.items;
     return element.children || [];
+  }
+
+  getParent(element: CommandTreeItem): CommandTreeItem | undefined {
+    return this.findParent(this.items, element);
+  }
+
+  private findParent(items: CommandTreeItem[], target: CommandTreeItem): CommandTreeItem | undefined {
+    for (const item of items) {
+      if (item.children) {
+        for (const child of item.children) {
+          if (child.name === target.name && child.range.start.line === target.range.start.line) {
+            return item;
+          }
+        }
+        const found = this.findParent(item.children, target);
+        if (found) return found;
+      }
+    }
+    return undefined;
   }
 }
 
@@ -180,7 +200,10 @@ export function activate(context: vscode.ExtensionContext) {
     const updateHighlight = () => {
       const editor = vscode.window.activeTextEditor;
       if (editor && editor.document.languageId === 'shellscript') {
-        treeProvider.highlightFunction(editor.selection.active.line);
+        const activeItem = treeProvider.highlightFunction(editor.selection.active.line);
+        if (activeItem) {
+          treeView.reveal(activeItem, { select: false, focus: false, expand: true });
+        }
       }
     };
 
@@ -198,7 +221,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.workspace.onWillSaveTextDocument((e) => {
       const cfg = vscode.workspace.getConfiguration('argsh');
-      if (!cfg.get<boolean>('formatOnSave', false)) return;
+      if (!cfg.get<boolean>('formatOnSave', true)) return;
       if (e.document.languageId !== 'shellscript') return;
       if (!client) return;
 
@@ -233,6 +256,8 @@ export function activate(context: vscode.ExtensionContext) {
 
   // --- Commands ---
 
+  let previewPanel: vscode.WebviewPanel | undefined;
+
   const previewCmd = vscode.commands.registerCommand('argsh.showPreview', async () => {
     const editor = vscode.window.activeTextEditor;
     if (!editor || !client) return;
@@ -244,16 +269,37 @@ export function activate(context: vscode.ExtensionContext) {
     });
 
     if (typeof html === 'string') {
-      const panel = vscode.window.createWebviewPanel(
-        'argshPreview',
-        'argsh Preview',
-        vscode.ViewColumn.Beside,
-        { enableScripts: false }
-      );
-      panel.webview.html = html;
+      if (previewPanel) {
+        previewPanel.webview.html = html;
+        previewPanel.reveal(vscode.ViewColumn.Beside);
+      } else {
+        previewPanel = vscode.window.createWebviewPanel(
+          'argshPreview',
+          'argsh Preview',
+          vscode.ViewColumn.Beside,
+          { enableScripts: false }
+        );
+        previewPanel.webview.html = html;
+        previewPanel.onDidDispose(() => { previewPanel = undefined; });
+      }
     }
   });
   context.subscriptions.push(previewCmd);
+
+  // Auto-update preview on save
+  context.subscriptions.push(
+    vscode.workspace.onDidSaveTextDocument(async (doc) => {
+      if (previewPanel && client && doc.languageId === 'shellscript') {
+        const html = await client.sendRequest('workspace/executeCommand', {
+          command: 'argsh.preview',
+          arguments: [doc.uri.toString()],
+        });
+        if (typeof html === 'string') {
+          previewPanel.webview.html = html;
+        }
+      }
+    })
+  );
 
   const restartCmd = vscode.commands.registerCommand('argsh.restartServer', async () => {
     if (client) {

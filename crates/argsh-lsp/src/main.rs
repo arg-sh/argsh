@@ -8,6 +8,7 @@ mod format;
 mod goto_def;
 mod hover;
 mod preview;
+mod rename;
 mod resolver;
 mod symbols;
 

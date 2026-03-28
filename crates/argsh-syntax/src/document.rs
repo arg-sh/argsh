@@ -109,6 +109,8 @@ pub fn analyze(source: &str) -> DocumentAnalysis {
             || trimmed.starts_with("source argsh ")
             || trimmed == ". argsh"
             || trimmed.starts_with(". argsh ")
+            || (trimmed.contains("source") && trimmed.contains("ARGSH_SOURCE"))
+            || (trimmed.starts_with(". ") && trimmed.contains("ARGSH_SOURCE"))
     });
 
     let functions = find_functions(&lines);
@@ -1110,5 +1112,30 @@ f() {
         assert_eq!(func.args_entries.len(), 1);
         // Inline entry should be on the same line as args=(
         assert_eq!(func.args_entries[0].line, 3);
+    }
+}
+
+#[cfg(test)]
+mod argsh_source_tests {
+    use super::*;
+
+    #[test]
+    fn test_source_argsh_source_variable() {
+        let src = r#"
+source "${ARGSH_SOURCE}"
+main() { echo; }
+"#;
+        let doc = analyze(src);
+        assert!(doc.has_source_argsh, "should detect source with ARGSH_SOURCE var");
+    }
+
+    #[test]
+    fn test_dot_argsh_source_variable() {
+        let src = r#"
+. "${ARGSH_SOURCE}"
+main() { echo; }
+"#;
+        let doc = analyze(src);
+        assert!(doc.has_source_argsh, "should detect dot-source with ARGSH_SOURCE var");
     }
 }

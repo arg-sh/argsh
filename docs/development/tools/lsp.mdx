@@ -172,6 +172,39 @@ Then in VSCode: **Ctrl+Shift+P** → "Developer: Install Extension from Location
 | `argsh.formatOnSave` | `true` | Auto-format argsh arrays on save |
 | `argsh.resolveDepth` | `2` | Max depth for cross-file import resolution (0–5) |
 
+## Other Editors
+
+### Neovim (nvim-lspconfig)
+
+```lua
+local lspconfig = require('lspconfig')
+local configs = require('lspconfig.configs')
+
+configs.argsh = {
+  default_config = {
+    cmd = { 'argsh-lsp' },
+    filetypes = { 'sh', 'bash' },
+    root_dir = lspconfig.util.find_git_ancestor,
+    settings = {},
+  },
+}
+
+lspconfig.argsh.setup({})
+```
+
+### Helix
+
+Add to `~/.config/helix/languages.toml`:
+
+```toml
+[[language]]
+name = "bash"
+language-servers = ["bash-language-server", "argsh-lsp"]
+
+[language-server.argsh-lsp]
+command = "argsh-lsp"
+```
+
 ## Architecture
 
 ```
