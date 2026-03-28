@@ -149,19 +149,41 @@ fn check_usage_function_targets(
     let known_funcs: HashSet<&str> = analysis.functions.iter().map(|f| f.name.as_str()).collect();
 
     for entry in &func.usage_entries {
-        if let Some(ref target) = entry.explicit_func {
-            if !known_funcs.contains(target.as_str()) {
-                diags.push(Diagnostic {
-                    range: line_range(func.line),
-                    severity: Some(DiagnosticSeverity::INFORMATION),
-                    source: Some("argsh".to_string()),
-                    message: format!(
-                        "usage entry '{}' references function '{}' which is not defined in this file",
-                        entry.name, target
-                    ),
-                    ..Default::default()
-                });
+        if entry.is_group_separator {
+            continue;
+        }
+
+        // Determine the target function name
+        let target = if let Some(ref explicit) = entry.explicit_func {
+            explicit.clone()
+        } else {
+            // Implicit resolution: try caller::name, then bare name
+            let prefixed = format!("{}::{}", func.name, entry.name);
+            if known_funcs.contains(prefixed.as_str()) {
+                continue; // Found via prefix — all good
             }
+            if known_funcs.contains(entry.name.as_str()) {
+                continue; // Found as bare name — all good
+            }
+            // Also check argsh:: prefix
+            let argsh_prefixed = format!("argsh::{}", entry.name);
+            if known_funcs.contains(argsh_prefixed.as_str()) {
+                continue;
+            }
+            entry.name.clone()
+        };
+
+        if !known_funcs.contains(target.as_str()) {
+            diags.push(Diagnostic {
+                range: line_range(func.line),
+                severity: Some(DiagnosticSeverity::HINT),
+                source: Some("argsh".to_string()),
+                message: format!(
+                    "usage entry '{}' → function '{}' not found in this file (may be imported or defined elsewhere)",
+                    entry.name, target
+                ),
+                ..Default::default()
+            });
         }
     }
 }
