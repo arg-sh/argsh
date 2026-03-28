@@ -845,3 +845,76 @@ func_c() {
 
     client.shutdown();
 }
+
+// Helper to extract completion items from a response Value.
+fn extract_completion_items(resp: &Value) -> Vec<&Value> {
+    if let Some(items) = resp["result"].as_array() {
+        return items.iter().collect();
+    }
+    if let Some(items) = resp["result"]["items"].as_array() {
+        return items.iter().collect();
+    }
+    vec![]
+}
+
+#[test]
+fn test_completion_same_line_args_array() {
+    // Completion when args=( is on the same line as the cursor
+    let mut client = LspTestClient::new();
+    client.initialize();
+
+    let content = "#!/usr/bin/env bash\nsource argsh\nmain() {\n  local -a args=('port|p:' \"Port\")\n  :args \"T\" \"${@}\"\n}\n";
+    client.open_document("file:///test_sameline.sh", content);
+    // Line 3: `  local -a args=('port|p:' "Port")`
+    // The ':' is inside the single-quoted spec at col 25.
+    let resp = client.completion("file:///test_sameline.sh", 3, 25);
+    assert!(resp.get("error").is_none(), "Got error: {:?}", resp["error"]);
+    let items = extract_completion_items(&resp);
+    assert!(!items.is_empty(), "Expected modifier completions on same-line args array, got empty");
+
+    client.shutdown();
+}
+
+#[test]
+fn test_completion_multiline_args_array() {
+    // Completion when cursor is inside a multi-line args=( block
+    let mut client = LspTestClient::new();
+    client.initialize();
+
+    let content = "#!/usr/bin/env bash\nsource argsh\nmain() {\n  local -a args=(\n    'port|p:' \"Port\"\n  )\n  :args \"T\" \"${@}\"\n}\n";
+    client.open_document("file:///test_multiline.sh", content);
+    // Line 4: `    'port|p:' "Port"`
+    // The ':' is at col 11, cursor at col 12 (after the colon, inside the quote)
+    let resp = client.completion("file:///test_multiline.sh", 4, 12);
+    assert!(resp.get("error").is_none(), "Got error: {:?}", resp["error"]);
+    let items = extract_completion_items(&resp);
+    assert!(!items.is_empty(), "Expected modifier completions in multiline args array, got empty");
+
+    client.shutdown();
+}
+
+#[test]
+fn test_diagnostics_missing_local_variable() {
+    // Args field 'port' without matching 'local port' should produce warning.
+    // We cannot easily capture push notifications, but verify no crash.
+    let mut client = LspTestClient::new();
+    client.initialize();
+
+    let content = "#!/usr/bin/env bash\nsource argsh\nmain() {\n  local -a args=(\n    'port|p:~int' \"Port\"\n  )\n  :args \"T\" \"${@}\"\n}\n";
+    client.open_document("file:///test_missing_local.sh", content);
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    client.shutdown();
+}
+
+#[test]
+fn test_diagnostics_no_warning_when_local_declared() {
+    // Args field 'port' WITH 'local port' should NOT produce warning.
+    // Verify no crash.
+    let mut client = LspTestClient::new();
+    client.initialize();
+
+    let content = "#!/usr/bin/env bash\nsource argsh\nmain() {\n  local port\n  local -a args=(\n    'port|p:~int' \"Port\"\n  )\n  :args \"T\" \"${@}\"\n}\n";
+    client.open_document("file:///test_local_declared.sh", content);
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    client.shutdown();
+}

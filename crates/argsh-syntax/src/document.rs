@@ -708,7 +708,29 @@ main::cmd2() {
         let func = &doc.functions[0];
         // Should find: config, verbose, args, usage
         let names: Vec<&str> = func.local_vars.iter().map(|v| v.name.as_str()).collect();
-        assert!(names.contains(&"config"));
+        assert!(names.contains(&"config"), "missing 'config' in {:?}", names);
+        assert!(names.contains(&"verbose"), "missing 'verbose' in {:?}", names);
+        assert!(names.contains(&"args"), "missing 'args' in {:?}", names);
+        assert!(names.contains(&"usage"), "missing 'usage' in {:?}", names);
+    }
+
+    #[test]
+    fn test_local_multiple_vars_before_args_array() {
+        // local -a files ignore_variable args=(...) should extract all three names
+        let src = r#"
+myfunc() {
+  local -a files ignore_variable args=(
+    'port|p:~int' "Port"
+  )
+  :args "Test" "${@}"
+}
+"#;
+        let doc = analyze(src);
+        let func = &doc.functions[0];
+        let names: Vec<&str> = func.local_vars.iter().map(|v| v.name.as_str()).collect();
+        assert!(names.contains(&"files"), "missing 'files' in {:?}", names);
+        assert!(names.contains(&"ignore_variable"), "missing 'ignore_variable' in {:?}", names);
+        assert!(names.contains(&"args"), "missing 'args' in {:?}", names);
     }
 
     #[test]

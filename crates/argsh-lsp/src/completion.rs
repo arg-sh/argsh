@@ -135,31 +135,41 @@ enum ArrayKind {
 
 /// Walk backwards from `line_idx` to find if we are inside an `args=(` or `usage=(` block.
 fn find_enclosing_array(lines: &[&str], line_idx: usize) -> Option<ArrayKind> {
-    // Search backwards for an opening array pattern without a matching close
-    let mut paren_depth: i32 = 0;
+    // First check: is the cursor on the same line as args=( or usage=( ?
+    // This handles the single-line case where paren counting would fail because
+    // the closing `)` is on the same line after the cursor position.
+    let current = lines[line_idx];
+    if current.contains("args=(") {
+        return Some(ArrayKind::Args);
+    }
+    if current.contains("usage=(") {
+        return Some(ArrayKind::Usage);
+    }
 
+    // Walk backwards looking for unmatched opening paren
+    let mut paren_depth: i32 = 0;
     for i in (0..=line_idx).rev() {
         let trimmed = lines[i].trim();
 
-        // Count parens on this line (rough — does not handle strings)
-        for ch in trimmed.chars() {
+        // Count parens on this line right-to-left for correct nesting
+        for ch in trimmed.chars().rev() {
             match ch {
                 ')' => paren_depth += 1,
-                '(' => paren_depth -= 1,
+                '(' => {
+                    paren_depth -= 1;
+                    if paren_depth < 0 {
+                        // Found unmatched opening paren
+                        if trimmed.contains("args=(") {
+                            return Some(ArrayKind::Args);
+                        }
+                        if trimmed.contains("usage=(") {
+                            return Some(ArrayKind::Usage);
+                        }
+                        return None;
+                    }
+                }
                 _ => {}
             }
-        }
-
-        if paren_depth < 0 {
-            // We found an unmatched opening paren — check if it's args or usage
-            if trimmed.contains("args=(") || trimmed.ends_with("args=(") {
-                return Some(ArrayKind::Args);
-            }
-            if trimmed.contains("usage=(") || trimmed.ends_with("usage=(") {
-                return Some(ArrayKind::Usage);
-            }
-            // Some other array
-            return None;
         }
     }
 
