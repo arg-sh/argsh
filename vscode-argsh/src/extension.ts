@@ -45,7 +45,9 @@ export function activate(context: vscode.ExtensionContext) {
     clientOptions
   );
 
-  client.start();
+  client.start().catch((err: Error) => {
+    vscode.window.showErrorMessage(`argsh LSP failed to start: ${err.message}`);
+  });
   context.subscriptions.push({
     dispose: () => client?.stop(),
   });
@@ -76,8 +78,7 @@ export function activate(context: vscode.ExtensionContext) {
   // Restart server command
   const restartCmd = vscode.commands.registerCommand('argsh.restartServer', async () => {
     if (client) {
-      await client.stop();
-      await client.start();
+      await client.restart();
       vscode.window.showInformationMessage('argsh Language Server restarted');
     }
   });
