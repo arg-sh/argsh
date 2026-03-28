@@ -43,12 +43,15 @@ class ArgshCommandTreeProvider implements vscode.TreeDataProvider<CommandTreeIte
   private findByLine(items: CommandTreeItem[], line: number): CommandTreeItem | undefined {
     for (const item of items) {
       if (line >= item.range.start.line && line <= item.range.end.line) {
-        // Check children first for more specific match
-        if (item.children) {
-          const child = this.findByLine(item.children, line);
-          if (child) return child;
+        // Only return Function items, not Property/Enum children
+        if (item.kind === vscode.SymbolKind.Function) {
+          // Check if a child function is a better match
+          if (item.children) {
+            const child = this.findByLine(item.children, line);
+            if (child) return child;
+          }
+          return item;
         }
-        return item;
       }
     }
     return undefined;

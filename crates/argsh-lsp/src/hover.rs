@@ -682,7 +682,7 @@ fn extract_word_at(line: &str, col: usize) -> String {
     let mut start = col;
     while start > 0 {
         let ch = bytes[start - 1] as char;
-        if ch.is_ascii_alphanumeric() || ch == '_' || ch == ':' {
+        if ch.is_ascii_alphanumeric() || ch == '_' || ch == ':' || ch == '-' {
             start -= 1;
         } else {
             break;
@@ -691,7 +691,7 @@ fn extract_word_at(line: &str, col: usize) -> String {
     let mut end = col;
     while end < bytes.len() {
         let ch = bytes[end] as char;
-        if ch.is_ascii_alphanumeric() || ch == '_' || ch == ':' {
+        if ch.is_ascii_alphanumeric() || ch == '_' || ch == ':' || ch == '-' {
             end += 1;
         } else {
             break;

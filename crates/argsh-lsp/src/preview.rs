@@ -409,7 +409,8 @@ fn build_mcp_tools(analysis: &DocumentAnalysis) -> String {
     let mut tools = Vec::new();
 
     for func in &analysis.functions {
-        if !func.calls_args && !func.calls_usage {
+        // Only leaf functions (has :args, no :usage dispatching)
+        if !func.calls_args || !func.usage_entries.is_empty() {
             continue;
         }
 
@@ -458,8 +459,14 @@ fn build_mcp_tools(analysis: &DocumentAnalysis) -> String {
         // Annotations from usage entries
         for entry in &func.usage_entries {
             for ann in &entry.annotations {
-                let hint_key = format!("{}Hint", ann);
-                tool.insert(hint_key, serde_json::Value::Bool(true));
+                let hint_key = match ann.as_str() {
+                    "readonly" => "readOnlyHint",
+                    "destructive" => "destructiveHint",
+                    "idempotent" => "idempotentHint",
+                    "openworld" => "openWorldHint",
+                    _ => { continue; } // skip unknown annotations
+                };
+                tool.insert(hint_key.to_string(), serde_json::Value::Bool(true));
             }
         }
 

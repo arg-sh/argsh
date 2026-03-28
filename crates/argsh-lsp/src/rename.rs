@@ -145,13 +145,13 @@ fn replace_word(line: &str, old: &str, new: &str) -> String {
         // Check word boundary before match
         let before_ok = pos == 0 || {
             let ch = remaining.as_bytes()[pos - 1] as char;
-            !ch.is_ascii_alphanumeric() && ch != '_' && ch != ':'
+            !ch.is_ascii_alphanumeric() && ch != '_' && ch != ':' && ch != '-'
         };
         // Check word boundary after match
         let end = pos + old.len();
         let after_ok = end >= remaining.len() || {
             let ch = remaining.as_bytes()[end] as char;
-            !ch.is_ascii_alphanumeric() && ch != '_' && ch != ':'
+            !ch.is_ascii_alphanumeric() && ch != '_' && ch != ':' && ch != '-'
         };
 
         if before_ok && after_ok {
@@ -175,7 +175,7 @@ fn extract_word_at(line: &str, col: usize) -> String {
     let mut start = col;
     while start > 0 {
         let ch = bytes[start - 1] as char;
-        if ch.is_ascii_alphanumeric() || ch == '_' || ch == ':' {
+        if ch.is_ascii_alphanumeric() || ch == '_' || ch == ':' || ch == '-' {
             start -= 1;
         } else {
             break;
@@ -184,7 +184,7 @@ fn extract_word_at(line: &str, col: usize) -> String {
     let mut end = col;
     while end < len {
         let ch = bytes[end] as char;
-        if ch.is_ascii_alphanumeric() || ch == '_' || ch == ':' {
+        if ch.is_ascii_alphanumeric() || ch == '_' || ch == ':' || ch == '-' {
             end += 1;
         } else {
             break;
