@@ -9,6 +9,19 @@ import {
 
 let client: LanguageClient | undefined;
 
+/** Safe command registration — ignores "already exists" errors from extension host restarts. */
+function registerCmd(
+  context: vscode.ExtensionContext,
+  id: string,
+  handler: (...args: any[]) => any,
+) {
+  try {
+    context.subscriptions.push(vscode.commands.registerCommand(id, handler));
+  } catch {
+    // Command already registered
+  }
+}
+
 export function activate(context: vscode.ExtensionContext) {
   const config = vscode.workspace.getConfiguration('argsh');
 
@@ -19,12 +32,11 @@ export function activate(context: vscode.ExtensionContext) {
   // Find the LSP binary
   let serverPath = config.get<string>('lsp.path', '');
   if (!serverPath) {
-    // Try common locations
     const candidates = [
       path.join(context.extensionPath, 'bin', 'argsh-lsp'),
-      'argsh-lsp', // PATH lookup
+      'argsh-lsp',
     ];
-    serverPath = candidates[0]; // TODO: check existence
+    serverPath = candidates[0];
   }
 
   const serverOptions: ServerOptions = {
@@ -48,12 +60,11 @@ export function activate(context: vscode.ExtensionContext) {
   client.start().catch((err: Error) => {
     vscode.window.showErrorMessage(`argsh LSP failed to start: ${err.message}`);
   });
-  context.subscriptions.push({
-    dispose: () => client?.stop(),
-  });
+  context.subscriptions.push({ dispose: () => client?.stop() });
 
-  // Register preview command
-  const previewCmd = vscode.commands.registerCommand('argsh.showPreview', async () => {
+  // --- Commands ---
+
+  registerCmd(context, 'argsh.showPreview', async () => {
     const editor = vscode.window.activeTextEditor;
     if (!editor || !client) return;
 
@@ -73,23 +84,18 @@ export function activate(context: vscode.ExtensionContext) {
       panel.webview.html = html;
     }
   });
-  context.subscriptions.push(previewCmd);
 
-  // Restart server command
-  const restartCmd = vscode.commands.registerCommand('argsh.restartServer', async () => {
+  registerCmd(context, 'argsh.restartServer', async () => {
     if (client) {
       await client.restart();
       vscode.window.showInformationMessage('argsh Language Server restarted');
     }
   });
-  context.subscriptions.push(restartCmd);
 
-  // Show help for current function
-  const helpCmd = vscode.commands.registerCommand('argsh.showHelp', async () => {
+  registerCmd(context, 'argsh.showHelp', async () => {
     const editor = vscode.window.activeTextEditor;
     if (!editor || !client) return;
 
-    // Trigger hover at cursor position to show help
     const position = editor.selection.active;
     const hover = await client.sendRequest('textDocument/hover', {
       textDocument: { uri: editor.document.uri.toString() },
@@ -105,10 +111,8 @@ export function activate(context: vscode.ExtensionContext) {
       vscode.window.showInformationMessage('No argsh info at cursor position');
     }
   });
-  context.subscriptions.push(helpCmd);
 
-  // Validate script command
-  const validateCmd = vscode.commands.registerCommand('argsh.validateScript', async () => {
+  registerCmd(context, 'argsh.validateScript', async () => {
     const editor = vscode.window.activeTextEditor;
     if (!editor || !client) return;
 
@@ -120,17 +124,16 @@ export function activate(context: vscode.ExtensionContext) {
     });
     vscode.window.showInformationMessage('argsh: Script validation triggered');
   });
-  context.subscriptions.push(validateCmd);
 
-  // Export commands — each opens a new editor tab with the export content
-  const exportHandler = (command: string, title: string, lang: string) => {
-    return vscode.commands.registerCommand(command, async () => {
+  // Export commands
+  const makeExportHandler = (cmdId: string, title: string, lang: string) => {
+    return async () => {
       const editor = vscode.window.activeTextEditor;
       if (!editor || !client) return;
 
       const uri = editor.document.uri.toString();
       const result = await client.sendRequest('workspace/executeCommand', {
-        command: command.replace('argsh.', 'argsh.'),
+        command: cmdId,
         arguments: [uri],
       });
 
@@ -143,14 +146,12 @@ export function activate(context: vscode.ExtensionContext) {
       } else {
         vscode.window.showInformationMessage(`argsh: No ${title} data available`);
       }
-    });
+    };
   };
 
-  context.subscriptions.push(
-    exportHandler('argsh.exportMcpJson', 'MCP JSON', 'json'),
-    exportHandler('argsh.exportYaml', 'YAML', 'yaml'),
-    exportHandler('argsh.exportJson', 'JSON', 'json'),
-  );
+  registerCmd(context, 'argsh.exportMcpJson', makeExportHandler('argsh.exportMcpJson', 'MCP JSON', 'json'));
+  registerCmd(context, 'argsh.exportYaml', makeExportHandler('argsh.exportYaml', 'YAML', 'yaml'));
+  registerCmd(context, 'argsh.exportJson', makeExportHandler('argsh.exportJson', 'JSON', 'json'));
 }
 
 export function deactivate(): Thenable<void> | undefined {
