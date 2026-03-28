@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
   "scopeName": "source.shell.argsh",
-  "injectionSelector": "L:source.shell, L:source.shell string",
+  "injectionSelector": "L:source.shell, L:string.quoted.single.shell, L:string.quoted.double.shell",
   "patterns": [
     { "include": "#argsh-function-calls" },
     { "include": "#argsh-import" },
@@ -103,7 +103,7 @@
     },
     "argsh-field-alias": {
       "comment": "Alias separator | in field definitions like name|n",
-      "match": "(\\w+)(\\|)(\\w+)",
+      "match": "(\\w+)(\\|)(\\w)",
       "captures": {
         "1": { "name": "variable.other.field.argsh" },
         "2": { "name": "punctuation.separator.alias.argsh" },

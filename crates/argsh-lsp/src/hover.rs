@@ -38,8 +38,15 @@ pub fn hover(
         return Some(h);
     }
 
-    // 5. Hover on a function name
+    // 5. Hover on 'args' or 'usage' variable keyword — show all entries
     let word = extract_word_at(line, col);
+    if word == "args" || word == "usage" {
+        if let Some(h) = hover_array_overview(analysis, &word, line_idx) {
+            return Some(h);
+        }
+    }
+
+    // 6. Hover on a function name
     if !word.is_empty() {
         // Check if it's a function
         if let Some(h) = hover_function(analysis, &word) {
@@ -373,6 +380,120 @@ fn render_help_preview(func: &FunctionInfo, _analysis: &DocumentAnalysis) -> Str
     }
 
     md
+}
+
+/// Hover on the `args` or `usage` variable keyword to show all entries in a table.
+fn hover_array_overview(
+    analysis: &DocumentAnalysis,
+    array_name: &str,
+    line_idx: usize,
+) -> Option<Hover> {
+    // Find which function contains this line
+    let func = analysis.functions.iter().find(|f|
+        line_idx >= f.line && line_idx <= f.end_line
+    )?;
+
+    match array_name {
+        "args" if !func.args_entries.is_empty() => {
+            let mut md = String::from("### args — Flag Definitions\n\n");
+            md.push_str("| Flag | Type | Description |\n");
+            md.push_str("|------|------|-------------|\n");
+
+            let mut flag_count = 0;
+            let mut req_count = 0;
+
+            for entry in &func.args_entries {
+                if entry.spec == "-" { continue; }
+                flag_count += 1;
+
+                if let Ok(ref field) = entry.parsed {
+                    let flag_str = if let Some(ref short) = field.short {
+                        format!("`--{}`, `-{}`", field.display_name, short)
+                    } else if field.is_positional {
+                        format!("`<{}>`", field.display_name)
+                    } else {
+                        format!("`--{}`", field.display_name)
+                    };
+
+                    let type_str = if field.is_boolean {
+                        "boolean".to_string()
+                    } else {
+                        format!("`{}`", field.type_name)
+                    };
+
+                    let mut desc = entry.description.clone();
+                    if field.required {
+                        desc.push_str(" *(required)*");
+                        req_count += 1;
+                    }
+                    if field.hidden {
+                        desc.push_str(" *(hidden)*");
+                    }
+
+                    md.push_str(&format!("| {} | {} | {} |\n", flag_str, type_str, desc));
+                } else {
+                    md.push_str(&format!("| `{}` | parse error | {} |\n", entry.spec, entry.description));
+                }
+            }
+
+            md.push_str(&format!("\n---\n*{} flags", flag_count));
+            if req_count > 0 {
+                md.push_str(&format!(", {} required", req_count));
+            }
+            md.push('*');
+
+            Some(Hover {
+                contents: HoverContents::Markup(MarkupContent {
+                    kind: MarkupKind::Markdown,
+                    value: md,
+                }),
+                range: None,
+            })
+        }
+        "usage" if !func.usage_entries.is_empty() => {
+            let mut md = String::from("### usage — Subcommands\n\n");
+            md.push_str("| Command | Description |\n");
+            md.push_str("|---------|-------------|\n");
+
+            let mut cmd_count = 0;
+
+            for entry in &func.usage_entries {
+                if entry.is_group_separator { continue; }
+                cmd_count += 1;
+
+                let name = if !entry.annotations.is_empty() {
+                    format!("`{}` {}", entry.name,
+                        entry.annotations.iter()
+                            .map(|a| format!("@{}", a))
+                            .collect::<Vec<_>>()
+                            .join(" "))
+                } else {
+                    format!("`{}`", entry.name)
+                };
+
+                let mut desc = entry.description.clone();
+                if entry.hidden {
+                    desc.push_str(" *(hidden)*");
+                }
+                if let Some(ref func_name) = entry.explicit_func {
+                    desc.push_str(&format!(" → `{}`", func_name));
+                }
+
+                md.push_str(&format!("| {} | {} |\n", name, desc));
+            }
+
+            md.push_str(&format!("\n---\n*{} subcommands*", cmd_count));
+
+            Some(Hover {
+                contents: HoverContents::Markup(MarkupContent {
+                    kind: MarkupKind::Markdown,
+                    value: md,
+                }),
+                range: None,
+            })
+        }
+        _ => None,
+    }
 }
 
 /// Hover on an args entry spec string.

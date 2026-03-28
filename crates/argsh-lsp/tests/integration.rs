@@ -1046,6 +1046,44 @@ fn test_hover_on_args_call_shows_summary() {
 }
 
 #[test]
+fn test_hover_on_args_variable_shows_overview() {
+    let mut client = LspTestClient::new();
+    client.initialize();
+
+    let content = "#!/usr/bin/env bash\nsource argsh\nf() {\n  local port verbose\n  local -a args=(\n    'port|p:~int' \"Port number\"\n    'verbose|v:+' \"Verbose\"\n  )\n  :args \"Title\" \"${@}\"\n}\n";
+    client.open_document("file:///test.sh", content);
+    // Hover on 'args' in 'local -a args=(' (line 4, col ~12)
+    let resp = client.hover("file:///test.sh", 4, 12);
+    assert!(resp.get("error").is_none());
+    let result = &resp["result"];
+    assert!(!result.is_null(), "Hover on args variable should show overview");
+    let content_str = format!("{}", result);
+    assert!(content_str.contains("port") && content_str.contains("verbose"),
+        "Should list all flags: {}", content_str);
+
+    client.shutdown();
+}
+
+#[test]
+fn test_hover_on_usage_variable_shows_overview() {
+    let mut client = LspTestClient::new();
+    client.initialize();
+
+    let content = "#!/usr/bin/env bash\nsource argsh\nm() {\n  local -a usage=(\n    'serve' \"Start server\"\n    'build' \"Build project\"\n  )\n  :usage \"App\" \"${@}\"\n  \"${usage[@]}\"\n}\n";
+    client.open_document("file:///test.sh", content);
+    // Hover on 'usage' in 'local -a usage=(' (line 3, col ~12)
+    let resp = client.hover("file:///test.sh", 3, 12);
+    assert!(resp.get("error").is_none());
+    let result = &resp["result"];
+    assert!(!result.is_null(), "Hover on usage variable should show overview");
+    let content_str = format!("{}", result);
+    assert!(content_str.contains("serve") && content_str.contains("build"),
+        "Should list all subcommands: {}", content_str);
+
+    client.shutdown();
+}
+
+#[test]
 fn test_code_lens_shows_counts() {
     let mut client = LspTestClient::new();
     client.initialize();
