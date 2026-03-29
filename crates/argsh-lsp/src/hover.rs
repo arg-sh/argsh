@@ -508,7 +508,11 @@ fn hover_array_overview(
             if flag_count > 0 {
                 parts.push(format!("{} flag{}", flag_count, if flag_count == 1 { "" } else { "s" }));
             }
-            md.push_str(&parts.join(", "));
+            if parts.is_empty() {
+                md.push_str("0 fields");
+            } else {
+                md.push_str(&parts.join(", "));
+            }
             if req_count > 0 {
                 md.push_str(&format!(", {} required", req_count));
             }

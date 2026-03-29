@@ -159,7 +159,6 @@ fn resolve_recursive(
     }
 }
 
-/// Resolve a module name to candidate file paths.
 /// Find the project root by walking up looking for `.bin/argsh`, `.envrc`, or `.git`.
 fn find_project_root(start: &Path) -> Option<PathBuf> {
     let mut dir = start.to_path_buf();
@@ -498,53 +497,63 @@ mod tests {
             "Should find function from ~-prefixed import");
     }
 
+    /// Clear PATH_SCRIPTS for the duration of a test (under ENV_MUTEX).
+    fn with_no_path_scripts<F: FnOnce()>(f: F) {
+        let _lock = ENV_MUTEX.lock().unwrap();
+        let prev = std::env::var("PATH_SCRIPTS").ok();
+        unsafe { std::env::remove_var("PATH_SCRIPTS"); }
+        f();
+        if let Some(v) = prev {
+            unsafe { std::env::set_var("PATH_SCRIPTS", v); }
+        }
+    }
+
     #[test]
     fn test_find_scripts_dir_dot_scripts() {
-        let dir = tempfile::tempdir().unwrap();
-        let scripts = dir.path().join(".scripts");
-        fs::create_dir_all(&scripts).unwrap();
-
-        let found = find_scripts_dir(dir.path());
-        assert_eq!(found, Some(scripts));
+        with_no_path_scripts(|| {
+            let dir = tempfile::tempdir().unwrap();
+            let scripts = dir.path().join(".scripts");
+            fs::create_dir_all(&scripts).unwrap();
+            assert_eq!(find_scripts_dir(dir.path()), Some(scripts));
+        });
     }
 
     #[test]
     fn test_find_scripts_dir_scripts() {
-        let dir = tempfile::tempdir().unwrap();
-        let scripts = dir.path().join("scripts");
-        fs::create_dir_all(&scripts).unwrap();
-
-        let found = find_scripts_dir(dir.path());
-        assert_eq!(found, Some(scripts));
+        with_no_path_scripts(|| {
+            let dir = tempfile::tempdir().unwrap();
+            let scripts = dir.path().join("scripts");
+            fs::create_dir_all(&scripts).unwrap();
+            assert_eq!(find_scripts_dir(dir.path()), Some(scripts));
+        });
     }
 
     #[test]
     fn test_find_scripts_dir_bin() {
-        let dir = tempfile::tempdir().unwrap();
-        let bin = dir.path().join("bin");
-        fs::create_dir_all(&bin).unwrap();
-
-        let found = find_scripts_dir(dir.path());
-        assert_eq!(found, Some(bin));
+        with_no_path_scripts(|| {
+            let dir = tempfile::tempdir().unwrap();
+            let bin = dir.path().join("bin");
+            fs::create_dir_all(&bin).unwrap();
+            assert_eq!(find_scripts_dir(dir.path()), Some(bin));
+        });
     }
 
     #[test]
     fn test_find_scripts_dir_prefers_dot_scripts() {
-        let dir = tempfile::tempdir().unwrap();
-        // Both .scripts and scripts exist — .scripts should win
-        fs::create_dir_all(dir.path().join(".scripts")).unwrap();
-        fs::create_dir_all(dir.path().join("scripts")).unwrap();
-
-        let found = find_scripts_dir(dir.path());
-        assert_eq!(found, Some(dir.path().join(".scripts")));
+        with_no_path_scripts(|| {
+            let dir = tempfile::tempdir().unwrap();
+            fs::create_dir_all(dir.path().join(".scripts")).unwrap();
+            fs::create_dir_all(dir.path().join("scripts")).unwrap();
+            assert_eq!(find_scripts_dir(dir.path()), Some(dir.path().join(".scripts")));
+        });
     }
 
     #[test]
     fn test_find_scripts_dir_none() {
-        let dir = tempfile::tempdir().unwrap();
-        // No scripts directory at all
-        let found = find_scripts_dir(dir.path());
-        assert_eq!(found, None);
+        with_no_path_scripts(|| {
+            let dir = tempfile::tempdir().unwrap();
+            assert_eq!(find_scripts_dir(dir.path()), None);
+        });
     }
 
     #[test]

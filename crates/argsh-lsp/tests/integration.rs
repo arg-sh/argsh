@@ -1890,9 +1890,13 @@ fn test_goto_import_with_prefix() {
         "position": { "line": 1, "character": 10 }
     }));
     assert!(resp.get("error").is_none());
-    // Should resolve to the helper file
+    // Should resolve to the helper file (may be Location object or array)
     if !resp["result"].is_null() {
-        let uri = resp["result"]["uri"].as_str().unwrap_or("");
+        let uri = if resp["result"].is_array() {
+            resp["result"][0]["uri"].as_str().unwrap_or("")
+        } else {
+            resp["result"]["uri"].as_str().unwrap_or("")
+        };
         assert!(uri.contains("helper"), "Should point to helper file, got: {}", uri);
     }
     client.shutdown();
