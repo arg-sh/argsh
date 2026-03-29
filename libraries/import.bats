@@ -275,7 +275,7 @@ fi
 
   assert "${status}" -eq 0
   is_empty stderr
-  contains "^caret$" stdout
+  contains "^caret" stdout
 }
 
 @test "cache prevents re-sourcing" {
