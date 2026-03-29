@@ -20,6 +20,7 @@ pub mod codes {
     pub const AG009: &str = "AG009"; // duplicate short alias
     pub const AG010: &str = "AG010"; // command resolves to bare function (not namespaced)
     pub const AG011: &str = "AG011"; // trailing | with no short alias
+    pub const AG012: &str = "AG012"; // local variable shadows parent scope args field
 }
 
 /// Generate LSP diagnostics from a document analysis.
@@ -43,6 +44,7 @@ pub fn generate_diagnostics(
         check_duplicate_short_aliases(func, &mut diags);
         check_bare_function_resolution(func, analysis, imports, &mut diags);
         check_empty_alias(func, &mut diags);
+        check_scope_shadow(func, analysis, &mut diags);
     }
 
     // Filter out suppressed diagnostics
@@ -455,6 +457,73 @@ fn check_empty_alias(func: &FunctionInfo, diags: &mut Vec<Diagnostic>) {
                     }
                 }
             }
+        }
+    }
+}
+
+/// Hint when a child function declares a local variable that shadows a parent's
+/// args field. Common in argsh (child overrides parent's flag with its own), but
+/// worth flagging so users are aware of the scope interaction.
+fn check_scope_shadow(
+    func: &FunctionInfo,
+    analysis: &DocumentAnalysis,
+    diags: &mut Vec<Diagnostic>,
+) {
+    // Only check functions that are dispatched via :usage (have a parent)
+    // Find parent: a function whose usage entries reference this function
+    let parent = analysis.functions.iter().find(|parent| {
+        parent.usage_entries.iter().any(|entry| {
+            if entry.is_group_separator { return false; }
+            if let Some(ref target) = entry.explicit_func {
+                return target == &func.name;
+            }
+            let prefixed = format!("{}::{}", parent.name, entry.name);
+            prefixed == func.name || entry.name == func.name
+        })
+    });
+
+    let parent = match parent {
+        Some(p) => p,
+        None => return, // no parent — top-level function, nothing to shadow
+    };
+
+    // Collect parent's args field names
+    let parent_field_names: HashSet<String> = parent.args_entries.iter()
+        .filter(|e| e.spec != "-")
+        .filter_map(|e| e.parsed.as_ref().ok().map(|f| f.name.clone()))
+        .collect();
+
+    if parent_field_names.is_empty() {
+        return;
+    }
+
+    // Check child's local declarations against parent's field names
+    for local_var in &func.local_vars {
+        if parent_field_names.contains(&local_var.name) {
+            // Also check if this child has its own args entry for the same name
+            // (intentional override — make the hint less severe)
+            let child_has_own = func.args_entries.iter().any(|e| {
+                e.parsed.as_ref().ok().map(|f| f.name == local_var.name).unwrap_or(false)
+            });
+
+            let msg = if child_has_own {
+                format!(
+                    "'local {}' shadows parent '{}' args field — intentional override via child's own args",
+                    local_var.name, parent.name
+                )
+            } else {
+                format!(
+                    "'local {}' shadows parent '{}' args field — parent's value won't be inherited",
+                    local_var.name, parent.name
+                )
+            };
+
+            diags.push(make_diag(
+                line_range(local_var.line),
+                DiagnosticSeverity::HINT,
+                codes::AG012,
+                msg,
+            ));
         }
     }
 }
