@@ -194,12 +194,12 @@ fn extract_word_at(line: &str, col: usize) -> String {
 }
 
 fn word_range(line: &str, col: usize, word: &str, line_idx: usize) -> Range {
-    // Find the word boundary that contains col
+    // Find the word boundary that contains col (include - for hyphenated names)
     let bytes = line.as_bytes();
     let mut start = col;
     while start > 0 {
         let ch = bytes[start - 1] as char;
-        if ch.is_ascii_alphanumeric() || ch == '_' || ch == ':' {
+        if ch.is_ascii_alphanumeric() || ch == '_' || ch == ':' || ch == '-' {
             start -= 1;
         } else {
             break;
