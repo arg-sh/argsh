@@ -119,9 +119,9 @@ const config = {
       defaultFiltersByPath: [],
       defaultFilters: ["docs"],
     },
-    // analytics: {
-    //   apiKey: process.env.SEGMENT_API_KEY || "temp",
-    // },
+    analytics: {
+      apiKey: process.env.SEGMENT_API_KEY || "",
+    },
     prism: {
       defaultLanguage: "ts",
       additionalLanguages: ["bash", "json"],
