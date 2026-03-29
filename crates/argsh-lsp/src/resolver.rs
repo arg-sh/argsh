@@ -85,13 +85,7 @@ fn resolve_recursive(
 
         // First-match-wins: mirrors import::source which returns on the first
         // existing file. Without this, both `foo` and `foo.sh` could be imported.
-        let resolved = candidates.iter().find(|p| {
-            if let Ok(c) = p.canonicalize() {
-                !visited.contains(&c)
-            } else {
-                false
-            }
-        });
+        let resolved = candidates.iter().find(|p| p.exists());
 
         if let Some(path) = resolved {
             let canonical = match path.canonicalize() {
@@ -99,6 +93,17 @@ fn resolve_recursive(
                 Err(_) => continue,
             };
 
+            // Always record in resolved_files for goto-def/AG013, even if
+            // the file was already analyzed via a different module name
+            // (e.g. `import fmt` + `import @libraries/fmt`).
+            result
+                .resolved_files
+                .push((module.clone(), canonical.clone()));
+
+            // Skip analysis/recursion if already visited
+            if visited.contains(&canonical) {
+                continue;
+            }
             visited.insert(canonical.clone());
 
             // Read and analyze the file
@@ -113,10 +118,6 @@ fn resolve_recursive(
             for func in &imported_analysis.functions {
                 result.functions.push(func.clone());
             }
-
-            result
-                .resolved_files
-                .push((module.clone(), canonical.clone()));
 
             // Recurse into the imported file's imports
             let import_dir = canonical.parent().unwrap_or(base_dir);
@@ -267,6 +268,10 @@ fn find_argsh_lib_dir(base_dir: &Path) -> Vec<PathBuf> {
 mod tests {
     use super::*;
     use std::fs;
+    use std::sync::Mutex;
+
+    // Serialize tests that mutate process-wide env vars (PATH_BASE, PATH_SCRIPTS)
+    static ENV_MUTEX: Mutex<()> = Mutex::new(());
 
     #[test]
     fn test_resolve_module_path_finds_sh_file() {
@@ -446,8 +451,10 @@ mod tests {
 
     #[test]
     fn test_resolve_at_prefix_import() {
+        let _lock = ENV_MUTEX.lock().unwrap();
         let dir = tempfile::tempdir().unwrap();
         // Set PATH_BASE to temp dir root (resolver prefers env var over walk-up)
+        let prev = std::env::var("PATH_BASE").ok();
         unsafe { std::env::set_var("PATH_BASE", dir.path()); }
         // Create project structure: root/libs/helper
         let libs_dir = dir.path().join("libs");
@@ -464,7 +471,11 @@ mod tests {
 
         let analysis = analyze(main_content);
         let imports = resolve_imports(&analysis, &main_sh, 2);
-        unsafe { std::env::remove_var("PATH_BASE"); }
+        // Restore previous value
+        match prev {
+            Some(v) => unsafe { std::env::set_var("PATH_BASE", v); },
+            None => unsafe { std::env::remove_var("PATH_BASE"); },
+        }
         assert!(imports.functions.iter().any(|f| f.name == "at_helper"),
             "Should find function from @-prefixed import, got: {:?}",
             imports.functions.iter().map(|f| &f.name).collect::<Vec<_>>());

@@ -456,18 +456,24 @@ fn hover_array_overview(
 
     match array_name {
         "args" if !func.args_entries.is_empty() => {
-            let mut md = String::from("### args — Flag Definitions\n\n");
-            md.push_str("| Flag | Type | Description |\n");
-            md.push_str("|------|------|-------------|\n");
+            let mut md = String::from("### args — Field Definitions\n\n");
+            md.push_str("| Field | Type | Description |\n");
+            md.push_str("|-------|------|-------------|\n");
 
             let mut flag_count = 0;
+            let mut positional_count = 0;
             let mut req_count = 0;
 
             for entry in &func.args_entries {
                 if entry.spec == "-" { continue; }
-                flag_count += 1;
 
                 if let Ok(ref field) = entry.parsed {
+                    if field.is_positional {
+                        positional_count += 1;
+                    } else {
+                        flag_count += 1;
+                    }
+
                     let flag_str = if let Some(ref short) = field.short {
                         format!("`--{}`, `-{}`", field.display_name, short)
                     } else if field.is_positional {
@@ -489,11 +495,20 @@ fn hover_array_overview(
 
                     md.push_str(&format!("| {} | {} | {} |\n", flag_str, type_str, desc));
                 } else {
+                    flag_count += 1;
                     md.push_str(&format!("| `{}` | parse error | {} |\n", entry.spec, entry.description));
                 }
             }
 
-            md.push_str(&format!("\n---\n*{} flags", flag_count));
+            md.push_str("\n---\n*");
+            let mut parts = Vec::new();
+            if positional_count > 0 {
+                parts.push(format!("{} param{}", positional_count, if positional_count == 1 { "" } else { "s" }));
+            }
+            if flag_count > 0 {
+                parts.push(format!("{} flag{}", flag_count, if flag_count == 1 { "" } else { "s" }));
+            }
+            md.push_str(&parts.join(", "));
             if req_count > 0 {
                 md.push_str(&format!(", {} required", req_count));
             }
