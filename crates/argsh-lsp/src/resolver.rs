@@ -70,11 +70,14 @@ fn resolve_recursive(
                 .unwrap_or_else(|| find_project_root(base_dir).unwrap_or_else(|| base_dir.to_path_buf()));
             (stripped.to_string(), project_root)
         } else if module.starts_with('^') {
-            // ^ prefix: relative to PATH_SCRIPTS — try to find .scripts/ directory
+            // ^ prefix: relative to PATH_SCRIPTS — skip if no scripts dir found
+            // (matches runtime behavior: fails when PATH_SCRIPTS is unset)
             let stripped = &module[1..];
             let project_root = find_project_root(base_dir).unwrap_or_else(|| base_dir.to_path_buf());
-            let scripts_dir = find_scripts_dir(&project_root).unwrap_or(base_dir.to_path_buf());
-            (stripped.to_string(), scripts_dir)
+            match find_scripts_dir(&project_root) {
+                Some(scripts_dir) => (stripped.to_string(), scripts_dir),
+                None => continue, // unresolvable — AG013 will flag it
+            }
         } else if module.starts_with('~') {
             (module[1..].to_string(), base_dir.to_path_buf())
         } else {
@@ -85,7 +88,7 @@ fn resolve_recursive(
 
         // First-match-wins: mirrors import::source which returns on the first
         // existing file. Without this, both `foo` and `foo.sh` could be imported.
-        let resolved = candidates.iter().find(|p| p.exists());
+        let resolved = candidates.iter().find(|p| p.is_file());
 
         if let Some(path) = resolved {
             let canonical = match path.canonicalize() {
@@ -269,8 +272,40 @@ mod tests {
     use std::fs;
     use std::sync::Mutex;
 
-    // Serialize tests that mutate process-wide env vars (PATH_BASE, PATH_SCRIPTS)
+    // Serialize tests that mutate process-wide env vars (PATH_BASE, PATH_SCRIPTS).
     static ENV_MUTEX: Mutex<()> = Mutex::new(());
+
+    /// RAII guard that sets an env var and restores it on drop (even on panic).
+    struct EnvGuard {
+        name: &'static str,
+        prev: Option<std::ffi::OsString>,
+        _lock: std::sync::MutexGuard<'static, ()>,
+    }
+
+    impl EnvGuard {
+        fn set(name: &'static str, value: impl AsRef<std::ffi::OsStr>) -> Self {
+            let lock = ENV_MUTEX.lock().unwrap();
+            let prev = std::env::var_os(name);
+            unsafe { std::env::set_var(name, value); }
+            Self { name, prev, _lock: lock }
+        }
+
+        fn clear(name: &'static str) -> Self {
+            let lock = ENV_MUTEX.lock().unwrap();
+            let prev = std::env::var_os(name);
+            unsafe { std::env::remove_var(name); }
+            Self { name, prev, _lock: lock }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            match &self.prev {
+                Some(v) => unsafe { std::env::set_var(self.name, v); },
+                None => unsafe { std::env::remove_var(self.name); },
+            }
+        }
+    }
 
     #[test]
     fn test_resolve_module_path_finds_sh_file() {
@@ -450,11 +485,8 @@ mod tests {
 
     #[test]
     fn test_resolve_at_prefix_import() {
-        let _lock = ENV_MUTEX.lock().unwrap();
         let dir = tempfile::tempdir().unwrap();
-        // Set PATH_BASE to temp dir root (resolver prefers env var over walk-up)
-        let prev = std::env::var("PATH_BASE").ok();
-        unsafe { std::env::set_var("PATH_BASE", dir.path()); }
+        let _guard = EnvGuard::set("PATH_BASE", dir.path());
         // Create project structure: root/libs/helper
         let libs_dir = dir.path().join("libs");
         fs::create_dir_all(&libs_dir).unwrap();
@@ -470,11 +502,6 @@ mod tests {
 
         let analysis = analyze(main_content);
         let imports = resolve_imports(&analysis, &main_sh, 2);
-        // Restore previous value
-        match prev {
-            Some(v) => unsafe { std::env::set_var("PATH_BASE", v); },
-            None => unsafe { std::env::remove_var("PATH_BASE"); },
-        }
         assert!(imports.functions.iter().any(|f| f.name == "at_helper"),
             "Should find function from @-prefixed import, got: {:?}",
             imports.functions.iter().map(|f| &f.name).collect::<Vec<_>>());
@@ -497,63 +524,47 @@ mod tests {
             "Should find function from ~-prefixed import");
     }
 
-    /// Clear PATH_SCRIPTS for the duration of a test (under ENV_MUTEX).
-    fn with_no_path_scripts<F: FnOnce()>(f: F) {
-        let _lock = ENV_MUTEX.lock().unwrap();
-        let prev = std::env::var("PATH_SCRIPTS").ok();
-        unsafe { std::env::remove_var("PATH_SCRIPTS"); }
-        f();
-        if let Some(v) = prev {
-            unsafe { std::env::set_var("PATH_SCRIPTS", v); }
-        }
-    }
-
     #[test]
     fn test_find_scripts_dir_dot_scripts() {
-        with_no_path_scripts(|| {
-            let dir = tempfile::tempdir().unwrap();
-            let scripts = dir.path().join(".scripts");
-            fs::create_dir_all(&scripts).unwrap();
-            assert_eq!(find_scripts_dir(dir.path()), Some(scripts));
-        });
+        let _guard = EnvGuard::clear("PATH_SCRIPTS");
+        let dir = tempfile::tempdir().unwrap();
+        let scripts = dir.path().join(".scripts");
+        fs::create_dir_all(&scripts).unwrap();
+        assert_eq!(find_scripts_dir(dir.path()), Some(scripts));
     }
 
     #[test]
     fn test_find_scripts_dir_scripts() {
-        with_no_path_scripts(|| {
-            let dir = tempfile::tempdir().unwrap();
-            let scripts = dir.path().join("scripts");
-            fs::create_dir_all(&scripts).unwrap();
-            assert_eq!(find_scripts_dir(dir.path()), Some(scripts));
-        });
+        let _guard = EnvGuard::clear("PATH_SCRIPTS");
+        let dir = tempfile::tempdir().unwrap();
+        let scripts = dir.path().join("scripts");
+        fs::create_dir_all(&scripts).unwrap();
+        assert_eq!(find_scripts_dir(dir.path()), Some(scripts));
     }
 
     #[test]
     fn test_find_scripts_dir_bin() {
-        with_no_path_scripts(|| {
-            let dir = tempfile::tempdir().unwrap();
-            let bin = dir.path().join("bin");
-            fs::create_dir_all(&bin).unwrap();
-            assert_eq!(find_scripts_dir(dir.path()), Some(bin));
-        });
+        let _guard = EnvGuard::clear("PATH_SCRIPTS");
+        let dir = tempfile::tempdir().unwrap();
+        let bin = dir.path().join("bin");
+        fs::create_dir_all(&bin).unwrap();
+        assert_eq!(find_scripts_dir(dir.path()), Some(bin));
     }
 
     #[test]
     fn test_find_scripts_dir_prefers_dot_scripts() {
-        with_no_path_scripts(|| {
-            let dir = tempfile::tempdir().unwrap();
-            fs::create_dir_all(dir.path().join(".scripts")).unwrap();
-            fs::create_dir_all(dir.path().join("scripts")).unwrap();
-            assert_eq!(find_scripts_dir(dir.path()), Some(dir.path().join(".scripts")));
-        });
+        let _guard = EnvGuard::clear("PATH_SCRIPTS");
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join(".scripts")).unwrap();
+        fs::create_dir_all(dir.path().join("scripts")).unwrap();
+        assert_eq!(find_scripts_dir(dir.path()), Some(dir.path().join(".scripts")));
     }
 
     #[test]
     fn test_find_scripts_dir_none() {
-        with_no_path_scripts(|| {
-            let dir = tempfile::tempdir().unwrap();
-            assert_eq!(find_scripts_dir(dir.path()), None);
-        });
+        let _guard = EnvGuard::clear("PATH_SCRIPTS");
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(find_scripts_dir(dir.path()), None);
     }
 
     #[test]
