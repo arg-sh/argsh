@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/arg-sh/argsh/main/argsh.svg" width="64" alt="argsh logo"/>
+  <img src="icon.png" width="64" alt="argsh logo"/>
 </p>
 
 # argsh for Visual Studio Code

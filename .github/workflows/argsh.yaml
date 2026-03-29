@@ -5,6 +5,7 @@ on:
       - main
     tags:
       - "v*"
+      - "!vscode-v*"
   pull_request:
     paths:
       - '.bin/**'
