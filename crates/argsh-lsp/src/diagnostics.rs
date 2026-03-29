@@ -19,6 +19,7 @@ pub mod codes {
     pub const AG008: &str = "AG008"; // duplicate flag name
     pub const AG009: &str = "AG009"; // duplicate short alias
     pub const AG010: &str = "AG010"; // command resolves to bare function (not namespaced)
+    pub const AG011: &str = "AG011"; // trailing | with no short alias
 }
 
 /// Generate LSP diagnostics from a document analysis.
@@ -41,6 +42,7 @@ pub fn generate_diagnostics(
         check_duplicate_flags(func, &mut diags);
         check_duplicate_short_aliases(func, &mut diags);
         check_bare_function_resolution(func, analysis, imports, &mut diags);
+        check_empty_alias(func, &mut diags);
     }
 
     // Filter out suppressed diagnostics
@@ -418,6 +420,41 @@ fn check_bare_function_resolution(
                     entry.name, entry.name, func.name, entry.name
                 ),
             ));
+        }
+    }
+}
+
+/// Warn when a field spec has a trailing `|` with no short alias (e.g. `'kubernetes|'`).
+/// This is valid but unnecessary — equivalent to just `'kubernetes'`.
+fn check_empty_alias(func: &FunctionInfo, diags: &mut Vec<Diagnostic>) {
+    for entry in &func.args_entries {
+        if entry.spec == "-" { continue; }
+        // Check for trailing | or |: pattern (empty alias)
+        let spec = &entry.spec;
+        if spec.contains('|') {
+            if let Ok(ref field) = entry.parsed {
+                if field.short.as_deref() == Some("") || field.short.as_deref() == None {
+                    // Has | but no actual short alias
+                    if spec.contains('|') {
+                        let parts: Vec<&str> = spec.split('|').collect();
+                        if parts.len() >= 2 {
+                            let after_pipe = parts[1].split(':').next().unwrap_or("");
+                            if after_pipe.is_empty() {
+                                diags.push(make_diag(
+                                    line_range(entry.line),
+                                    DiagnosticSeverity::WARNING,
+                                    codes::AG011,
+                                    format!(
+                                        "'{}' has trailing '|' with no short alias — remove '|' or add an alias (e.g. '{}|k')",
+                                        spec,
+                                        spec.split('|').next().unwrap_or(spec)
+                                    ),
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
