@@ -149,7 +149,13 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "package": "vsce package"
+    "build": "npm run build:lsp && npm run build:ext",
+    "build:lsp": "cargo build --release --manifest-path ../crates/argsh-lsp/Cargo.toml && mkdir -p bin && cp ../crates/argsh-lsp/target/release/argsh-lsp bin/",
+    "build:ext": "npm install && npm run compile",
+    "package": "npm run build && vsce package --target linux-x64",
+    "package:all": "npm run build && vsce package --target linux-x64 -o argsh-linux-x64.vsix && vsce package --target linux-arm64 -o argsh-linux-arm64.vsix && vsce package --target darwin-x64 -o argsh-darwin-x64.vsix && vsce package --target darwin-arm64 -o argsh-darwin-arm64.vsix",
+    "publish": "npm run build && vsce publish",
+    "publish:ovsx": "npm run build && npx ovsx publish"
   },
   "devDependencies": {
     "@types/vscode": "^1.82.0",
