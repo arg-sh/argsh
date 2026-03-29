@@ -583,12 +583,9 @@ fn check_unresolved_imports(
         .collect();
 
     for imp in &analysis.imports {
-        let clean = imp.module.trim_start_matches(&['@', '~', '^'] as &[char]);
-        let found = resolved_modules.iter().any(|r| {
-            if r == &imp.module { return true; }
-            let clean_resolved = r.trim_start_matches(&['@', '~', '^'] as &[char]);
-            clean_resolved == clean
-        });
+        // resolved_files stores the original module string (with prefix),
+        // so exact match is sufficient and avoids false positives.
+        let found = resolved_modules.contains(&imp.module);
         if !found {
             diags.push(make_diag(
                 line_range(imp.line),

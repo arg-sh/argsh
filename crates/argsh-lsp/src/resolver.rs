@@ -61,8 +61,13 @@ fn resolve_recursive(
         // ~foo → relative to the script itself
         // foo  → relative to ARGSH_SOURCE directory (base_dir)
         let (clean_module, search_dir) = if module.starts_with('@') {
+            // @ prefix: prefer PATH_BASE env var (matches runtime), fall back to project root
             let stripped = &module[1..];
-            let project_root = find_project_root(base_dir).unwrap_or_else(|| base_dir.to_path_buf());
+            let project_root = std::env::var("PATH_BASE")
+                .ok()
+                .map(PathBuf::from)
+                .filter(|p| p.is_dir())
+                .unwrap_or_else(|| find_project_root(base_dir).unwrap_or_else(|| base_dir.to_path_buf()));
             (stripped.to_string(), project_root)
         } else if module.starts_with('^') {
             // ^ prefix: relative to PATH_SCRIPTS — try to find .scripts/ directory
@@ -442,8 +447,9 @@ mod tests {
     #[test]
     fn test_resolve_at_prefix_import() {
         let dir = tempfile::tempdir().unwrap();
-        // Create project structure: root/.git + root/libs/helper
-        fs::create_dir_all(dir.path().join(".git")).unwrap();
+        // Set PATH_BASE to temp dir root (resolver prefers env var over walk-up)
+        unsafe { std::env::set_var("PATH_BASE", dir.path()); }
+        // Create project structure: root/libs/helper
         let libs_dir = dir.path().join("libs");
         fs::create_dir_all(&libs_dir).unwrap();
         let helper = libs_dir.join("helper");
@@ -458,6 +464,7 @@ mod tests {
 
         let analysis = analyze(main_content);
         let imports = resolve_imports(&analysis, &main_sh, 2);
+        unsafe { std::env::remove_var("PATH_BASE"); }
         assert!(imports.functions.iter().any(|f| f.name == "at_helper"),
             "Should find function from @-prefixed import, got: {:?}",
             imports.functions.iter().map(|f| &f.name).collect::<Vec<_>>());

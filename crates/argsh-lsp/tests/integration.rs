@@ -1945,13 +1945,15 @@ manifest::addons() { echo addons; }
 }
 
 #[test]
-fn test_diagnostic_ag013_unresolved_import() {
+fn test_unresolved_import_does_not_crash_when_ag013_emitted() {
+    // Crash-regression test: opening a script with an unresolved import should not
+    // crash the server when AG013 is produced. We can't capture push notifications
+    // in the current test client, so we verify the server stays healthy.
     let mut client = LspTestClient::new();
     client.initialize();
 
     let content = "#!/usr/bin/env bash\nimport nonexistent_module\nmain() { echo; }\n";
     client.open_document("file:///test.sh", content);
     std::thread::sleep(std::time::Duration::from_millis(300));
-    // Should not crash — AG013 diagnostic is produced
     client.shutdown();
 }
