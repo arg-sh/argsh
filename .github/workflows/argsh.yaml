@@ -17,9 +17,6 @@ on:
       - 'shdoc/**'
       - '.envrc'
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
@@ -35,7 +32,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Clone repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Direnv
         uses: HatsuneMiku3939/direnv-action@v1
       - name: Lint
@@ -50,21 +47,21 @@ jobs:
           docker run --rm --entrypoint cat ghcr.io/arg-sh/argsh:latest /usr/local/bin/shdoc > shdoc/target/release/shdoc
           chmod +x minifier/target/release/minifier shdoc/target/release/shdoc
       - name: Upload builtin library
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: argsh-builtin-so
           if-no-files-found: error
           retention-days: 7
           path: builtin/target/release/libargsh.so
       - name: Upload minifier binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: minifier-bin
           if-no-files-found: error
           retention-days: 7
           path: minifier/target/release/minifier
       - name: Upload shdoc binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: shdoc-bin
           if-no-files-found: error
@@ -76,7 +73,7 @@ jobs:
     needs: [test]
     steps:
       - name: Clone repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Direnv
         uses: HatsuneMiku3939/direnv-action@v1
       - name: Coverage
@@ -92,7 +89,7 @@ jobs:
     needs: [test]
     steps:
       - name: Clone repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Direnv
         uses: HatsuneMiku3939/direnv-action@v1
       - name: Coverage
@@ -108,7 +105,7 @@ jobs:
     needs: [test]
     steps:
       - name: Clone repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Direnv
         uses: HatsuneMiku3939/direnv-action@v1
       - name: Coverage
@@ -124,9 +121,9 @@ jobs:
     needs: [test]
     steps:
       - name: Clone repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Download minifier binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: minifier-bin
           path: .bin
@@ -144,7 +141,7 @@ jobs:
         run: |
           argsh test -m
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: argsh
           if-no-files-found: error
@@ -159,7 +156,7 @@ jobs:
         arch: [amd64, arm64]
     steps:
       - name: Clone repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
       - name: Set up Docker Buildx
@@ -171,7 +168,7 @@ jobs:
             --output type=local,dest=out .
           chmod +x out/minifier out/shdoc
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: binaries-linux-${{ matrix.arch }}
           if-no-files-found: error
@@ -186,12 +183,12 @@ jobs:
         arch: [amd64, arm64]
     steps:
       - name: Download builtin library
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: binaries-linux-${{ matrix.arch }}
           path: binaries
       - name: Download argsh artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: argsh
           path: .
@@ -272,7 +269,7 @@ jobs:
             rm -f "${_t}"
           '
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: argsh-so-linux-${{ matrix.arch }}
           if-no-files-found: error
@@ -288,9 +285,9 @@ jobs:
       packages: write
     steps:
       - name: Clone repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Download executables
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: argsh
           merge-multiple: true
@@ -336,19 +333,19 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
       - name: Clone repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Download argsh script
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: argsh
           path: artifacts
       - name: Download all binaries
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: binaries-linux-*
           path: artifacts
       - name: Download all argsh-so
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: argsh-so-linux-*
           path: artifacts

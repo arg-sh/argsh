@@ -8,9 +8,6 @@ on:
 permissions:
   contents: write
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   build-lsp:
     name: Build argsh-lsp (${{ matrix.target }})
@@ -31,7 +28,7 @@ jobs:
             target: aarch64-apple-darwin
             artifact: argsh-lsp-darwin-arm64
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -54,7 +51,7 @@ jobs:
           cp crates/argsh-lsp/target/${{ matrix.target }}/release/argsh-lsp dist/${{ matrix.artifact }}
           chmod +x dist/${{ matrix.artifact }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact }}
           path: dist/${{ matrix.artifact }}
@@ -75,13 +72,13 @@ jobs:
           - platform: darwin-arm64
             lsp-artifact: argsh-lsp-darwin-arm64
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
 
       - name: Download LSP binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: ${{ matrix.lsp-artifact }}
           path: vscode-argsh/bin/
@@ -104,7 +101,7 @@ jobs:
           cd vscode-argsh
           vsce package --target ${{ matrix.platform }} -o ../argsh-${{ matrix.platform }}.vsix
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: vsix-${{ matrix.platform }}
           path: argsh-${{ matrix.platform }}.vsix
@@ -115,7 +112,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download all VSIX packages
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: vsix-*
           merge-multiple: true
