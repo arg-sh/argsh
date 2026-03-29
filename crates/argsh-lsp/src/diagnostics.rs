@@ -60,7 +60,6 @@ enum SuppressionScope {
     NextLine(usize),   // suppress diagnostics on line N+1
     Line(usize),       // suppress diagnostics on this line
     File,              // suppress for entire file
-    Function(usize),   // suppress within function starting at this line
 }
 
 /// Collect all `# argsh-ignore` suppression comments from the source.
