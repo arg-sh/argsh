@@ -290,7 +290,12 @@ impl LanguageServer for Backend {
                 if let Some(uri_val) = params.arguments.first() {
                     if let Ok(uri) = serde_json::from_value::<Url>(uri_val.clone()) {
                         if let Some(doc) = self.documents.get(&uri) {
-                            let html = preview::generate_preview(&doc.analysis, &doc.content);
+                            let script_name = uri.path_segments()
+                                .and_then(|s| s.last())
+                                .unwrap_or("script")
+                                .strip_suffix(".sh")
+                                .unwrap_or("script");
+                            let html = preview::generate_preview(&doc.analysis, &doc.content, script_name);
                             return Ok(Some(serde_json::Value::String(html)));
                         }
                     }

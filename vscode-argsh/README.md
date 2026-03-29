@@ -70,3 +70,4 @@ cd vscode-argsh && npm install && npm run compile
 - [argsh](https://arg.sh) scripts (detected by `source argsh` or `#!/usr/bin/env argsh`)
 - Rust toolchain (to build `argsh-lsp`)
 - Node.js 20+ (to build the extension)
+- **Linux or macOS** (Windows is not currently supported — argsh and bash scripts are primarily used on Unix systems)

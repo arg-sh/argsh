@@ -23,7 +23,7 @@ fn format_type(field: &FieldDef, is_array: bool) -> String {
 ///
 /// Includes: script overview, command tree, flags per command, MCP tool schema
 /// preview, and docgen YAML preview. Styled with inline CSS using a dark theme.
-pub fn generate_preview(analysis: &DocumentAnalysis, _content: &str) -> String {
+pub fn generate_preview(analysis: &DocumentAnalysis, _content: &str, script_name: &str) -> String {
     let mut html = String::new();
 
     // Document title from the first function with a title, or fallback
@@ -32,13 +32,6 @@ pub fn generate_preview(analysis: &DocumentAnalysis, _content: &str) -> String {
         .iter()
         .find_map(|f| f.title.as_deref())
         .unwrap_or("argsh Script");
-
-    let script_name = analysis
-        .functions
-        .iter()
-        .find(|f| f.calls_usage || f.calls_args)
-        .map(|f| f.name.as_str())
-        .unwrap_or("script");
 
     html.push_str(&format!(
         r#"<!DOCTYPE html>
