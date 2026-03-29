@@ -1139,3 +1139,48 @@ main() { echo; }
         assert!(doc.has_source_argsh, "should detect dot-source with ARGSH_SOURCE var");
     }
 }
+
+#[cfg(test)]
+mod single_quote_tests {
+    use super::*;
+
+    #[test]
+    fn test_single_quoted_usage_descriptions() {
+        let src = r#"
+main() {
+  local -a usage=(
+    'serve' 'Start server'
+    'build' 'Build project'
+  )
+  :usage "App" "${@}"
+  "${usage[@]}"
+}
+"#;
+        let doc = analyze(src);
+        let func = &doc.functions[0];
+        assert_eq!(func.usage_entries.len(), 2);
+        assert_eq!(func.usage_entries[0].name, "serve");
+        assert_eq!(func.usage_entries[0].description, "Start server");
+        assert_eq!(func.usage_entries[1].name, "build");
+        assert_eq!(func.usage_entries[1].description, "Build project");
+    }
+
+    #[test]
+    fn test_single_quoted_args_descriptions() {
+        let src = r#"
+f() {
+  local port verbose
+  local -a args=(
+    'port|p:~int' 'Port number'
+    'verbose|v:+' 'Enable verbose'
+  )
+  :args "Title" "${@}"
+}
+"#;
+        let doc = analyze(src);
+        let func = &doc.functions[0];
+        assert_eq!(func.args_entries.len(), 2);
+        assert_eq!(func.args_entries[0].description, "Port number");
+        assert_eq!(func.args_entries[1].description, "Enable verbose");
+    }
+}

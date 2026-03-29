@@ -121,19 +121,26 @@ fn format_array_entries(lines: &[&str], start: usize, end: usize) -> Vec<TextEdi
 fn split_entry(line: &str) -> Option<(String, String)> {
     let bytes = line.as_bytes();
 
-    // Find first single quote
+    // Find first single quote (start of spec)
     let sq_start = bytes.iter().position(|&b| b == b'\'')?;
     // Find closing single quote
     let sq_end = bytes[sq_start + 1..].iter().position(|&b| b == b'\'')? + sq_start + 1;
 
     let spec = &line[sq_start..=sq_end];
 
-    // Find the description: starts with " after the spec
+    // Find the description after the spec — can be "double" or 'single' quoted
     let rest = &line[sq_end + 1..];
-    let dq_start = rest.find('"')?;
-    let desc = &rest[dq_start..];
+    let trimmed_rest = rest.trim_start();
 
-    let desc = desc.trim_end();
+    let desc = if trimmed_rest.starts_with('"') {
+        // Double-quoted description
+        trimmed_rest.trim_end()
+    } else if trimmed_rest.starts_with('\'') {
+        // Single-quoted description
+        trimmed_rest.trim_end()
+    } else {
+        return None;
+    };
 
     Some((spec.to_string(), desc.to_string()))
 }
@@ -147,6 +154,13 @@ mod tests {
         let (spec, desc) = split_entry("    'port|p:~int' \"Port number\"").unwrap();
         assert_eq!(spec, "'port|p:~int'");
         assert_eq!(desc, "\"Port number\"");
+    }
+
+    #[test]
+    fn test_split_entry_single_quoted_description() {
+        let (spec, desc) = split_entry("    'up|u@destructive' 'Start cluster'").unwrap();
+        assert_eq!(spec, "'up|u@destructive'");
+        assert_eq!(desc, "'Start cluster'");
     }
 
     #[test]
@@ -214,3 +228,50 @@ mod tests {
         assert!(!edits.is_empty(), "Should produce alignment edits for usage array");
     }
 }
+
+    #[test]
+    fn test_format_single_quoted_descriptions() {
+        let input = "#!/usr/bin/env bash\nmain() {\n  local -a usage=(\n    'up|u@destructive' 'Start cluster'\n    'down@destructive' 'Stop cluster'\n    'provision|p@destructive' 'Provision a cluster (full lifecycle)'\n  )\n}\n";
+        let edits = format_document(input);
+        assert!(!edits.is_empty(), "Should produce alignment edits for single-quoted descriptions");
+
+        let lines: Vec<&str> = input.lines().collect();
+        let mut result_lines: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
+        for edit in &edits {
+            let line = edit.range.start.line as usize;
+            if line < result_lines.len() {
+                result_lines[line] = edit.new_text.clone();
+            }
+        }
+
+        // All descriptions should start at the same column
+        let desc_cols: Vec<usize> = result_lines[3..6].iter()
+            .filter_map(|l| {
+                // Find the second single quote pair (description start)
+                let first_end = l.find('\'').and_then(|s| l[s+1..].find('\'').map(|e| s + 1 + e))?;
+                l[first_end+1..].find('\'').map(|p| first_end + 1 + p)
+            })
+            .collect();
+        assert!(desc_cols.windows(2).all(|w| w[0] == w[1]),
+            "Single-quoted descriptions should be aligned: {:?}\n{}",
+            desc_cols, result_lines[3..6].join("\n"));
+    }
+
+    #[test]
+    fn test_format_mixed_quote_styles() {
+        // Mix of single and double quoted descriptions
+        let input = "#!/usr/bin/env bash\nm() {\n  local -a usage=(\n    'serve' \"Start server\"\n    'build' 'Build project'\n  )\n}\n";
+        let edits = format_document(input);
+        // Should handle both without crashing
+        let lines: Vec<&str> = input.lines().collect();
+        let mut result_lines: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
+        for edit in &edits {
+            let line = edit.range.start.line as usize;
+            if line < result_lines.len() {
+                result_lines[line] = edit.new_text.clone();
+            }
+        }
+        // Both entries should still have their content
+        assert!(result_lines[3].contains("serve"), "serve entry preserved");
+        assert!(result_lines[4].contains("build"), "build entry preserved");
+    }
