@@ -28,7 +28,6 @@ The language server validates your argsh scripts in real-time. Each diagnostic h
 | AG008 | Warning | Duplicate flag name |
 | AG009 | Warning | Duplicate short alias |
 | AG010 | Warning | Command resolves to bare function (not namespaced) |
-| AG011 | Warning | Trailing `\|` with no short alias (e.g. `'flag\|'`) |
 | AG012 | Hint | Local variable shadows parent scope args field |
 | AG013 | Warning | Import could not be resolved to a file |
 
@@ -221,4 +220,4 @@ The LSP server communicates over stdio and works with any LSP-compatible editor 
 ### Test Coverage
 
 - **argsh-syntax**: 97 unit tests (field parsing, usage parsing, document analysis, scope chains)
-- **argsh-lsp**: 95 tests (39 unit + 56 integration over stdio)
+- **argsh-lsp**: 94 tests (39 unit + 55 integration over stdio)

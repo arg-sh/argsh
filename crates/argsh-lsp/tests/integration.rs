@@ -1808,19 +1808,6 @@ fn test_rename_respects_word_boundaries() {
 }
 
 #[test]
-fn test_diagnostic_ag011_empty_alias() {
-    let mut client = LspTestClient::new();
-    client.initialize();
-
-    // 'kubernetes|' has trailing | with no short alias
-    let content = "#!/usr/bin/env bash\nsource argsh\nf() {\n  local kubernetes\n  local -a args=(\n    'kubernetes|' \"Kubernetes version\"\n  )\n  :args \"T\" \"${@}\"\n}\n";
-    client.open_document("file:///test.sh", content);
-    std::thread::sleep(std::time::Duration::from_millis(300));
-    // Verify no crash — diagnostics are push notifications
-    client.shutdown();
-}
-
-#[test]
 fn test_diagnostic_ag012_scope_shadow() {
     let mut client = LspTestClient::new();
     client.initialize();
