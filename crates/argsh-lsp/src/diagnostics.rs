@@ -165,7 +165,6 @@ fn is_suppressed(diag: &Diagnostic, suppressions: &[Suppression]) -> bool {
             SuppressionScope::File => true,
             SuppressionScope::NextLine(comment_line) => diag_line == comment_line + 1,
             SuppressionScope::Line(line) => diag_line == line,
-            SuppressionScope::Function(func_line) => diag_line >= func_line,
         };
 
         if !scope_matches {
