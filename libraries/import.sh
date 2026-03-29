@@ -12,18 +12,23 @@ declare -gA import_cache=()
 
 # @description
 #   Import a library, relative to the current script
-#   If '@' is prepended to the library name, it will be imported from the base path
+#   If '@' is prepended to the library name, it will be imported from the base path (PATH_BASE)
 #   If '~' is prepended to the library name, it will be imported from the script entry point
+#   If '^' is prepended to the library name, it will be imported from PATH_SCRIPTS
 # @arg $1 string Library name
 # @example
 #   import fmt
- import() { 
+#   import @libs/helper
+#   import ^utils/verbose
+ import() {
   local src="${1}"
-  (( ${import_cache["${src}"]:-} )) || { 
+  (( ${import_cache["${src}"]:-} )) || {
     import_cache["${src}"]=1
     # shellcheck disable=SC1090
     if [[ ${src:0:1} == "@" ]]; then
       src="${PATH_BASE:?"PATH_BASE missing"}/${src:1}";
+    elif [[ ${src:0:1} == "^" ]]; then
+      src="${PATH_SCRIPTS:?"PATH_SCRIPTS missing"}/${src:1}";
     elif [[ ${src:0:1} == "~" ]]; then
       local _s="${ARGSH_SOURCE:-${BASH_SOURCE[-1]}}"
       src="${_s%/*}/${src:1}"

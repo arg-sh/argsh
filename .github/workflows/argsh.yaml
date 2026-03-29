@@ -323,13 +323,107 @@ jobs:
           tags: ${{ steps.metadata.outputs.tags }}
           labels: ${{ steps.metadata.outputs.labels }}
 
+  build-lsp:
+    name: Build argsh-lsp (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    if: startsWith(github.ref, 'refs/tags/v')
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact: argsh-lsp-linux-x64
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            artifact: argsh-lsp-linux-arm64
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            artifact: argsh-lsp-darwin-x64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact: argsh-lsp-darwin-arm64
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install cross-compilation tools
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+          echo '[target.aarch64-unknown-linux-gnu]' >> ~/.cargo/config.toml
+          echo 'linker = "aarch64-linux-gnu-gcc"' >> ~/.cargo/config.toml
+
+      - name: Build
+        run: cargo build --release --manifest-path crates/argsh-lsp/Cargo.toml --target ${{ matrix.target }}
+
+      - name: Package
+        run: |
+          mkdir -p dist
+          cp crates/argsh-lsp/target/${{ matrix.target }}/release/argsh-lsp dist/${{ matrix.artifact }}
+          chmod +x dist/${{ matrix.artifact }}
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/${{ matrix.artifact }}
+
+  package-vsix:
+    name: Package VSCode extension (${{ matrix.platform }})
+    needs: build-lsp
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - platform: linux-x64
+            lsp-artifact: argsh-lsp-linux-x64
+          - platform: linux-arm64
+            lsp-artifact: argsh-lsp-linux-arm64
+          - platform: darwin-x64
+            lsp-artifact: argsh-lsp-darwin-x64
+          - platform: darwin-arm64
+            lsp-artifact: argsh-lsp-darwin-arm64
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Download LSP binary
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ matrix.lsp-artifact }}
+          path: vscode-argsh/bin/
+
+      - name: Prepare binary
+        run: |
+          chmod +x vscode-argsh/bin/*
+          mv vscode-argsh/bin/${{ matrix.lsp-artifact }} vscode-argsh/bin/argsh-lsp
+
+      - name: Install and compile
+        run: cd vscode-argsh && npm install && npm run compile
+
+      - name: Package VSIX
+        run: |
+          npm install -g @vscode/vsce
+          cd vscode-argsh
+          vsce package --target ${{ matrix.platform }} -o ../argsh-${{ matrix.platform }}.vsix
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: vsix-${{ matrix.platform }}
+          path: argsh-${{ matrix.platform }}.vsix
+
   release:
     runs-on: ubuntu-latest
     permissions:
       contents: write
       pull-requests: write
     environment: release
-    needs: [minify, minify-so, build-binaries, docker]
+    needs: [minify, minify-so, build-binaries, docker, package-vsix]
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
       - name: Clone repository
@@ -349,6 +443,12 @@ jobs:
         with:
           pattern: argsh-so-linux-*
           path: artifacts
+      - name: Download all VSIX packages
+        uses: actions/download-artifact@v8
+        with:
+          pattern: vsix-*
+          path: artifacts/vsix
+          merge-multiple: true
       - name: Assemble release assets
         run: |
           mkdir -p release
@@ -365,6 +465,9 @@ jobs:
             cp "artifacts/argsh-so-linux-${arch}/argsh-so" "release/argsh-so-linux-${arch}"
             chmod +x "release/minifier-linux-${arch}" "release/shdoc-linux-${arch}" "release/argsh-so-linux-${arch}"
           done
+
+          # VSCode extension bundles
+          cp artifacts/vsix/*.vsix release/
 
           cd release
           sha256sum * > sha256sum.txt

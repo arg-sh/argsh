@@ -107,13 +107,33 @@
       ]
     },
     "argsh-field-alias": {
-      "comment": "Alias separator | in field definitions like name|n",
-      "match": "(\\w+)(\\|)(\\w)",
-      "captures": {
-        "1": { "name": "variable.other.field.argsh" },
-        "2": { "name": "punctuation.separator.alias.argsh" },
-        "3": { "name": "variable.other.alias.argsh" }
-      }
+      "comment": "Field definitions in args arrays: name|n (flag), name| (long-only flag), name (positional)",
+      "patterns": [
+        {
+          "comment": "Flag with short alias: name|n",
+          "match": "(\\w[\\w-]*)(\\|)(\\w)",
+          "captures": {
+            "1": { "name": "variable.other.field.argsh" },
+            "2": { "name": "punctuation.separator.alias.argsh" },
+            "3": { "name": "variable.other.alias.argsh" }
+          }
+        },
+        {
+          "comment": "Long-only flag with trailing pipe: name|",
+          "match": "(\\w[\\w-]*)(\\|)(?=[:'\"]|$)",
+          "captures": {
+            "1": { "name": "variable.other.field.argsh" },
+            "2": { "name": "punctuation.separator.alias.argsh" }
+          }
+        },
+        {
+          "comment": "Positional argument: bare name in single quotes (no pipe)",
+          "match": "(?<=')(\\w[\\w-]*)(?=(?::[:~!+#]|'))",
+          "captures": {
+            "1": { "name": "variable.parameter.positional.argsh" }
+          }
+        }
+      ]
     },
     "argsh-explicit-mapping": {
       "comment": "Explicit function mapping :-func::name in usage entries",

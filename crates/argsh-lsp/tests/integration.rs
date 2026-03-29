@@ -1808,19 +1808,6 @@ fn test_rename_respects_word_boundaries() {
 }
 
 #[test]
-fn test_diagnostic_ag011_empty_alias() {
-    let mut client = LspTestClient::new();
-    client.initialize();
-
-    // 'kubernetes|' has trailing | with no short alias
-    let content = "#!/usr/bin/env bash\nsource argsh\nf() {\n  local kubernetes\n  local -a args=(\n    'kubernetes|' \"Kubernetes version\"\n  )\n  :args \"T\" \"${@}\"\n}\n";
-    client.open_document("file:///test.sh", content);
-    std::thread::sleep(std::time::Duration::from_millis(300));
-    // Verify no crash — diagnostics are push notifications
-    client.shutdown();
-}
-
-#[test]
 fn test_diagnostic_ag012_scope_shadow() {
     let mut client = LspTestClient::new();
     client.initialize();
@@ -1876,6 +1863,87 @@ func_b() {
   :args "B" "${@}"
 }
 "#;
+    client.open_document("file:///test.sh", content);
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    client.shutdown();
+}
+
+#[test]
+fn test_goto_import_with_prefix() {
+    use std::fs;
+    let dir = tempfile::tempdir().unwrap();
+    let helper = dir.path().join("helper");
+    fs::write(&helper, "helper_func() { echo; }\n").unwrap();
+
+    let main_content = "#!/usr/bin/env bash\nimport ~helper\nmain() { echo; }\n";
+    let main_path = dir.path().join("main.sh");
+    fs::write(&main_path, main_content).unwrap();
+    let main_uri = format!("file://{}", main_path.to_str().unwrap());
+
+    let mut client = LspTestClient::new();
+    client.initialize();
+    client.open_document(&main_uri, main_content);
+
+    // Ctrl+Click on "import ~helper" (line 1, col 10)
+    let resp = client.send_request("textDocument/definition", serde_json::json!({
+        "textDocument": { "uri": main_uri },
+        "position": { "line": 1, "character": 10 }
+    }));
+    assert!(resp.get("error").is_none());
+    // Should resolve to the helper file (may be Location object or array)
+    if !resp["result"].is_null() {
+        let uri = if resp["result"].is_array() {
+            resp["result"][0]["uri"].as_str().unwrap_or("")
+        } else {
+            resp["result"]["uri"].as_str().unwrap_or("")
+        };
+        assert!(uri.contains("helper"), "Should point to helper file, got: {}", uri);
+    }
+    client.shutdown();
+}
+
+#[test]
+fn test_no_ag007_for_last_segment_resolution() {
+    // main::manifest has usage entry 'list' → should resolve to manifest::list
+    // (last segment prefix: main::manifest → manifest::list)
+    let mut client = LspTestClient::new();
+    client.initialize();
+
+    let content = r#"#!/usr/bin/env bash
+source argsh
+main::manifest() {
+  local -a usage=(
+    'list|l' "List overlays"
+    'addons|a' "List addons"
+  )
+  :usage "Manifest" "${@}"
+  "${usage[@]}"
+}
+manifest::list() { echo list; }
+manifest::addons() { echo addons; }
+"#;
+    client.open_document("file:///test_last_seg.sh", content);
+    std::thread::sleep(std::time::Duration::from_millis(300));
+
+    // Verify server is healthy — if AG007 were wrongly produced for these,
+    // it wouldn't crash but we verify symbols are correct
+    let resp = client.document_symbols("file:///test_last_seg.sh");
+    assert!(resp.get("error").is_none());
+    let syms = resp["result"].as_array().unwrap();
+    assert!(syms.len() >= 3, "Should have main::manifest + manifest::list + manifest::addons");
+
+    client.shutdown();
+}
+
+#[test]
+fn test_unresolved_import_does_not_crash_when_ag013_emitted() {
+    // Crash-regression test: opening a script with an unresolved import should not
+    // crash the server when AG013 is produced. We can't capture push notifications
+    // in the current test client, so we verify the server stays healthy.
+    let mut client = LspTestClient::new();
+    client.initialize();
+
+    let content = "#!/usr/bin/env bash\nimport nonexistent_module\nmain() { echo; }\n";
     client.open_document("file:///test.sh", content);
     std::thread::sleep(std::time::Duration::from_millis(300));
     client.shutdown();

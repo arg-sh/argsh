@@ -121,6 +121,14 @@ fn find_parent_dispatcher<'a>(
                 return Some(func);
             }
 
+            // Check last segment prefix: main::manifest → manifest::subcmd
+            if let Some(pos) = func.name.rfind("::") {
+                let seg_prefixed = format!("{}::{}", &func.name[pos + 2..], entry.name);
+                if seg_prefixed == target_name {
+                    return Some(func);
+                }
+            }
+
             // Check bare name match
             if entry.name == target_name {
                 return Some(func);
@@ -242,5 +250,33 @@ other_func() {
         assert_eq!(chain.scopes[0].function_name, "parent::cmd");
         // Root function has no parent flags
         assert!(chain.scopes[0].parent_flags.is_empty());
+    }
+
+    #[test]
+    fn test_scope_chain_last_segment_resolution() {
+        // main::manifest dispatches 'list' → manifest::list (last segment prefix)
+        let script = r#"#!/usr/bin/env argsh
+main::manifest() {
+  local -a usage=(
+    'list|l' "List overlays"
+  )
+  :usage "Manifest" "${@}"
+  "${usage[@]}"
+}
+manifest::list() {
+  local -a args=(
+    'verbose|v:+' "Verbose"
+  )
+  :args "List overlays" "${@}"
+}
+"#;
+        let doc = analyze(script);
+        let chain = ScopeChain::build(&doc, "manifest::list");
+        assert!(!chain.scopes.is_empty(), "Should find manifest::list");
+        assert_eq!(chain.scopes[0].function_name, "manifest::list");
+        // Should find main::manifest as the dispatcher via last-segment resolution
+        assert!(chain.scopes.len() > 1,
+            "Should have parent scope, got {} scopes", chain.scopes.len());
+        assert_eq!(chain.scopes[1].function_name, "main::manifest");
     }
 }

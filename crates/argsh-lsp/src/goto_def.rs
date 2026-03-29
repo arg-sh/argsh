@@ -40,8 +40,11 @@ pub fn goto_definition(
 
     // 4. Check if cursor is on an import statement — resolve to the imported file
     if let Some(module) = extract_import_module(line, col) {
+        // Strip @/~/^ prefix for matching against resolved files
+        let clean = module.trim_start_matches(&['@', '~', '^'] as &[char]);
         for (mod_name, path) in &imports.resolved_files {
-            if *mod_name == module {
+            let clean_resolved = mod_name.trim_start_matches(&['@', '~', '^'] as &[char]);
+            if *mod_name == module || clean_resolved == clean {
                 if let Ok(import_uri) = Url::from_file_path(path) {
                     return Some(Location {
                         uri: import_uri,
@@ -79,10 +82,17 @@ pub fn goto_definition(
                     if let Some(loc) = find_function_location(analysis, imports, target_name, uri) {
                         return Some(loc);
                     }
-                    // Try with parent prefix
+                    // Try with full caller prefix: caller::subcmd
                     let prefixed = format!("{}::{}", func.name, entry.name);
                     if let Some(loc) = find_function_location(analysis, imports, &prefixed, uri) {
                         return Some(loc);
+                    }
+                    // Try with last segment prefix: last_seg::subcmd
+                    if let Some(pos) = func.name.rfind("::") {
+                        let seg_prefixed = format!("{}::{}", &func.name[pos + 2..], entry.name);
+                        if let Some(loc) = find_function_location(analysis, imports, &seg_prefixed, uri) {
+                            return Some(loc);
+                        }
                     }
                 }
             }
@@ -177,11 +187,14 @@ fn goto_usage_entry(
         let candidates = if let Some(ref explicit) = entry.explicit_func {
             vec![explicit.clone()]
         } else {
-            vec![
-                format!("{}::{}", func.name, entry.name),
-                entry.name.clone(),
-                format!("argsh::{}", entry.name),
-            ]
+            let mut c = vec![format!("{}::{}", func.name, entry.name)];
+            // Last segment prefix: main::manifest → manifest::subcmd
+            if let Some(pos) = func.name.rfind("::") {
+                c.push(format!("{}::{}", &func.name[pos + 2..], entry.name));
+            }
+            c.push(format!("argsh::{}", entry.name));
+            c.push(entry.name.clone());
+            c
         };
 
         for candidate in &candidates {

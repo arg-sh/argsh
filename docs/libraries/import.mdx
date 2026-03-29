@@ -16,13 +16,16 @@ This file contains functions for importing libraries
 > `bash` `rust`
 
 Import a library, relative to the current script
-If '@' is prepended to the library name, it will be imported from the base path
-If '~' is prepended to the library name, it will be imported from the script entry point
+If '@' is prepended to the library name, it will be imported from the base path (PATH_BASE)
+If '~' is prepended to the library name, it will be imported from the script entry point (ARGSH_SOURCE)
+If '^' is prepended to the library name, it will be imported from PATH_SCRIPTS
 
 #### Example
 
 ```bash
 import fmt
+import @libs/helper
+import ^utils/verbose
 ```
 
 #### Arguments

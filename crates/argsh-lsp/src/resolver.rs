@@ -12,6 +12,8 @@ pub struct ResolvedImports {
     pub functions: Vec<FunctionInfo>,
     /// All resolved file paths (for go-to-definition across files).
     pub resolved_files: Vec<(String, PathBuf)>, // (module_name, path)
+    /// Whether import resolution actually ran (false when max_depth == 0).
+    pub resolution_ran: bool,
 }
 
 impl Default for ResolvedImports {
@@ -19,6 +21,7 @@ impl Default for ResolvedImports {
         Self {
             functions: Vec::new(),
             resolved_files: Vec::new(),
+            resolution_ran: false,
         }
     }
 }
@@ -28,6 +31,7 @@ impl Default for ResolvedImports {
 /// Circular imports are handled via canonicalized path tracking.
 pub fn resolve_imports(analysis: &DocumentAnalysis, base_path: &Path, max_depth: usize) -> ResolvedImports {
     let mut result = ResolvedImports::default();
+    result.resolution_ran = max_depth > 0;
     let mut visited = HashSet::new();
     // Add the current file to visited to prevent self-referencing
     if let Ok(canonical) = base_path.canonicalize() {
@@ -55,15 +59,55 @@ fn resolve_recursive(
     for imp in &analysis.imports {
         let module = &imp.module;
 
-        // Try to resolve the module to a file path
-        let candidates = resolve_module_path(module, base_dir);
+        // Handle import prefixes (mirrors import.sh):
+        // @foo → relative to PATH_BASE (project root)
+        // ^foo → relative to PATH_SCRIPTS
+        // ~foo → relative to the script itself
+        // foo  → relative to ARGSH_SOURCE directory (base_dir)
+        let (clean_module, search_dir) = if module.starts_with('@') {
+            // @ prefix: prefer PATH_BASE env var (matches runtime), fall back to project root
+            let stripped = &module[1..];
+            let project_root = std::env::var("PATH_BASE")
+                .ok()
+                .map(PathBuf::from)
+                .filter(|p| p.is_dir())
+                .unwrap_or_else(|| find_project_root(base_dir).unwrap_or_else(|| base_dir.to_path_buf()));
+            (stripped.to_string(), project_root)
+        } else if module.starts_with('^') {
+            // ^ prefix: relative to PATH_SCRIPTS — skip if no scripts dir found
+            // (matches runtime behavior: fails when PATH_SCRIPTS is unset)
+            let stripped = &module[1..];
+            let project_root = find_project_root(base_dir).unwrap_or_else(|| base_dir.to_path_buf());
+            match find_scripts_dir(&project_root) {
+                Some(scripts_dir) => (stripped.to_string(), scripts_dir),
+                None => continue, // unresolvable — AG013 will flag it
+            }
+        } else if module.starts_with('~') {
+            (module[1..].to_string(), base_dir.to_path_buf())
+        } else {
+            (module.clone(), base_dir.to_path_buf())
+        };
 
-        for path in candidates {
+        let candidates = resolve_module_path(&clean_module, &search_dir);
+
+        // First-match-wins: mirrors import::source which returns on the first
+        // existing file. Without this, both `foo` and `foo.sh` could be imported.
+        let resolved = candidates.iter().find(|p| p.is_file());
+
+        if let Some(path) = resolved {
             let canonical = match path.canonicalize() {
                 Ok(p) => p,
                 Err(_) => continue,
             };
 
+            // Always record in resolved_files for goto-def/AG013, even if
+            // the file was already analyzed via a different module name
+            // (e.g. `import fmt` + `import @libraries/fmt`).
+            result
+                .resolved_files
+                .push((module.clone(), canonical.clone()));
+
+            // Skip analysis/recursion if already visited
             if visited.contains(&canonical) {
                 continue;
             }
@@ -81,10 +125,6 @@ fn resolve_recursive(
             for func in &imported_analysis.functions {
                 result.functions.push(func.clone());
             }
-
-            result
-                .resolved_files
-                .push((module.clone(), canonical.clone()));
 
             // Recurse into the imported file's imports
             let import_dir = canonical.parent().unwrap_or(base_dir);
@@ -126,27 +166,72 @@ fn resolve_recursive(
     }
 }
 
-/// Resolve a module name to candidate file paths.
-/// argsh import convention: `import foo` -> `{base_dir}/foo.sh`
+/// Find the project root by walking up looking for `.bin/argsh`, `.envrc`, or `.git`.
+fn find_project_root(start: &Path) -> Option<PathBuf> {
+    let mut dir = start.to_path_buf();
+    for _ in 0..10 {
+        if dir.join(".bin/argsh").exists()
+            || dir.join(".envrc").exists()
+            || dir.join(".git").exists()
+        {
+            return Some(dir);
+        }
+        if !dir.pop() {
+            break;
+        }
+    }
+    None
+}
+
+/// Find the PATH_SCRIPTS directory from a project root.
+/// Looks for common script directory names.
+fn find_scripts_dir(project_root: &Path) -> Option<PathBuf> {
+    // Prefer explicit PATH_SCRIPTS env var (matches runtime behavior)
+    if let Ok(path) = std::env::var("PATH_SCRIPTS") {
+        let p = PathBuf::from(path);
+        if p.is_dir() {
+            return Some(p);
+        }
+    }
+    // Heuristic fallback: common script directory names
+    let candidates = [".scripts", "scripts", "bin"];
+    for name in &candidates {
+        let dir = project_root.join(name);
+        if dir.is_dir() {
+            return Some(dir);
+        }
+    }
+    None
+}
+
+/// argsh import convention — mirrors `import::source` from libraries/import.sh:
+/// Tries `{module}`, `{module}.sh`, `{module}.bash` in each search directory.
 fn resolve_module_path(module: &str, base_dir: &Path) -> Vec<PathBuf> {
     let mut candidates = Vec::new();
+    let extensions = ["", ".sh", ".bash"];
 
-    // Direct: base_dir/module.sh
-    candidates.push(base_dir.join(format!("{}.sh", module)));
+    // Direct: base_dir/module{ext}
+    for ext in &extensions {
+        candidates.push(base_dir.join(format!("{}{}", module, ext)));
+    }
 
     // With libraries/ prefix
-    candidates.push(
-        base_dir
-            .join("libraries")
-            .join(format!("{}.sh", module)),
-    );
+    for ext in &extensions {
+        candidates.push(
+            base_dir
+                .join("libraries")
+                .join(format!("{}{}", module, ext)),
+        );
+    }
 
     // Walk up to find project root with a libraries/ directory
     let mut dir = base_dir.to_path_buf();
     for _ in 0..5 {
         let lib_dir = dir.join("libraries");
         if lib_dir.is_dir() {
-            candidates.push(lib_dir.join(format!("{}.sh", module)));
+            for ext in &extensions {
+                candidates.push(lib_dir.join(format!("{}{}", module, ext)));
+            }
         }
         if !dir.pop() {
             break;
@@ -189,6 +274,42 @@ fn find_argsh_lib_dir(base_dir: &Path) -> Vec<PathBuf> {
 mod tests {
     use super::*;
     use std::fs;
+    use std::sync::Mutex;
+
+    // Serialize tests that mutate process-wide env vars (PATH_BASE, PATH_SCRIPTS).
+    static ENV_MUTEX: Mutex<()> = Mutex::new(());
+
+    /// RAII guard that sets an env var and restores it on drop (even on panic).
+    struct EnvGuard {
+        name: &'static str,
+        prev: Option<std::ffi::OsString>,
+        _lock: std::sync::MutexGuard<'static, ()>,
+    }
+
+    impl EnvGuard {
+        fn set(name: &'static str, value: impl AsRef<std::ffi::OsStr>) -> Self {
+            let lock = ENV_MUTEX.lock().unwrap();
+            let prev = std::env::var_os(name);
+            unsafe { std::env::set_var(name, value); }
+            Self { name, prev, _lock: lock }
+        }
+
+        fn clear(name: &'static str) -> Self {
+            let lock = ENV_MUTEX.lock().unwrap();
+            let prev = std::env::var_os(name);
+            unsafe { std::env::remove_var(name); }
+            Self { name, prev, _lock: lock }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            match &self.prev {
+                Some(v) => unsafe { std::env::set_var(self.name, v); },
+                None => unsafe { std::env::remove_var(self.name); },
+            }
+        }
+    }
 
     #[test]
     fn test_resolve_module_path_finds_sh_file() {
@@ -304,5 +425,213 @@ mod tests {
         let analysis = analyze(main_content);
         let imports = resolve_imports(&analysis, &main_sh, 0);
         assert!(imports.functions.is_empty(), "Depth 0 should import nothing");
+    }
+
+    #[test]
+    fn test_resolve_module_path_extensionless() {
+        let dir = tempfile::tempdir().unwrap();
+        // File without .sh extension (like lok8s scripts)
+        let lib = dir.path().join("mylib");
+        fs::write(&lib, "mylib_func() { echo hi; }").unwrap();
+
+        let candidates = resolve_module_path("mylib", dir.path());
+        assert!(candidates.iter().any(|p| p == &lib),
+            "Should find extensionless file, candidates: {:?}", candidates);
+    }
+
+    #[test]
+    fn test_resolve_module_path_prefers_no_extension_first() {
+        let dir = tempfile::tempdir().unwrap();
+        // Both extensionless and .sh exist
+        let no_ext = dir.path().join("mylib");
+        let with_sh = dir.path().join("mylib.sh");
+        fs::write(&no_ext, "from_no_ext() { :; }").unwrap();
+        fs::write(&with_sh, "from_sh() { :; }").unwrap();
+
+        let candidates = resolve_module_path("mylib", dir.path());
+        // The extensionless should come first (matches import::source order)
+        let no_ext_idx = candidates.iter().position(|p| p == &no_ext);
+        let sh_idx = candidates.iter().position(|p| p == &with_sh);
+        assert!(no_ext_idx.is_some(), "Should include extensionless");
+        assert!(sh_idx.is_some(), "Should include .sh");
+        assert!(no_ext_idx.unwrap() < sh_idx.unwrap(),
+            "Extensionless should come before .sh");
+    }
+
+    #[test]
+    fn test_resolve_imports_extensionless_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let lib = dir.path().join("helpers");
+        fs::write(&lib, "helper_func() {\n  echo help\n}\n").unwrap();
+
+        let main_content = "#!/usr/bin/env bash\nimport helpers\nmain() { echo; }\n";
+        let main_sh = dir.path().join("main.sh");
+        fs::write(&main_sh, main_content).unwrap();
+
+        let analysis = analyze(main_content);
+        let imports = resolve_imports(&analysis, &main_sh, 2);
+        assert!(imports.functions.iter().any(|f| f.name == "helper_func"),
+            "Should find functions from extensionless imported file");
+    }
+
+    #[test]
+    fn test_resolve_module_path_with_subdirectory() {
+        let dir = tempfile::tempdir().unwrap();
+        let libs_dir = dir.path().join("libs");
+        fs::create_dir_all(&libs_dir).unwrap();
+        let lib = libs_dir.join("provision");
+        fs::write(&lib, "provision_func() { :; }").unwrap();
+
+        let candidates = resolve_module_path("libs/provision", dir.path());
+        assert!(candidates.iter().any(|p| p == &lib),
+            "Should find libs/provision (extensionless subdir path), candidates: {:?}", candidates);
+    }
+
+    #[test]
+    fn test_resolve_at_prefix_import() {
+        let dir = tempfile::tempdir().unwrap();
+        let _guard = EnvGuard::set("PATH_BASE", dir.path());
+        // Create project structure: root/libs/helper
+        let libs_dir = dir.path().join("libs");
+        fs::create_dir_all(&libs_dir).unwrap();
+        let helper = libs_dir.join("helper");
+        fs::write(&helper, "at_helper() { :; }").unwrap();
+
+        // Script in a subdirectory
+        let scripts_dir = dir.path().join("scripts");
+        fs::create_dir_all(&scripts_dir).unwrap();
+        let main_content = "#!/usr/bin/env bash\nimport @libs/helper\nmain() { echo; }\n";
+        let main_sh = scripts_dir.join("main.sh");
+        fs::write(&main_sh, main_content).unwrap();
+
+        let analysis = analyze(main_content);
+        let imports = resolve_imports(&analysis, &main_sh, 2);
+        assert!(imports.functions.iter().any(|f| f.name == "at_helper"),
+            "Should find function from @-prefixed import, got: {:?}",
+            imports.functions.iter().map(|f| &f.name).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn test_resolve_tilde_prefix_import() {
+        let dir = tempfile::tempdir().unwrap();
+        // ~ prefix resolves relative to the script file
+        let helper = dir.path().join("helper.sh");
+        fs::write(&helper, "tilde_helper() { :; }").unwrap();
+
+        let main_content = "#!/usr/bin/env bash\nimport ~helper\nmain() { echo; }\n";
+        let main_sh = dir.path().join("main.sh");
+        fs::write(&main_sh, main_content).unwrap();
+
+        let analysis = analyze(main_content);
+        let imports = resolve_imports(&analysis, &main_sh, 2);
+        assert!(imports.functions.iter().any(|f| f.name == "tilde_helper"),
+            "Should find function from ~-prefixed import");
+    }
+
+    #[test]
+    fn test_find_scripts_dir_dot_scripts() {
+        let _guard = EnvGuard::clear("PATH_SCRIPTS");
+        let dir = tempfile::tempdir().unwrap();
+        let scripts = dir.path().join(".scripts");
+        fs::create_dir_all(&scripts).unwrap();
+        assert_eq!(find_scripts_dir(dir.path()), Some(scripts));
+    }
+
+    #[test]
+    fn test_find_scripts_dir_scripts() {
+        let _guard = EnvGuard::clear("PATH_SCRIPTS");
+        let dir = tempfile::tempdir().unwrap();
+        let scripts = dir.path().join("scripts");
+        fs::create_dir_all(&scripts).unwrap();
+        assert_eq!(find_scripts_dir(dir.path()), Some(scripts));
+    }
+
+    #[test]
+    fn test_find_scripts_dir_bin() {
+        let _guard = EnvGuard::clear("PATH_SCRIPTS");
+        let dir = tempfile::tempdir().unwrap();
+        let bin = dir.path().join("bin");
+        fs::create_dir_all(&bin).unwrap();
+        assert_eq!(find_scripts_dir(dir.path()), Some(bin));
+    }
+
+    #[test]
+    fn test_find_scripts_dir_prefers_dot_scripts() {
+        let _guard = EnvGuard::clear("PATH_SCRIPTS");
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join(".scripts")).unwrap();
+        fs::create_dir_all(dir.path().join("scripts")).unwrap();
+        assert_eq!(find_scripts_dir(dir.path()), Some(dir.path().join(".scripts")));
+    }
+
+    #[test]
+    fn test_find_scripts_dir_none() {
+        let _guard = EnvGuard::clear("PATH_SCRIPTS");
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(find_scripts_dir(dir.path()), None);
+    }
+
+    #[test]
+    fn test_resolve_caret_prefix_import() {
+        let dir = tempfile::tempdir().unwrap();
+        // Create project structure: root/.git + root/.scripts/utils/verbose
+        fs::create_dir_all(dir.path().join(".git")).unwrap();
+        let scripts_dir = dir.path().join(".scripts");
+        let utils_dir = scripts_dir.join("utils");
+        fs::create_dir_all(&utils_dir).unwrap();
+        let verbose = utils_dir.join("verbose");
+        fs::write(&verbose, "verbose_func() { :; }").unwrap();
+
+        // Script in a subdirectory
+        let sub = dir.path().join("sub");
+        fs::create_dir_all(&sub).unwrap();
+        let main_content = "#!/usr/bin/env bash\nimport ^utils/verbose\nmain() { echo; }\n";
+        let main_sh = sub.join("main.sh");
+        fs::write(&main_sh, main_content).unwrap();
+
+        let analysis = analyze(main_content);
+        let imports = resolve_imports(&analysis, &main_sh, 2);
+        assert!(imports.functions.iter().any(|f| f.name == "verbose_func"),
+            "Should find function from ^-prefixed import, got: {:?}",
+            imports.functions.iter().map(|f| &f.name).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn test_resolve_caret_prefix_with_sh_extension() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join(".git")).unwrap();
+        let scripts_dir = dir.path().join(".scripts");
+        fs::create_dir_all(&scripts_dir).unwrap();
+        let helper = scripts_dir.join("helper.sh");
+        fs::write(&helper, "caret_helper() { :; }").unwrap();
+
+        let main_content = "#!/usr/bin/env bash\nimport ^helper\nmain() { echo; }\n";
+        let main_sh = dir.path().join("main.sh");
+        fs::write(&main_sh, main_content).unwrap();
+
+        let analysis = analyze(main_content);
+        let imports = resolve_imports(&analysis, &main_sh, 2);
+        assert!(imports.functions.iter().any(|f| f.name == "caret_helper"),
+            "Should find function from ^-prefixed import with .sh extension");
+    }
+
+    #[test]
+    fn test_resolve_caret_prefix_resolved_files() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join(".git")).unwrap();
+        let scripts_dir = dir.path().join(".scripts");
+        fs::create_dir_all(&scripts_dir).unwrap();
+        let lib = scripts_dir.join("mylib");
+        fs::write(&lib, "mylib_func() { :; }").unwrap();
+
+        let main_content = "#!/usr/bin/env bash\nimport ^mylib\nmain() { echo; }\n";
+        let main_sh = dir.path().join("main.sh");
+        fs::write(&main_sh, main_content).unwrap();
+
+        let analysis = analyze(main_content);
+        let imports = resolve_imports(&analysis, &main_sh, 2);
+        assert!(imports.resolved_files.iter().any(|(name, _)| name == "^mylib"),
+            "resolved_files should preserve ^ prefix in module name, got: {:?}",
+            imports.resolved_files.iter().map(|(n, _)| n).collect::<Vec<_>>());
     }
 }
