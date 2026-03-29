@@ -44,7 +44,7 @@ pub fn generate_diagnostics(
         check_duplicate_short_aliases(func, &mut diags);
         check_bare_function_resolution(func, analysis, imports, &mut diags);
         check_empty_alias(func, &mut diags);
-        check_scope_shadow(func, analysis, &mut diags);
+        check_scope_shadow(func, analysis, content, &mut diags);
     }
 
     // Filter out suppressed diagnostics
@@ -467,8 +467,10 @@ fn check_empty_alias(func: &FunctionInfo, diags: &mut Vec<Diagnostic>) {
 fn check_scope_shadow(
     func: &FunctionInfo,
     analysis: &DocumentAnalysis,
+    content: &str,
     diags: &mut Vec<Diagnostic>,
 ) {
+    let lines: Vec<&str> = content.lines().collect();
     // Only check functions that are dispatched via :usage (have a parent)
     // Find parent: a function whose usage entries reference this function
     let parent = analysis.functions.iter().find(|parent| {
@@ -518,8 +520,23 @@ fn check_scope_shadow(
                 )
             };
 
+            // Find the column of the variable name in the source line
+            let var_range = if local_var.line < lines.len() {
+                let line_text = lines[local_var.line];
+                if let Some(col) = line_text.find(&local_var.name) {
+                    Range {
+                        start: Position { line: local_var.line as u32, character: col as u32 },
+                        end: Position { line: local_var.line as u32, character: (col + local_var.name.len()) as u32 },
+                    }
+                } else {
+                    line_range(local_var.line)
+                }
+            } else {
+                line_range(local_var.line)
+            };
+
             diags.push(make_diag(
-                line_range(local_var.line),
+                var_range,
                 DiagnosticSeverity::HINT,
                 codes::AG012,
                 msg,
