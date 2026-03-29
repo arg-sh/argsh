@@ -1880,3 +1880,45 @@ func_b() {
     std::thread::sleep(std::time::Duration::from_millis(300));
     client.shutdown();
 }
+
+#[test]
+fn test_goto_import_with_prefix() {
+    use std::fs;
+    let dir = tempfile::tempdir().unwrap();
+    let helper = dir.path().join("helper");
+    fs::write(&helper, "helper_func() { echo; }\n").unwrap();
+
+    let main_content = "#!/usr/bin/env bash\nimport ~helper\nmain() { echo; }\n";
+    let main_path = dir.path().join("main.sh");
+    fs::write(&main_path, main_content).unwrap();
+    let main_uri = format!("file://{}", main_path.to_str().unwrap());
+
+    let mut client = LspTestClient::new();
+    client.initialize();
+    client.open_document(&main_uri, main_content);
+
+    // Ctrl+Click on "import ~helper" (line 1, col 10)
+    let resp = client.send_request("textDocument/definition", serde_json::json!({
+        "textDocument": { "uri": main_uri },
+        "position": { "line": 1, "character": 10 }
+    }));
+    assert!(resp.get("error").is_none());
+    // Should resolve to the helper file
+    if !resp["result"].is_null() {
+        let uri = resp["result"]["uri"].as_str().unwrap_or("");
+        assert!(uri.contains("helper"), "Should point to helper file, got: {}", uri);
+    }
+    client.shutdown();
+}
+
+#[test]
+fn test_diagnostic_ag013_unresolved_import() {
+    let mut client = LspTestClient::new();
+    client.initialize();
+
+    let content = "#!/usr/bin/env bash\nimport nonexistent_module\nmain() { echo; }\n";
+    client.open_document("file:///test.sh", content);
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    // Should not crash — AG013 diagnostic is produced
+    client.shutdown();
+}

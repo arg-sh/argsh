@@ -21,6 +21,7 @@ pub mod codes {
     pub const AG010: &str = "AG010"; // command resolves to bare function (not namespaced)
     pub const AG011: &str = "AG011"; // trailing | with no short alias
     pub const AG012: &str = "AG012"; // local variable shadows parent scope args field
+    pub const AG013: &str = "AG013"; // import could not be resolved
 }
 
 /// Generate LSP diagnostics from a document analysis.
@@ -46,6 +47,9 @@ pub fn generate_diagnostics(
         check_empty_alias(func, &mut diags);
         check_scope_shadow(func, analysis, content, &mut diags);
     }
+
+    // Check unresolved imports
+    check_unresolved_imports(analysis, imports, &mut diags);
 
     // Filter out suppressed diagnostics
     diags.retain(|d| !is_suppressed(d, &suppressed));
@@ -540,6 +544,32 @@ fn check_scope_shadow(
                 DiagnosticSeverity::HINT,
                 codes::AG012,
                 msg,
+            ));
+        }
+    }
+}
+
+/// Warn when an import statement could not be resolved to a file.
+fn check_unresolved_imports(
+    analysis: &DocumentAnalysis,
+    imports: &ResolvedImports,
+    diags: &mut Vec<Diagnostic>,
+) {
+    let resolved_modules: HashSet<String> = imports.resolved_files.iter()
+        .map(|(name, _)| name.clone())
+        .collect();
+
+    for imp in &analysis.imports {
+        let clean = imp.module.trim_start_matches('@').trim_start_matches('~');
+        let found = resolved_modules.iter().any(|r| {
+            r == &imp.module || r == clean || r.ends_with(clean)
+        });
+        if !found {
+            diags.push(make_diag(
+                line_range(imp.line),
+                DiagnosticSeverity::WARNING,
+                codes::AG013,
+                format!("import '{}' could not be resolved to a file", imp.module),
             ));
         }
     }

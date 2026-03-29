@@ -55,8 +55,24 @@ fn resolve_recursive(
     for imp in &analysis.imports {
         let module = &imp.module;
 
-        // Try to resolve the module to a file path
-        let candidates = resolve_module_path(module, base_dir);
+        // Handle import prefixes:
+        // @foo → relative to PATH_BASE (project root)
+        // ~foo → relative to the script itself
+        // foo  → relative to ARGSH_SOURCE directory (base_dir)
+        let (clean_module, search_dir) = if module.starts_with('@') {
+            // @ prefix: relative to project root — walk up to find it
+            let stripped = &module[1..];
+            let project_root = find_project_root(base_dir).unwrap_or_else(|| base_dir.to_path_buf());
+            (stripped.to_string(), project_root)
+        } else if module.starts_with('~') {
+            // ~ prefix: relative to the script file's directory
+            (&module[1..]).to_string();
+            (module[1..].to_string(), base_dir.to_path_buf())
+        } else {
+            (module.clone(), base_dir.to_path_buf())
+        };
+
+        let candidates = resolve_module_path(&clean_module, &search_dir);
 
         for path in candidates {
             let canonical = match path.canonicalize() {
@@ -127,26 +143,51 @@ fn resolve_recursive(
 }
 
 /// Resolve a module name to candidate file paths.
-/// argsh import convention: `import foo` -> `{base_dir}/foo.sh`
+/// Find the project root by walking up looking for `.bin/argsh`, `.envrc`, or `.git`.
+fn find_project_root(start: &Path) -> Option<PathBuf> {
+    let mut dir = start.to_path_buf();
+    for _ in 0..10 {
+        if dir.join(".bin/argsh").exists()
+            || dir.join(".envrc").exists()
+            || dir.join(".git").exists()
+        {
+            return Some(dir);
+        }
+        if !dir.pop() {
+            break;
+        }
+    }
+    None
+}
+
+/// argsh import convention — mirrors `import::source` from libraries/import.sh:
+/// Tries `{module}`, `{module}.sh`, `{module}.bash` in each search directory.
 fn resolve_module_path(module: &str, base_dir: &Path) -> Vec<PathBuf> {
     let mut candidates = Vec::new();
+    let extensions = ["", ".sh", ".bash"];
 
-    // Direct: base_dir/module.sh
-    candidates.push(base_dir.join(format!("{}.sh", module)));
+    // Direct: base_dir/module{ext}
+    for ext in &extensions {
+        candidates.push(base_dir.join(format!("{}{}", module, ext)));
+    }
 
     // With libraries/ prefix
-    candidates.push(
-        base_dir
-            .join("libraries")
-            .join(format!("{}.sh", module)),
-    );
+    for ext in &extensions {
+        candidates.push(
+            base_dir
+                .join("libraries")
+                .join(format!("{}{}", module, ext)),
+        );
+    }
 
     // Walk up to find project root with a libraries/ directory
     let mut dir = base_dir.to_path_buf();
     for _ in 0..5 {
         let lib_dir = dir.join("libraries");
         if lib_dir.is_dir() {
-            candidates.push(lib_dir.join(format!("{}.sh", module)));
+            for ext in &extensions {
+                candidates.push(lib_dir.join(format!("{}{}", module, ext)));
+            }
         }
         if !dir.pop() {
             break;
@@ -304,5 +345,106 @@ mod tests {
         let analysis = analyze(main_content);
         let imports = resolve_imports(&analysis, &main_sh, 0);
         assert!(imports.functions.is_empty(), "Depth 0 should import nothing");
+    }
+
+    #[test]
+    fn test_resolve_module_path_extensionless() {
+        let dir = tempfile::tempdir().unwrap();
+        // File without .sh extension (like lok8s scripts)
+        let lib = dir.path().join("mylib");
+        fs::write(&lib, "mylib_func() { echo hi; }").unwrap();
+
+        let candidates = resolve_module_path("mylib", dir.path());
+        assert!(candidates.iter().any(|p| p == &lib),
+            "Should find extensionless file, candidates: {:?}", candidates);
+    }
+
+    #[test]
+    fn test_resolve_module_path_prefers_no_extension_first() {
+        let dir = tempfile::tempdir().unwrap();
+        // Both extensionless and .sh exist
+        let no_ext = dir.path().join("mylib");
+        let with_sh = dir.path().join("mylib.sh");
+        fs::write(&no_ext, "from_no_ext() { :; }").unwrap();
+        fs::write(&with_sh, "from_sh() { :; }").unwrap();
+
+        let candidates = resolve_module_path("mylib", dir.path());
+        // The extensionless should come first (matches import::source order)
+        let no_ext_idx = candidates.iter().position(|p| p == &no_ext);
+        let sh_idx = candidates.iter().position(|p| p == &with_sh);
+        assert!(no_ext_idx.is_some(), "Should include extensionless");
+        assert!(sh_idx.is_some(), "Should include .sh");
+        assert!(no_ext_idx.unwrap() < sh_idx.unwrap(),
+            "Extensionless should come before .sh");
+    }
+
+    #[test]
+    fn test_resolve_imports_extensionless_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let lib = dir.path().join("helpers");
+        fs::write(&lib, "helper_func() {\n  echo help\n}\n").unwrap();
+
+        let main_content = "#!/usr/bin/env bash\nimport helpers\nmain() { echo; }\n";
+        let main_sh = dir.path().join("main.sh");
+        fs::write(&main_sh, main_content).unwrap();
+
+        let analysis = analyze(main_content);
+        let imports = resolve_imports(&analysis, &main_sh, 2);
+        assert!(imports.functions.iter().any(|f| f.name == "helper_func"),
+            "Should find functions from extensionless imported file");
+    }
+
+    #[test]
+    fn test_resolve_module_path_with_subdirectory() {
+        let dir = tempfile::tempdir().unwrap();
+        let libs_dir = dir.path().join("libs");
+        fs::create_dir_all(&libs_dir).unwrap();
+        let lib = libs_dir.join("provision");
+        fs::write(&lib, "provision_func() { :; }").unwrap();
+
+        let candidates = resolve_module_path("libs/provision", dir.path());
+        assert!(candidates.iter().any(|p| p == &lib),
+            "Should find libs/provision (extensionless subdir path), candidates: {:?}", candidates);
+    }
+
+    #[test]
+    fn test_resolve_at_prefix_import() {
+        let dir = tempfile::tempdir().unwrap();
+        // Create project structure: root/.git + root/libs/helper
+        fs::create_dir_all(dir.path().join(".git")).unwrap();
+        let libs_dir = dir.path().join("libs");
+        fs::create_dir_all(&libs_dir).unwrap();
+        let helper = libs_dir.join("helper");
+        fs::write(&helper, "at_helper() { :; }").unwrap();
+
+        // Script in a subdirectory
+        let scripts_dir = dir.path().join("scripts");
+        fs::create_dir_all(&scripts_dir).unwrap();
+        let main_content = "#!/usr/bin/env bash\nimport @libs/helper\nmain() { echo; }\n";
+        let main_sh = scripts_dir.join("main.sh");
+        fs::write(&main_sh, main_content).unwrap();
+
+        let analysis = analyze(main_content);
+        let imports = resolve_imports(&analysis, &main_sh, 2);
+        assert!(imports.functions.iter().any(|f| f.name == "at_helper"),
+            "Should find function from @-prefixed import, got: {:?}",
+            imports.functions.iter().map(|f| &f.name).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn test_resolve_tilde_prefix_import() {
+        let dir = tempfile::tempdir().unwrap();
+        // ~ prefix resolves relative to the script file
+        let helper = dir.path().join("helper.sh");
+        fs::write(&helper, "tilde_helper() { :; }").unwrap();
+
+        let main_content = "#!/usr/bin/env bash\nimport ~helper\nmain() { echo; }\n";
+        let main_sh = dir.path().join("main.sh");
+        fs::write(&main_sh, main_content).unwrap();
+
+        let analysis = analyze(main_content);
+        let imports = resolve_imports(&analysis, &main_sh, 2);
+        assert!(imports.functions.iter().any(|f| f.name == "tilde_helper"),
+            "Should find function from ~-prefixed import");
     }
 }

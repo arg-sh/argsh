@@ -40,8 +40,11 @@ pub fn goto_definition(
 
     // 4. Check if cursor is on an import statement — resolve to the imported file
     if let Some(module) = extract_import_module(line, col) {
+        // Strip @/~ prefix for matching against resolved files
+        let clean = module.trim_start_matches('@').trim_start_matches('~');
         for (mod_name, path) in &imports.resolved_files {
-            if *mod_name == module {
+            // Match either the full module name or the clean version
+            if *mod_name == module || *mod_name == clean || mod_name.ends_with(clean) {
                 if let Ok(import_uri) = Url::from_file_path(path) {
                     return Some(Location {
                         uri: import_uri,
