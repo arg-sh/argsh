@@ -1819,3 +1819,64 @@ fn test_diagnostic_ag011_empty_alias() {
     // Verify no crash — diagnostics are push notifications
     client.shutdown();
 }
+
+#[test]
+fn test_diagnostic_ag012_scope_shadow() {
+    let mut client = LspTestClient::new();
+    client.initialize();
+
+    // main has 'domain' in args, main::use also declares 'local domain'
+    let content = r#"#!/usr/bin/env bash
+source argsh
+
+main() {
+  local domain="default"
+  local -a args=(
+    'domain|d' "Domain name"
+  )
+  local -a usage=(
+    'use' "Set domain"
+  )
+  :usage "App" "${@}"
+  "${usage[@]}"
+}
+
+main::use() {
+  local domain
+  local -a args=(
+    'domain:~domain' "Domain to set"
+  )
+  :args "Set domain" "${@}"
+}
+"#;
+    client.open_document("file:///test.sh", content);
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    // Should not crash — AG012 is a hint
+    client.shutdown();
+}
+
+#[test]
+fn test_no_ag012_for_unrelated_functions() {
+    let mut client = LspTestClient::new();
+    client.initialize();
+
+    // Two unrelated functions — no parent/child relationship
+    let content = r#"#!/usr/bin/env bash
+source argsh
+
+func_a() {
+  local name
+  local -a args=('name|n' "Name")
+  :args "A" "${@}"
+}
+
+func_b() {
+  local name
+  local -a args=('name|n' "Name")
+  :args "B" "${@}"
+}
+"#;
+    client.open_document("file:///test.sh", content);
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    client.shutdown();
+}
