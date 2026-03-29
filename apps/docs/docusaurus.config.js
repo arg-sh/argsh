@@ -8,7 +8,7 @@ const excludeSidebarResults = require("./src/utils/exclude-sidebar-results")
 
 const announcementBar = JSON.parse(fs.readFileSync("./announcement.json"))
 
-/** @type {import('@medusajs/docs').MedusaDocusaurusConfig} */
+/** @type {import('@docusaurus/types').Config} */
 const config = {
   title: "Arg.sh",
   tagline: "Explore and learn how to use arg.sh",
@@ -119,9 +119,9 @@ const config = {
       defaultFiltersByPath: [],
       defaultFilters: ["docs"],
     },
-    analytics: {
-      apiKey: process.env.SEGMENT_API_KEY || "temp",
-    },
+    // analytics: {
+    //   apiKey: process.env.SEGMENT_API_KEY || "temp",
+    // },
     prism: {
       defaultLanguage: "ts",
       additionalLanguages: ["bash", "json"],
@@ -194,15 +194,7 @@ const config = {
         autoCollapseCategories: true,
       },
     },
-    cloudinaryConfig: {
-      cloudName: process.env.CLOUDINARY_CLOUD_NAME || "",
-      flags: ["fl_lossy", "f_auto"],
-      resize: {
-        action: "pad",
-        aspectRatio: "16:9",
-      },
-      roundCorners: 16,
-    },
+    // cloudinaryConfig removed (was from Medusa template)
   },
   presets: [
     [
@@ -232,9 +224,9 @@ const config = {
         theme: {
           customCss: require.resolve("./src/css/custom.css"),
         },
-        gtag: {
-          trackingID: "G-S7G7X3JYS3",
-        },
+        // gtag: {
+        //   trackingID: "YOUR-TRACKING-ID",
+        // },
         sitemap: {
           filename: "sitemap-docs.xml",
         },
