@@ -320,11 +320,21 @@ fn check_usage_function_targets(
         let target = if let Some(ref explicit) = entry.explicit_func {
             explicit.clone()
         } else {
+            // Namespace resolution (mirrors :usage runtime):
+            // 1) <caller>::<cmd>       — full caller prefix
             let prefixed = format!("{}::{}", func.name, entry.name);
             if known_funcs.contains(prefixed.as_str()) { continue; }
-            if known_funcs.contains(entry.name.as_str()) { continue; }
+            // 2) <last_segment>::<cmd> — last :: segment of caller
+            if let Some(pos) = func.name.rfind("::") {
+                let last_seg = &func.name[pos + 2..];
+                let seg_prefixed = format!("{}::{}", last_seg, entry.name);
+                if known_funcs.contains(seg_prefixed.as_str()) { continue; }
+            }
+            // 3) argsh::<cmd>          — framework namespace
             let argsh_prefixed = format!("argsh::{}", entry.name);
             if known_funcs.contains(argsh_prefixed.as_str()) { continue; }
+            // 4) <cmd>                 — bare function name
+            if known_funcs.contains(entry.name.as_str()) { continue; }
             entry.name.clone()
         };
 
@@ -410,6 +420,13 @@ fn check_bare_function_resolution(
         if known_funcs.contains(prefixed.as_str()) {
             continue; // properly namespaced — all good
         }
+        // Last segment prefix: main::manifest → manifest::subcmd
+        if let Some(pos) = func.name.rfind("::") {
+            let seg_prefixed = format!("{}::{}", &func.name[pos + 2..], entry.name);
+            if known_funcs.contains(seg_prefixed.as_str()) {
+                continue; // namespaced via last segment — fine
+            }
+        }
         let argsh_prefixed = format!("argsh::{}", entry.name);
         if known_funcs.contains(argsh_prefixed.as_str()) {
             continue; // argsh namespace — fine
@@ -484,7 +501,13 @@ fn check_scope_shadow(
                 return target == &func.name;
             }
             let prefixed = format!("{}::{}", parent.name, entry.name);
-            prefixed == func.name || entry.name == func.name
+            if prefixed == func.name { return true; }
+            // Last segment prefix: main::manifest → manifest::subcmd
+            if let Some(pos) = parent.name.rfind("::") {
+                let seg_prefixed = format!("{}::{}", &parent.name[pos + 2..], entry.name);
+                if seg_prefixed == func.name { return true; }
+            }
+            entry.name == func.name
         })
     });
 
@@ -560,7 +583,7 @@ fn check_unresolved_imports(
         .collect();
 
     for imp in &analysis.imports {
-        let clean = imp.module.trim_start_matches('@').trim_start_matches('~');
+        let clean = imp.module.trim_start_matches(&['@', '~', '^'] as &[char]);
         let found = resolved_modules.iter().any(|r| {
             r == &imp.module || r == clean || r.ends_with(clean)
         });

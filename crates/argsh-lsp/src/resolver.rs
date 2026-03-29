@@ -55,18 +55,22 @@ fn resolve_recursive(
     for imp in &analysis.imports {
         let module = &imp.module;
 
-        // Handle import prefixes:
+        // Handle import prefixes (mirrors import.sh):
         // @foo → relative to PATH_BASE (project root)
+        // ^foo → relative to PATH_SCRIPTS
         // ~foo → relative to the script itself
         // foo  → relative to ARGSH_SOURCE directory (base_dir)
         let (clean_module, search_dir) = if module.starts_with('@') {
-            // @ prefix: relative to project root — walk up to find it
             let stripped = &module[1..];
             let project_root = find_project_root(base_dir).unwrap_or_else(|| base_dir.to_path_buf());
             (stripped.to_string(), project_root)
+        } else if module.starts_with('^') {
+            // ^ prefix: relative to PATH_SCRIPTS — try to find .scripts/ directory
+            let stripped = &module[1..];
+            let project_root = find_project_root(base_dir).unwrap_or_else(|| base_dir.to_path_buf());
+            let scripts_dir = find_scripts_dir(&project_root).unwrap_or(base_dir.to_path_buf());
+            (stripped.to_string(), scripts_dir)
         } else if module.starts_with('~') {
-            // ~ prefix: relative to the script file's directory
-            (&module[1..]).to_string();
             (module[1..].to_string(), base_dir.to_path_buf())
         } else {
             (module.clone(), base_dir.to_path_buf())
@@ -155,6 +159,26 @@ fn find_project_root(start: &Path) -> Option<PathBuf> {
         }
         if !dir.pop() {
             break;
+        }
+    }
+    None
+}
+
+/// Find the PATH_SCRIPTS directory from a project root.
+/// Looks for common script directory names.
+fn find_scripts_dir(project_root: &Path) -> Option<PathBuf> {
+    let candidates = [".scripts", "scripts", "bin"];
+    for name in &candidates {
+        let dir = project_root.join(name);
+        if dir.is_dir() {
+            return Some(dir);
+        }
+    }
+    // Also check PATH_SCRIPTS env var
+    if let Ok(path) = std::env::var("PATH_SCRIPTS") {
+        let p = PathBuf::from(path);
+        if p.is_dir() {
+            return Some(p);
         }
     }
     None
@@ -446,5 +470,118 @@ mod tests {
         let imports = resolve_imports(&analysis, &main_sh, 2);
         assert!(imports.functions.iter().any(|f| f.name == "tilde_helper"),
             "Should find function from ~-prefixed import");
+    }
+
+    #[test]
+    fn test_find_scripts_dir_dot_scripts() {
+        let dir = tempfile::tempdir().unwrap();
+        let scripts = dir.path().join(".scripts");
+        fs::create_dir_all(&scripts).unwrap();
+
+        let found = find_scripts_dir(dir.path());
+        assert_eq!(found, Some(scripts));
+    }
+
+    #[test]
+    fn test_find_scripts_dir_scripts() {
+        let dir = tempfile::tempdir().unwrap();
+        let scripts = dir.path().join("scripts");
+        fs::create_dir_all(&scripts).unwrap();
+
+        let found = find_scripts_dir(dir.path());
+        assert_eq!(found, Some(scripts));
+    }
+
+    #[test]
+    fn test_find_scripts_dir_bin() {
+        let dir = tempfile::tempdir().unwrap();
+        let bin = dir.path().join("bin");
+        fs::create_dir_all(&bin).unwrap();
+
+        let found = find_scripts_dir(dir.path());
+        assert_eq!(found, Some(bin));
+    }
+
+    #[test]
+    fn test_find_scripts_dir_prefers_dot_scripts() {
+        let dir = tempfile::tempdir().unwrap();
+        // Both .scripts and scripts exist — .scripts should win
+        fs::create_dir_all(dir.path().join(".scripts")).unwrap();
+        fs::create_dir_all(dir.path().join("scripts")).unwrap();
+
+        let found = find_scripts_dir(dir.path());
+        assert_eq!(found, Some(dir.path().join(".scripts")));
+    }
+
+    #[test]
+    fn test_find_scripts_dir_none() {
+        let dir = tempfile::tempdir().unwrap();
+        // No scripts directory at all
+        let found = find_scripts_dir(dir.path());
+        assert_eq!(found, None);
+    }
+
+    #[test]
+    fn test_resolve_caret_prefix_import() {
+        let dir = tempfile::tempdir().unwrap();
+        // Create project structure: root/.git + root/.scripts/utils/verbose
+        fs::create_dir_all(dir.path().join(".git")).unwrap();
+        let scripts_dir = dir.path().join(".scripts");
+        let utils_dir = scripts_dir.join("utils");
+        fs::create_dir_all(&utils_dir).unwrap();
+        let verbose = utils_dir.join("verbose");
+        fs::write(&verbose, "verbose_func() { :; }").unwrap();
+
+        // Script in a subdirectory
+        let sub = dir.path().join("sub");
+        fs::create_dir_all(&sub).unwrap();
+        let main_content = "#!/usr/bin/env bash\nimport ^utils/verbose\nmain() { echo; }\n";
+        let main_sh = sub.join("main.sh");
+        fs::write(&main_sh, main_content).unwrap();
+
+        let analysis = analyze(main_content);
+        let imports = resolve_imports(&analysis, &main_sh, 2);
+        assert!(imports.functions.iter().any(|f| f.name == "verbose_func"),
+            "Should find function from ^-prefixed import, got: {:?}",
+            imports.functions.iter().map(|f| &f.name).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn test_resolve_caret_prefix_with_sh_extension() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join(".git")).unwrap();
+        let scripts_dir = dir.path().join(".scripts");
+        fs::create_dir_all(&scripts_dir).unwrap();
+        let helper = scripts_dir.join("helper.sh");
+        fs::write(&helper, "caret_helper() { :; }").unwrap();
+
+        let main_content = "#!/usr/bin/env bash\nimport ^helper\nmain() { echo; }\n";
+        let main_sh = dir.path().join("main.sh");
+        fs::write(&main_sh, main_content).unwrap();
+
+        let analysis = analyze(main_content);
+        let imports = resolve_imports(&analysis, &main_sh, 2);
+        assert!(imports.functions.iter().any(|f| f.name == "caret_helper"),
+            "Should find function from ^-prefixed import with .sh extension");
+    }
+
+    #[test]
+    fn test_resolve_caret_prefix_resolved_files() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join(".git")).unwrap();
+        let scripts_dir = dir.path().join(".scripts");
+        fs::create_dir_all(&scripts_dir).unwrap();
+        let lib = scripts_dir.join("mylib");
+        fs::write(&lib, "mylib_func() { :; }").unwrap();
+
+        let main_content = "#!/usr/bin/env bash\nimport ^mylib\nmain() { echo; }\n";
+        let main_sh = dir.path().join("main.sh");
+        fs::write(&main_sh, main_content).unwrap();
+
+        let analysis = analyze(main_content);
+        let imports = resolve_imports(&analysis, &main_sh, 2);
+        assert!(imports.resolved_files.iter().any(|(name, _)| name == "^mylib"),
+            "resolved_files should preserve ^ prefix in module name, got: {:?}",
+            imports.resolved_files.iter().map(|(n, _)| n).collect::<Vec<_>>());
     }
 }

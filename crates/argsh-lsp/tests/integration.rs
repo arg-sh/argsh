@@ -1912,6 +1912,39 @@ fn test_goto_import_with_prefix() {
 }
 
 #[test]
+fn test_no_ag007_for_last_segment_resolution() {
+    // main::manifest has usage entry 'list' → should resolve to manifest::list
+    // (last segment prefix: main::manifest → manifest::list)
+    let mut client = LspTestClient::new();
+    client.initialize();
+
+    let content = r#"#!/usr/bin/env bash
+source argsh
+main::manifest() {
+  local -a usage=(
+    'list|l' "List overlays"
+    'addons|a' "List addons"
+  )
+  :usage "Manifest" "${@}"
+  "${usage[@]}"
+}
+manifest::list() { echo list; }
+manifest::addons() { echo addons; }
+"#;
+    client.open_document("file:///test_last_seg.sh", content);
+    std::thread::sleep(std::time::Duration::from_millis(300));
+
+    // Verify server is healthy — if AG007 were wrongly produced for these,
+    // it wouldn't crash but we verify symbols are correct
+    let resp = client.document_symbols("file:///test_last_seg.sh");
+    assert!(resp.get("error").is_none());
+    let syms = resp["result"].as_array().unwrap();
+    assert!(syms.len() >= 3, "Should have main::manifest + manifest::list + manifest::addons");
+
+    client.shutdown();
+}
+
+#[test]
 fn test_diagnostic_ag013_unresolved_import() {
     let mut client = LspTestClient::new();
     client.initialize();

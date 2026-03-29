@@ -267,6 +267,17 @@ fi
   contains "beta" stdout
 }
 
+@test "can import from ^" {
+  (
+    export PATH_SCRIPTS="${PATH_FIXTURES}/scripts"
+    import "^caret_lib"
+  ) >"${stdout}" 2>"${stderr}" || status="${?}"
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains "^caret" stdout
+}
+
 @test "cache prevents re-sourcing" {
   (
     export PATH_BASE="${PATH_FIXTURES}"

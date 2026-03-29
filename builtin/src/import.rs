@@ -224,13 +224,16 @@ fn get_argsh_source_path() -> Option<String> {
 }
 
 /// Resolve module path following import.sh semantics.
-/// Prefixes: @ → PATH_BASE, ~ → ARGSH_SOURCE/BASH_SOURCE[-1],
+/// Prefixes: @ → PATH_BASE, ^ → PATH_SCRIPTS, ~ → ARGSH_SOURCE/BASH_SOURCE[-1],
 /// plain → ARGSH_SOURCE/__ARGSH_LIB_DIR/BASH_SOURCE[0]
 /// Extension fallback: "", ".sh", ".bash"
 fn resolve_module_path(module: &str) -> Option<String> {
     let base_path = if let Some(rest) = module.strip_prefix('@') {
         let path_base = shell::get_scalar("PATH_BASE")?;
         format!("{}/{}", path_base, rest)
+    } else if let Some(rest) = module.strip_prefix('^') {
+        let path_scripts = shell::get_scalar("PATH_SCRIPTS")?;
+        format!("{}/{}", path_scripts, rest)
     } else if let Some(rest) = module.strip_prefix('~') {
         let src = get_argsh_source_path()
             .or_else(shell::get_bash_source_last)?;
