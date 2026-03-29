@@ -11,6 +11,9 @@ on:
       - 'crates/**'
       - 'vscode-argsh/**'
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   test-syntax:
     name: argsh-syntax tests
