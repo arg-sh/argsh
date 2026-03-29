@@ -78,15 +78,22 @@ fn resolve_recursive(
 
         let candidates = resolve_module_path(&clean_module, &search_dir);
 
-        for path in candidates {
+        // First-match-wins: mirrors import::source which returns on the first
+        // existing file. Without this, both `foo` and `foo.sh` could be imported.
+        let resolved = candidates.iter().find(|p| {
+            if let Ok(c) = p.canonicalize() {
+                !visited.contains(&c)
+            } else {
+                false
+            }
+        });
+
+        if let Some(path) = resolved {
             let canonical = match path.canonicalize() {
                 Ok(p) => p,
                 Err(_) => continue,
             };
 
-            if visited.contains(&canonical) {
-                continue;
-            }
             visited.insert(canonical.clone());
 
             // Read and analyze the file
@@ -167,18 +174,19 @@ fn find_project_root(start: &Path) -> Option<PathBuf> {
 /// Find the PATH_SCRIPTS directory from a project root.
 /// Looks for common script directory names.
 fn find_scripts_dir(project_root: &Path) -> Option<PathBuf> {
+    // Prefer explicit PATH_SCRIPTS env var (matches runtime behavior)
+    if let Ok(path) = std::env::var("PATH_SCRIPTS") {
+        let p = PathBuf::from(path);
+        if p.is_dir() {
+            return Some(p);
+        }
+    }
+    // Heuristic fallback: common script directory names
     let candidates = [".scripts", "scripts", "bin"];
     for name in &candidates {
         let dir = project_root.join(name);
         if dir.is_dir() {
             return Some(dir);
-        }
-    }
-    // Also check PATH_SCRIPTS env var
-    if let Ok(path) = std::env::var("PATH_SCRIPTS") {
-        let p = PathBuf::from(path);
-        if p.is_dir() {
-            return Some(p);
         }
     }
     None

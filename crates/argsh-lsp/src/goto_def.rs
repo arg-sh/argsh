@@ -43,8 +43,8 @@ pub fn goto_definition(
         // Strip @/~/^ prefix for matching against resolved files
         let clean = module.trim_start_matches(&['@', '~', '^'] as &[char]);
         for (mod_name, path) in &imports.resolved_files {
-            // Match either the full module name or the clean version
-            if *mod_name == module || *mod_name == clean || mod_name.ends_with(clean) {
+            let clean_resolved = mod_name.trim_start_matches(&['@', '~', '^'] as &[char]);
+            if *mod_name == module || clean_resolved == clean {
                 if let Ok(import_uri) = Url::from_file_path(path) {
                     return Some(Location {
                         uri: import_uri,

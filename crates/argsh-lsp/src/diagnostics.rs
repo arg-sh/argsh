@@ -585,7 +585,9 @@ fn check_unresolved_imports(
     for imp in &analysis.imports {
         let clean = imp.module.trim_start_matches(&['@', '~', '^'] as &[char]);
         let found = resolved_modules.iter().any(|r| {
-            r == &imp.module || r == clean || r.ends_with(clean)
+            if r == &imp.module { return true; }
+            let clean_resolved = r.trim_start_matches(&['@', '~', '^'] as &[char]);
+            clean_resolved == clean
         });
         if !found {
             diags.push(make_diag(
