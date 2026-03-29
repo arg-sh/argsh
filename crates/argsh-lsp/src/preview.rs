@@ -1,5 +1,7 @@
 //! Generate an HTML preview of an argsh script for the VSCode webview.
 
+use std::collections::HashMap;
+
 use argsh_syntax::document::DocumentAnalysis;
 use argsh_syntax::field::FieldDef;
 
@@ -315,35 +317,31 @@ pre {{
         ));
         html.push_str("<p style=\"color: var(--text-dim); font-size: 0.85em; margin-bottom: 12px;\">Commands exposed via <code>./script mcp</code></p>\n");
 
-        // Find the script name from the first dispatcher or first function
-        let script_prefix = analysis.functions.iter()
-            .find(|f| f.calls_usage)
-            .or_else(|| analysis.functions.first())
-            .map(|f| f.name.split("::").next().unwrap_or(&f.name))
-            .unwrap_or("script");
+        // Pre-build annotation lookup: function_name -> Vec<annotation>
+        let mut annotation_map: HashMap<String, Vec<String>> = HashMap::new();
+        for parent in &analysis.functions {
+            for entry in &parent.usage_entries {
+                if entry.is_group_separator || entry.annotations.is_empty() { continue; }
+                let targets = [
+                    entry.explicit_func.clone().unwrap_or_default(),
+                    format!("{}::{}", parent.name, entry.name),
+                    entry.name.clone(),
+                ];
+                for target in targets {
+                    if !target.is_empty() {
+                        annotation_map.entry(target).or_default().extend(entry.annotations.clone());
+                    }
+                }
+            }
+        }
 
         for func in &leaf_funcs {
             // MCP tool name: script_funcname (:: replaced with _)
-            let tool_name = format!("{}_{}", script_prefix, func.name.replace("::", "_"));
+            let tool_name = format!("{}_{}", script_name, func.name.replace("::", "_"));
             let desc = func.title.as_deref().unwrap_or("");
 
-            // Collect annotations from usage entries that reference this function
-            let annotations: Vec<String> = analysis.functions.iter()
-                .flat_map(|parent| parent.usage_entries.iter())
-                .filter(|entry| {
-                    // Check if this usage entry maps to our function
-                    let prefixed = format!("{}::{}",
-                        analysis.functions.iter()
-                            .find(|p| p.usage_entries.iter().any(|e| std::ptr::eq(e, *entry)))
-                            .map(|p| p.name.as_str())
-                            .unwrap_or(""),
-                        entry.name
-                    );
-                    prefixed == func.name || entry.name == func.name
-                        || entry.explicit_func.as_deref() == Some(&func.name)
-                })
-                .flat_map(|entry| entry.annotations.iter().cloned())
-                .collect();
+            // Collect annotations from pre-built map
+            let annotations = annotation_map.get(&func.name).cloned().unwrap_or_default();
 
             let annotation_badges = if annotations.is_empty() {
                 String::new()
@@ -405,8 +403,26 @@ pre {{
 }
 
 /// Build a JSON string representing what `tools/list` would return.
-fn build_mcp_tools(analysis: &DocumentAnalysis) -> String {
+fn build_mcp_tools(analysis: &DocumentAnalysis, script_name: &str) -> String {
     let mut tools = Vec::new();
+
+    // Pre-build annotation lookup: function_name -> Vec<annotation>
+    let mut annotation_map: HashMap<String, Vec<String>> = HashMap::new();
+    for parent in &analysis.functions {
+        for entry in &parent.usage_entries {
+            if entry.is_group_separator || entry.annotations.is_empty() { continue; }
+            let targets = [
+                entry.explicit_func.clone().unwrap_or_default(),
+                format!("{}::{}", parent.name, entry.name),
+                entry.name.clone(),
+            ];
+            for target in targets {
+                if !target.is_empty() {
+                    annotation_map.entry(target).or_default().extend(entry.annotations.clone());
+                }
+            }
+        }
+    }
 
     for func in &analysis.functions {
         // Only leaf functions (has :args, no :usage dispatching)
@@ -449,37 +465,29 @@ fn build_mcp_tools(analysis: &DocumentAnalysis) -> String {
         if !required_list.is_empty() {
             schema.insert("required".to_string(), serde_json::Value::Array(required_list));
         }
+        schema.insert("additionalProperties".to_string(), serde_json::Value::Bool(false));
 
         let mut tool = serde_json::Map::new();
-        let tool_name = func.name.replace("::", "_");
+        let tool_name = format!("{}_{}", script_name, func.name.replace("::", "_"));
         tool.insert("name".to_string(), serde_json::Value::String(tool_name));
         // Match runtime: both title and description
         tool.insert("title".to_string(), serde_json::Value::String(description.to_string()));
         tool.insert("description".to_string(), serde_json::Value::String(description.to_string()));
         tool.insert("inputSchema".to_string(), serde_json::Value::Object(schema));
 
-        // Annotations: nested under "annotations" object to match runtime MCP format
-        // Also handle @json → outputSchema
+        // Annotations from pre-built map
         let mut annotations_obj = serde_json::Map::new();
         let mut has_json = false;
 
-        for parent in &analysis.functions {
-            for entry in &parent.usage_entries {
-                if entry.is_group_separator { continue; }
-                let matches = entry.explicit_func.as_deref() == Some(&func.name)
-                    || format!("{}::{}", parent.name, entry.name) == func.name
-                    || entry.name == func.name;
-                if !matches { continue; }
-                for ann in &entry.annotations {
-                    match ann.as_str() {
-                        "readonly" => { annotations_obj.insert("readOnlyHint".to_string(), serde_json::Value::Bool(true)); }
-                        "destructive" => { annotations_obj.insert("destructiveHint".to_string(), serde_json::Value::Bool(true)); }
-                        "idempotent" => { annotations_obj.insert("idempotentHint".to_string(), serde_json::Value::Bool(true)); }
-                        "openworld" => { annotations_obj.insert("openWorldHint".to_string(), serde_json::Value::Bool(true)); }
-                        "json" => { has_json = true; }
-                        _ => {}
-                    }
-                }
+        let annotations = annotation_map.get(&func.name).cloned().unwrap_or_default();
+        for ann in &annotations {
+            match ann.as_str() {
+                "readonly" => { annotations_obj.insert("readOnlyHint".to_string(), serde_json::Value::Bool(true)); }
+                "destructive" => { annotations_obj.insert("destructiveHint".to_string(), serde_json::Value::Bool(true)); }
+                "idempotent" => { annotations_obj.insert("idempotentHint".to_string(), serde_json::Value::Bool(true)); }
+                "openworld" => { annotations_obj.insert("openWorldHint".to_string(), serde_json::Value::Bool(true)); }
+                "json" => { has_json = true; }
+                _ => {}
             }
         }
 
@@ -567,8 +575,8 @@ fn build_docgen_yaml(analysis: &DocumentAnalysis, _content: &str) -> String {
 }
 
 /// Export MCP tool schema as pretty-printed JSON.
-pub fn export_mcp_json(analysis: &DocumentAnalysis) -> String {
-    build_mcp_tools(analysis)
+pub fn export_mcp_json(analysis: &DocumentAnalysis, script_name: &str) -> String {
+    build_mcp_tools(analysis, script_name)
 }
 
 /// Export docgen YAML.

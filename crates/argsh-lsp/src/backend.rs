@@ -183,6 +183,11 @@ impl LanguageServer for Backend {
         }
     }
 
+    async fn did_save(&self, params: DidSaveTextDocumentParams) {
+        // Re-publish diagnostics on save (content already updated via didChange)
+        self.publish_diagnostics(&params.text_document.uri).await;
+    }
+
     async fn did_close(&self, params: DidCloseTextDocumentParams) {
         let uri = params.text_document.uri;
         self.documents.remove(&uri);
@@ -296,7 +301,12 @@ impl LanguageServer for Backend {
                 if let Some(uri_val) = params.arguments.first() {
                     if let Ok(uri) = serde_json::from_value::<Url>(uri_val.clone()) {
                         if let Some(doc) = self.documents.get(&uri) {
-                            let json = preview::export_mcp_json(&doc.analysis);
+                            let script_name = uri.path_segments()
+                                .and_then(|s| s.last())
+                                .unwrap_or("script")
+                                .strip_suffix(".sh")
+                                .unwrap_or("script");
+                            let json = preview::export_mcp_json(&doc.analysis, script_name);
                             return Ok(Some(serde_json::Value::String(json)));
                         }
                     }

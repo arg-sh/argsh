@@ -3,6 +3,7 @@ use tower_lsp::lsp_types::*;
 use argsh_syntax::document::{analyze, DocumentAnalysis};
 
 use crate::resolver::ResolvedImports;
+use crate::util::extract_word_at;
 
 /// Go-to-definition: resolve the symbol under the cursor to a location.
 pub fn goto_definition(
@@ -332,40 +333,3 @@ fn extract_import_module(line: &str, _col: usize) -> Option<String> {
     None
 }
 
-/// Extract the word (identifier with :: allowed) at the given column.
-fn extract_word_at(line: &str, col: usize) -> String {
-    if col > line.len() {
-        return String::new();
-    }
-
-    let bytes = line.as_bytes();
-
-    // Find start of word
-    let mut start = col;
-    while start > 0 {
-        let prev = start - 1;
-        let ch = bytes[prev] as char;
-        if ch.is_ascii_alphanumeric() || ch == '_' || ch == ':' || ch == '-' {
-            start = prev;
-        } else {
-            break;
-        }
-    }
-
-    // Find end of word
-    let mut end = col;
-    while end < bytes.len() {
-        let ch = bytes[end] as char;
-        if ch.is_ascii_alphanumeric() || ch == '_' || ch == ':' || ch == '-' {
-            end += 1;
-        } else {
-            break;
-        }
-    }
-
-    if start < end {
-        line[start..end].to_string()
-    } else {
-        String::new()
-    }
-}

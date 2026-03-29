@@ -4,6 +4,7 @@ use argsh_syntax::document::{ArgsArrayEntry, DocumentAnalysis, FunctionInfo};
 use argsh_syntax::field::FieldDef;
 
 use crate::resolver::ResolvedImports;
+use crate::util::extract_word_at;
 
 /// Format a type string, appending `[]` when the field backs an array variable.
 fn format_type(field: &FieldDef, is_array: bool) -> String {
@@ -665,39 +666,6 @@ fn hover_usage_entry(
         }),
         range: None,
     })
-}
-
-/// Extract word at cursor position.
-///
-/// Only includes alphanumeric, underscore, and `::` for namespaces.
-/// Does NOT include `|`, `-`, `#`, `~`, `+`, `!` which are spec
-/// modifiers — those caused false matches when hovering inside
-/// args array entries.
-fn extract_word_at(line: &str, col: usize) -> String {
-    if col >= line.len() {
-        return String::new();
-    }
-    let bytes = line.as_bytes();
-    // Simple word extraction: alphanumeric, underscore, and :: for namespaces
-    let mut start = col;
-    while start > 0 {
-        let ch = bytes[start - 1] as char;
-        if ch.is_ascii_alphanumeric() || ch == '_' || ch == ':' || ch == '-' {
-            start -= 1;
-        } else {
-            break;
-        }
-    }
-    let mut end = col;
-    while end < bytes.len() {
-        let ch = bytes[end] as char;
-        if ch.is_ascii_alphanumeric() || ch == '_' || ch == ':' || ch == '-' {
-            end += 1;
-        } else {
-            break;
-        }
-    }
-    line[start..end].to_string()
 }
 
 /// Check if the cursor is inside a single-quoted string within an args/usage array,

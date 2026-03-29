@@ -87,7 +87,8 @@ class ArgshCommandTreeProvider implements vscode.TreeDataProvider<CommandTreeIte
     }
 
     // Highlight active function
-    if (this.activeItem && element.name === this.activeItem.name) {
+    if (this.activeItem && element.name === this.activeItem.name
+        && element.range.start.line === this.activeItem.range.start.line) {
       item.iconPath = new vscode.ThemeIcon(
         hasChildren ? 'git-merge' : 'terminal',
         new vscode.ThemeColor('charts.green')

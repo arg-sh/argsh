@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use tower_lsp::lsp_types::*;
 
 use argsh_syntax::document::DocumentAnalysis;
+use crate::util::extract_word_at;
 
 pub fn prepare_rename(
     analysis: &DocumentAnalysis,
@@ -164,33 +165,6 @@ fn replace_word(line: &str, old: &str, new: &str) -> String {
     }
     result.push_str(remaining);
     result
-}
-
-fn extract_word_at(line: &str, col: usize) -> String {
-    let bytes = line.as_bytes();
-    let len = bytes.len();
-    if col >= len {
-        return String::new();
-    }
-    let mut start = col;
-    while start > 0 {
-        let ch = bytes[start - 1] as char;
-        if ch.is_ascii_alphanumeric() || ch == '_' || ch == ':' || ch == '-' {
-            start -= 1;
-        } else {
-            break;
-        }
-    }
-    let mut end = col;
-    while end < len {
-        let ch = bytes[end] as char;
-        if ch.is_ascii_alphanumeric() || ch == '_' || ch == ':' || ch == '-' {
-            end += 1;
-        } else {
-            break;
-        }
-    }
-    line[start..end].to_string()
 }
 
 fn word_range(line: &str, col: usize, word: &str, line_idx: usize) -> Range {
