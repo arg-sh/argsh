@@ -12,6 +12,8 @@ pub struct ResolvedImports {
     pub functions: Vec<FunctionInfo>,
     /// All resolved file paths (for go-to-definition across files).
     pub resolved_files: Vec<(String, PathBuf)>, // (module_name, path)
+    /// Whether import resolution actually ran (false when max_depth == 0).
+    pub resolution_ran: bool,
 }
 
 impl Default for ResolvedImports {
@@ -19,6 +21,7 @@ impl Default for ResolvedImports {
         Self {
             functions: Vec::new(),
             resolved_files: Vec::new(),
+            resolution_ran: false,
         }
     }
 }
@@ -28,6 +31,7 @@ impl Default for ResolvedImports {
 /// Circular imports are handled via canonicalized path tracking.
 pub fn resolve_imports(analysis: &DocumentAnalysis, base_path: &Path, max_depth: usize) -> ResolvedImports {
     let mut result = ResolvedImports::default();
+    result.resolution_ran = max_depth > 0;
     let mut visited = HashSet::new();
     // Add the current file to visited to prevent self-referencing
     if let Ok(canonical) = base_path.canonicalize() {

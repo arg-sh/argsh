@@ -192,8 +192,8 @@ fn goto_usage_entry(
             if let Some(pos) = func.name.rfind("::") {
                 c.push(format!("{}::{}", &func.name[pos + 2..], entry.name));
             }
-            c.push(entry.name.clone());
             c.push(format!("argsh::{}", entry.name));
+            c.push(entry.name.clone());
             c
         };
 

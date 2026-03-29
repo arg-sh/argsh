@@ -47,8 +47,10 @@ pub fn generate_diagnostics(
         check_scope_shadow(func, analysis, content, &mut diags);
     }
 
-    // Check unresolved imports
-    check_unresolved_imports(analysis, imports, &mut diags);
+    // Check unresolved imports (only when resolution actually ran — skip if resolveDepth=0)
+    if imports.resolution_ran {
+        check_unresolved_imports(analysis, imports, &mut diags);
+    }
 
     // Filter out suppressed diagnostics
     diags.retain(|d| !is_suppressed(d, &suppressed));
