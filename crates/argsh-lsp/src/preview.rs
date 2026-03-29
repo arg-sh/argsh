@@ -453,11 +453,16 @@ fn build_mcp_tools(analysis: &DocumentAnalysis) -> String {
         let mut tool = serde_json::Map::new();
         let tool_name = func.name.replace("::", "_");
         tool.insert("name".to_string(), serde_json::Value::String(tool_name));
+        // Match runtime: both title and description
+        tool.insert("title".to_string(), serde_json::Value::String(description.to_string()));
         tool.insert("description".to_string(), serde_json::Value::String(description.to_string()));
         tool.insert("inputSchema".to_string(), serde_json::Value::Object(schema));
 
-        // Annotations: leaf functions have empty usage_entries, so find
-        // annotations from parent functions' usage entries that reference this leaf
+        // Annotations: nested under "annotations" object to match runtime MCP format
+        // Also handle @json → outputSchema
+        let mut annotations_obj = serde_json::Map::new();
+        let mut has_json = false;
+
         for parent in &analysis.functions {
             for entry in &parent.usage_entries {
                 if entry.is_group_separator { continue; }
@@ -466,16 +471,23 @@ fn build_mcp_tools(analysis: &DocumentAnalysis) -> String {
                     || entry.name == func.name;
                 if !matches { continue; }
                 for ann in &entry.annotations {
-                    let hint_key = match ann.as_str() {
-                        "readonly" => "readOnlyHint",
-                        "destructive" => "destructiveHint",
-                        "idempotent" => "idempotentHint",
-                        "openworld" => "openWorldHint",
-                        _ => { continue; }
-                    };
-                    tool.insert(hint_key.to_string(), serde_json::Value::Bool(true));
+                    match ann.as_str() {
+                        "readonly" => { annotations_obj.insert("readOnlyHint".to_string(), serde_json::Value::Bool(true)); }
+                        "destructive" => { annotations_obj.insert("destructiveHint".to_string(), serde_json::Value::Bool(true)); }
+                        "idempotent" => { annotations_obj.insert("idempotentHint".to_string(), serde_json::Value::Bool(true)); }
+                        "openworld" => { annotations_obj.insert("openWorldHint".to_string(), serde_json::Value::Bool(true)); }
+                        "json" => { has_json = true; }
+                        _ => {}
+                    }
                 }
             }
+        }
+
+        if !annotations_obj.is_empty() {
+            tool.insert("annotations".to_string(), serde_json::Value::Object(annotations_obj));
+        }
+        if has_json {
+            tool.insert("outputSchema".to_string(), serde_json::json!({}));
         }
 
         tools.push(serde_json::Value::Object(tool));
