@@ -1,0 +1,162 @@
+{
+  "name": "argsh",
+  "displayName": "argsh",
+  "description": "Language support for argsh — structured Bash scripting framework",
+  "version": "0.1.0",
+  "publisher": "arg-sh",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/arg-sh/argsh"
+  },
+  "engines": {
+    "vscode": "^1.82.0"
+  },
+  "icon": "icon.png",
+  "categories": ["Programming Languages", "Linters", "Snippets"],
+  "activationEvents": ["onLanguage:shellscript"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "argsh.showPreview",
+        "title": "Show Script Preview",
+        "icon": "$(preview)",
+        "category": "argsh"
+      },
+      {
+        "command": "argsh.showHelp",
+        "title": "Show Help for Current Function",
+        "category": "argsh"
+      },
+      {
+        "command": "argsh.validateScript",
+        "title": "Validate Script",
+        "category": "argsh"
+      },
+      {
+        "command": "argsh.restartServer",
+        "title": "Restart Language Server",
+        "category": "argsh"
+      },
+      {
+        "command": "argsh.formatArrays",
+        "title": "Format argsh Arrays",
+        "category": "argsh"
+      },
+      {
+        "command": "argsh.exportMcpJson",
+        "title": "Export MCP JSON",
+        "category": "argsh"
+      },
+      {
+        "command": "argsh.exportYaml",
+        "title": "Export YAML",
+        "category": "argsh"
+      },
+      {
+        "command": "argsh.exportJson",
+        "title": "Export JSON",
+        "category": "argsh"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "argsh.showPreview",
+        "key": "ctrl+shift+a",
+        "when": "resourceLangId == shellscript"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "argsh.showPreview",
+          "when": "resourceLangId == shellscript",
+          "group": "navigation"
+        }
+      ]
+    },
+    "grammars": [
+      {
+        "scopeName": "source.shell.argsh",
+        "path": "./syntaxes/argsh.tmLanguage.json",
+        "injectTo": ["source.shell"]
+      }
+    ],
+    "snippets": [
+      {
+        "language": "shellscript",
+        "path": "./snippets/argsh.json"
+      }
+    ],
+
+    "viewsContainers": {
+      "panel": [
+        {
+          "id": "argsh-panel",
+          "title": "argsh",
+          "icon": "icon.png"
+        }
+      ]
+    },
+    "views": {
+      "argsh-panel": [
+        {
+          "id": "argsh.commandTree",
+          "name": "Commands",
+          "when": "resourceLangId == shellscript"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "argsh",
+      "properties": {
+        "argsh.lsp.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable the argsh language server"
+        },
+        "argsh.lsp.path": {
+          "type": "string",
+          "default": "",
+          "description": "Path to argsh-lsp binary (auto-detected if empty)"
+        },
+        "argsh.commandTree.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the argsh command tree panel"
+        },
+        "argsh.codeLens.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show flag/subcommand counts above functions"
+        },
+        "argsh.formatOnSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically format argsh arrays on save"
+        },
+        "argsh.resolveDepth": {
+          "type": "integer",
+          "default": 2,
+          "minimum": 0,
+          "maximum": 5,
+          "description": "Maximum depth for resolving imports and source statements across files (0 = current file only)"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.82.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.0"
+  }
+}

@@ -1,0 +1,8 @@
+[package]
+name = "argsh-syntax"
+version = "0.1.0"
+edition = "2021"
+description = "argsh syntax parsing library — field definitions, usage entries, annotations"
+
+[dependencies]
+regex = "1"

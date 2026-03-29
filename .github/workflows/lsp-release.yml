@@ -1,0 +1,153 @@
+name: LSP Release
+
+on:
+  push:
+    tags:
+      - 'vscode-v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-lsp:
+    name: Build argsh-lsp (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact: argsh-lsp-linux-x64
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            artifact: argsh-lsp-linux-arm64
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            artifact: argsh-lsp-darwin-x64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact: argsh-lsp-darwin-arm64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      # Cross-compilation for aarch64-linux
+      - name: Install cross-compilation tools
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+          echo '[target.aarch64-unknown-linux-gnu]' >> ~/.cargo/config.toml
+          echo 'linker = "aarch64-linux-gnu-gcc"' >> ~/.cargo/config.toml
+
+      - name: Build
+        run: cargo build --release --manifest-path crates/argsh-lsp/Cargo.toml --target ${{ matrix.target }}
+
+      - name: Package
+        run: |
+          mkdir -p dist
+          cp crates/argsh-lsp/target/${{ matrix.target }}/release/argsh-lsp dist/${{ matrix.artifact }}
+          chmod +x dist/${{ matrix.artifact }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/${{ matrix.artifact }}
+
+  package-extension:
+    name: Package VSCode extension
+    needs: build-lsp
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - platform: linux-x64
+            lsp-artifact: argsh-lsp-linux-x64
+          - platform: linux-arm64
+            lsp-artifact: argsh-lsp-linux-arm64
+          - platform: darwin-x64
+            lsp-artifact: argsh-lsp-darwin-x64
+          - platform: darwin-arm64
+            lsp-artifact: argsh-lsp-darwin-arm64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Download LSP binary
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.lsp-artifact }}
+          path: vscode-argsh/bin/
+
+      - name: Make binary executable
+        run: chmod +x vscode-argsh/bin/*
+
+      - name: Rename binary
+        run: mv vscode-argsh/bin/${{ matrix.lsp-artifact }} vscode-argsh/bin/argsh-lsp
+
+      - name: Install dependencies
+        run: cd vscode-argsh && npm install
+
+      - name: Compile TypeScript
+        run: cd vscode-argsh && npm run compile
+
+      - name: Package VSIX
+        run: |
+          npm install -g @vscode/vsce
+          cd vscode-argsh
+          vsce package --target ${{ matrix.platform }} -o ../argsh-${{ matrix.platform }}.vsix
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vsix-${{ matrix.platform }}
+          path: argsh-${{ matrix.platform }}.vsix
+
+  publish:
+    name: Publish
+    needs: package-extension
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all VSIX packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: vsix-*
+          merge-multiple: true
+
+      - name: List packages
+        run: ls -la *.vsix
+
+      # Publish to VS Code Marketplace
+      - name: Publish to Marketplace
+        if: env.VSCE_PAT != ''
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          npm install -g @vscode/vsce
+          for vsix in *.vsix; do
+            vsce publish --packagePath "$vsix" --pat "$VSCE_PAT"
+          done
+
+      # Publish to Open VSX
+      - name: Publish to Open VSX
+        if: env.OVSX_PAT != ''
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: |
+          npm install -g ovsx
+          for vsix in *.vsix; do
+            ovsx publish "$vsix" -p "$OVSX_PAT"
+          done
+
+      # Attach to GitHub release
+      - name: Upload to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          for vsix in *.vsix; do
+            gh release upload "$TAG" "$vsix" --repo "$GITHUB_REPOSITORY" --clobber
+          done

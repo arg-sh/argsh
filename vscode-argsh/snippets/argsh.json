@@ -1,0 +1,96 @@
+{
+  "argsh function with args": {
+    "prefix": "argsh-func",
+    "body": [
+      "${1:name}() {",
+      "  local ${2:var}",
+      "  local -a args=(",
+      "    '${2:var}|${3:v}' \"${4:Description}\"",
+      "  )",
+      "  :args \"${5:Title}\" \"\\${@}\"",
+      "  $0",
+      "}"
+    ],
+    "description": "argsh function with :args"
+  },
+  "argsh function with usage": {
+    "prefix": "argsh-usage",
+    "body": [
+      "${1:name}() {",
+      "  local -a usage=(",
+      "    '${2:subcmd}' \"${3:Description}\"",
+      "  )",
+      "  :usage \"${4:Title}\" \"\\${@}\"",
+      "  \"\\${usage[@]}\"",
+      "}"
+    ],
+    "description": "argsh function with :usage subcommands"
+  },
+  "argsh main with usage": {
+    "prefix": "argsh-main",
+    "body": [
+      "#!/usr/bin/env argsh",
+      "# shellcheck disable=SC2034",
+      "set -euo pipefail",
+      "",
+      "source argsh",
+      "",
+      "main() {",
+      "  local -a usage=(",
+      "    '${1:cmd}' \"${2:Description}\"",
+      "  )",
+      "  :usage \"${3:My application}\" \"\\${@}\"",
+      "  \"\\${usage[@]}\"",
+      "}",
+      "",
+      "${1:cmd}() {",
+      "  :args \"${2:Description}\" \"\\${@}\"",
+      "  $0",
+      "}",
+      "",
+      "main \"\\${@}\""
+    ],
+    "description": "argsh main script template"
+  },
+  "argsh args array": {
+    "prefix": "argsh-args",
+    "body": [
+      "local -a ${1:flags} args=(",
+      "  '${1:flags}|${2:f}:${3:+}' \"${4:Description}\"",
+      ")",
+      ":args \"${5:Title}\" \"\\${@}\""
+    ],
+    "description": "argsh args array declaration"
+  },
+  "argsh usage array": {
+    "prefix": "argsh-usage-array",
+    "body": [
+      "local -a usage=(",
+      "  '${1:cmd}' \"${2:Description}\"",
+      ")",
+      ":usage \"${3:Title}\" \"\\${@}\"",
+      "\"\\${usage[@]}\""
+    ],
+    "description": "argsh usage array declaration"
+  },
+  "argsh boolean flag": {
+    "prefix": "argsh-flag-bool",
+    "body": "'${1:name}|${2:n}:+' \"${3:Description}\"",
+    "description": "argsh boolean flag entry"
+  },
+  "argsh typed flag": {
+    "prefix": "argsh-flag-typed",
+    "body": "'${1:name}|${2:n}:~${3|int,float,file,string|}' \"${4:Description}\"",
+    "description": "argsh typed flag entry"
+  },
+  "argsh required flag": {
+    "prefix": "argsh-flag-required",
+    "body": "'${1:name}|${2:n}:~${3|int,float,file,string|}:!' \"${4:Description}\"",
+    "description": "argsh required typed flag entry"
+  },
+  "argsh import": {
+    "prefix": "argsh-import",
+    "body": "import ${1|string,array,fmt,error,is,to,binary,docker,github|}",
+    "description": "argsh import statement"
+  }
+}

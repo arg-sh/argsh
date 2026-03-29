@@ -1,5 +1,6 @@
 <h3 align="center">
-	<img src="https://bashlogo.com/img/symbol/svg/full_colored_light.svg" width="16" alt="Logo"/>
+	<img src="argsh.svg" width="48" alt="argsh logo"/>
+	<br/>
 	arg.sh
 </h3>
 
@@ -250,6 +251,33 @@ Run `bash bench/usage-depth.sh` to reproduce.
 
 &nbsp;
 
+### 🧩 IDE Support
+
+argsh includes a **Language Server** and **VSCode/Windsurf extension** for rich IDE support:
+
+- **Diagnostics** — 10 checks (AG001–AG010) with shellcheck-style suppression (`# argsh disable=AG004`)
+- **Completions** — modifiers, types (built-in + custom), annotations, library functions (`is::`, `to::`, `string::`, ...)
+- **Help preview** — hover over functions to see generated `--help` output
+- **Go to definition** — Ctrl+Click on usage entries, `:-` mappings, `:~custom` types, imports
+- **Cross-file resolution** — follows `import` and `source argsh` across files
+- **Auto formatter** — aligns args/usage array entries on save
+- **Code lens** — flag/subcommand counts above functions with parent link
+- **Script preview** — dashboard with command tree, MCP tools, exports (Ctrl+Shift+A)
+- **Command tree panel** — function hierarchy with active function highlighting
+- **Snippets** — `argsh-main`, `argsh-func`, `argsh-args`, `argsh-flag-*`, `argsh-import`
+
+Works alongside shellcheck — argsh handles framework-specific validation, shellcheck handles general bash.
+
+```bash
+# Build from source
+cd crates/argsh-lsp && cargo build --release
+cd vscode-argsh && npm install && npm run compile
+```
+
+See the [LSP docs](https://arg.sh/development/tools/lsp) for configuration and full feature reference.
+
+&nbsp;
+
 ### 🚧 State of this Project
 
 > This project is in a very early stage.
@@ -258,10 +286,6 @@ That being said, most of it is quite rough. But it's a start. The best time that
 
 #### Short term goals
 
-- [ ] Design a logo
-- [ ] Write a language server to lint and format bash code according to the styleguide
-- [ ] VSCode extension for the language server
-- [x] Convert [shdoc](https://github.com/reconquest/shdoc) to rust
 - [ ] Bash debugger integration (e.g. with `bashdb`)
 
 &nbsp;

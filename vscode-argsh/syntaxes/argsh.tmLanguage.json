@@ -1,0 +1,135 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "scopeName": "source.shell.argsh",
+  "injectionSelector": "L:source.shell, L:string.quoted.single.shell, L:string.quoted.double.shell",
+  "patterns": [
+    { "include": "#argsh-function-calls" },
+    { "include": "#argsh-import" },
+    { "include": "#argsh-namespace-separator" },
+    { "include": "#argsh-annotations" },
+    { "include": "#argsh-field-modifiers" },
+    { "include": "#argsh-field-alias" },
+    { "include": "#argsh-source-argsh" },
+    { "include": "#argsh-array-declaration" },
+    { "include": "#argsh-explicit-mapping" }
+  ],
+  "repository": {
+    "argsh-function-calls": {
+      "comment": "argsh framework function calls: :args, :usage, :usage::help, etc.",
+      "patterns": [
+        {
+          "match": "(:args|:usage(?:::\\w+)*)",
+          "name": "support.function.argsh"
+        },
+        {
+          "comment": "args::field_name builtin",
+          "match": "\\bargs::field_name\\b",
+          "name": "support.function.argsh"
+        }
+      ]
+    },
+    "argsh-array-declaration": {
+      "comment": "args= and usage= array assignments (with or without local -a prefix)",
+      "patterns": [
+        {
+          "match": "\\b(args)(=\\()",
+          "captures": {
+            "1": { "name": "variable.other.argsh.array" },
+            "2": { "name": "keyword.operator.assignment.argsh" }
+          }
+        },
+        {
+          "match": "\\b(usage)(=\\()",
+          "captures": {
+            "1": { "name": "variable.other.argsh.array" },
+            "2": { "name": "keyword.operator.assignment.argsh" }
+          }
+        }
+      ]
+    },
+    "argsh-import": {
+      "comment": "argsh import statement",
+      "match": "^\\s*(import)\\s+(\\w+)",
+      "captures": {
+        "1": { "name": "keyword.control.import.argsh" },
+        "2": { "name": "entity.name.module.argsh" }
+      }
+    },
+    "argsh-namespace-separator": {
+      "comment": ":: namespace separator in function names and calls",
+      "match": "(\\w+)(::)(\\w+(?:::\\w+)*)",
+      "captures": {
+        "1": { "name": "entity.name.function.namespace.argsh" },
+        "2": { "name": "punctuation.separator.namespace.argsh" },
+        "3": { "name": "entity.name.function.argsh" }
+      }
+    },
+    "argsh-annotations": {
+      "comment": "@readonly, @destructive, @json, @idempotent, @openworld",
+      "match": "(@)(readonly|destructive|json|idempotent|openworld)\\b",
+      "captures": {
+        "1": { "name": "punctuation.definition.annotation.argsh" },
+        "2": { "name": "storage.modifier.annotation.argsh" }
+      }
+    },
+    "argsh-field-modifiers": {
+      "comment": "Field modifiers in args array entries",
+      "patterns": [
+        {
+          "comment": "Boolean modifier :+",
+          "match": "(:)(\\+)",
+          "captures": {
+            "1": { "name": "punctuation.separator.modifier.argsh" },
+            "2": { "name": "keyword.operator.boolean.argsh" }
+          }
+        },
+        {
+          "comment": "Type modifier :~type",
+          "match": "(:~)(int|float|file|boolean|string|stdin|\\w+)\\b",
+          "captures": {
+            "1": { "name": "punctuation.separator.type.argsh" },
+            "2": { "name": "storage.type.argsh" }
+          }
+        },
+        {
+          "comment": "Required modifier :!",
+          "match": "(:)(!)",
+          "captures": {
+            "1": { "name": "punctuation.separator.modifier.argsh" },
+            "2": { "name": "keyword.operator.required.argsh" }
+          }
+        },
+        {
+          "comment": "Hidden modifier :#",
+          "match": "(:#)",
+          "name": "comment.hidden.argsh"
+        }
+      ]
+    },
+    "argsh-field-alias": {
+      "comment": "Alias separator | in field definitions like name|n",
+      "match": "(\\w+)(\\|)(\\w)",
+      "captures": {
+        "1": { "name": "variable.other.field.argsh" },
+        "2": { "name": "punctuation.separator.alias.argsh" },
+        "3": { "name": "variable.other.alias.argsh" }
+      }
+    },
+    "argsh-explicit-mapping": {
+      "comment": "Explicit function mapping :-func::name in usage entries",
+      "match": "(:-)(\\w+(?:::\\w+)*)",
+      "captures": {
+        "1": { "name": "punctuation.separator.mapping.argsh" },
+        "2": { "name": "entity.name.function.mapping.argsh" }
+      }
+    },
+    "argsh-source-argsh": {
+      "comment": "source argsh bootstrap",
+      "match": "(source)\\s+(argsh)\\b",
+      "captures": {
+        "1": { "name": "keyword.control.source.argsh" },
+        "2": { "name": "entity.name.module.argsh" }
+      }
+    }
+  }
+}

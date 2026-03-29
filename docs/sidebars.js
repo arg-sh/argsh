@@ -270,6 +270,23 @@ module.exports = {
     },
     {
       type: "html",
+      value: "Tools",
+      customProps: {
+        sidebar_is_group_divider: true,
+      },
+      className: "homepage-sidebar-item",
+    },
+    {
+      type: "doc",
+      id: "development/tools/lsp",
+      label: "Language Server & IDE",
+      customProps: {
+        sidebar_icon: "command-line",
+      },
+      className: "homepage-sidebar-item",
+    },
+    {
+      type: "html",
       value: "Additional Resources",
       customProps: {
         sidebar_is_group_divider: true,
@@ -579,6 +596,21 @@ module.exports = {
           type: "doc",
           id: "development/fundamentals/builtins",
           label: "Native Builtins",
+        },
+      ],
+    },
+    {
+      type: "category",
+      label: "Tools",
+      collapsible: false,
+      customProps: {
+        sidebar_is_group_headline: true,
+      },
+      items: [
+        {
+          type: "doc",
+          id: "development/tools/lsp",
+          label: "Language Server & IDE",
         },
       ],
     },
