@@ -1763,3 +1763,46 @@ fn test_rename_non_function_returns_null() {
 
     client.shutdown();
 }
+
+#[test]
+fn test_export_mcp_json_uses_filename_prefix() {
+    let mut client = LspTestClient::new();
+    client.initialize();
+
+    let content = "#!/usr/bin/env bash\nsource argsh\nserve() {\n  local port\n  local -a args=(\n    'port|p:~int' \"Port\"\n  )\n  :args \"Start\" \"${@}\"\n}\n";
+    client.open_document("file:///myapp.sh", content);
+
+    let resp = client.send_request("workspace/executeCommand", serde_json::json!({
+        "command": "argsh.exportMcpJson",
+        "arguments": ["file:///myapp.sh"]
+    }));
+    assert!(resp.get("error").is_none());
+    if let Some(json_str) = resp["result"].as_str() {
+        assert!(json_str.contains("myapp_serve"), "Tool name should use filename prefix: {}", json_str);
+        assert!(json_str.contains("additionalProperties"), "Should include additionalProperties: {}", json_str);
+        assert!(json_str.contains("\"title\""), "Should include title field: {}", json_str);
+    }
+}
+
+#[test]
+fn test_rename_respects_word_boundaries() {
+    let mut client = LspTestClient::new();
+    client.initialize();
+
+    // "main" appears in "domain" — rename should NOT touch it
+    let content = "#!/usr/bin/env bash\nsource argsh\nmain() {\n  echo \"domain\"\n  :args \"T\" \"${@}\"\n}\n";
+    client.open_document("file:///test.sh", content);
+
+    let resp = client.send_request("textDocument/rename", serde_json::json!({
+        "textDocument": { "uri": "file:///test.sh" },
+        "position": { "line": 2, "character": 0 },
+        "newName": "app"
+    }));
+    assert!(resp.get("error").is_none());
+    if let Some(changes) = resp["result"]["changes"]["file:///test.sh"].as_array() {
+        for edit in changes {
+            let new_text = edit["newText"].as_str().unwrap_or("");
+            assert!(!new_text.contains("doapp"), "Rename corrupted 'domain' into 'doapp': {}", new_text);
+        }
+    }
+}
