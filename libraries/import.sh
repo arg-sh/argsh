@@ -22,7 +22,11 @@ declare -gA import_cache=()
 #   import ^utils/verbose
  import() {
   local src="${1}"
-  (( ${import_cache["${src}"]:-} )) || {
+  [[ "${ARGSH_DEBUG:-}" == "1" ]] && echo "argsh:debug: import ${src}" >&2
+  (( ${import_cache["${src}"]:-} )) && {
+    [[ "${ARGSH_DEBUG:-}" == "1" ]] && echo "argsh:debug: import ${src} (cached)" >&2
+    return 0
+  } || {
     import_cache["${src}"]=1
     # shellcheck disable=SC1090
     if [[ ${src:0:1} == "@" ]]; then
@@ -36,6 +40,7 @@ declare -gA import_cache=()
       local _s="${ARGSH_SOURCE:-${BASH_SOURCE[0]}}"
       src="${_s%/*}/${src}"
     fi
+    [[ "${ARGSH_DEBUG:-}" == "1" ]] && echo "argsh:debug: import resolved ${1} -> ${src}" >&2
     import::source "${src}" || exit 1
   }
 }

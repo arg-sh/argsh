@@ -103,6 +103,8 @@ fn parse_specifiers(specs: &[String]) -> Vec<FuncSpec> {
 
 /// Main entry point for import builtin.
 pub fn import_main(args: &[String]) -> i32 {
+    let debug = std::env::var("ARGSH_DEBUG").ok().filter(|v| v == "1").is_some();
+
     // Parse flags
     let mut force = false;
     let mut list_mode = false;
@@ -141,15 +143,27 @@ pub fn import_main(args: &[String]) -> i32 {
         Vec::new()
     };
 
+    if debug {
+        shell::write_stderr(&format!("argsh:debug: import {}", module));
+    }
+
     // Cache check — bypass when selective specifiers are present since a prior
     // full import cached the module but we may need different functions.
     if !force && specifiers.is_empty() && shell::assoc_get("import_cache", &module).is_some() {
+        if debug {
+            shell::write_stderr(&format!("argsh:debug: import {} (cached)", module));
+        }
         return 0;
     }
 
     // Resolve module path
     let resolved = match resolve_module_path(&module) {
-        Some(path) => path,
+        Some(path) => {
+            if debug {
+                shell::write_stderr(&format!("argsh:debug: import resolved {} -> {}", module, path));
+            }
+            path
+        }
         None => {
             shell::write_stderr(&format!("Library not found {}", module));
             return 1;
@@ -213,6 +227,10 @@ pub fn import_main(args: &[String]) -> i32 {
 
     // Update cache
     shell::assoc_set("import_cache", &module, "1");
+
+    if debug {
+        shell::write_stderr(&format!("argsh:debug: import {} sourced successfully", module));
+    }
 
     0
 }
