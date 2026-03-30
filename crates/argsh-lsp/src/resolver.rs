@@ -167,9 +167,13 @@ pub fn resolve_imports(analysis: &DocumentAnalysis, base_path: &Path, max_depth:
     }
     let base_dir = base_path.parent().unwrap_or(Path::new("."));
 
-    // Parse .envrc from project root for PATH_BASE/PATH_SCRIPTS fallback
+    // Parse .envrc only when env vars are missing (avoids repeated I/O on every change)
     let project_root = find_project_root(base_dir).unwrap_or_else(|| base_dir.to_path_buf());
-    let envrc_vars = parse_envrc(&project_root);
+    let envrc_vars = if std::env::var("PATH_BASE").is_err() || std::env::var("PATH_SCRIPTS").is_err() {
+        parse_envrc(&project_root)
+    } else {
+        HashMap::new()
+    };
 
     resolve_recursive(analysis, base_dir, &mut result, &mut visited, 0, max_depth, &envrc_vars, &project_root);
     result
