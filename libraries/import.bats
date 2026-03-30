@@ -6,8 +6,8 @@
 load ../test/helper
 load_source
 
-# Force pure-bash mode when requested.
-if [[ "${ARGSH_PURE_BASH_TEST:-}" == "1" ]]; then
+# Force pure-bash mode when requested (skip in minified mode).
+if [[ "${ARGSH_PURE_BASH_TEST:-}" == "1" && "${BATS_LOAD:-}" != "argsh.min.sh" ]]; then
   for _b in import import::clear; do
     enable -d "${_b}" 2>/dev/null || true
   done

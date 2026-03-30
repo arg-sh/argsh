@@ -9,8 +9,8 @@ load ../test/helper
 ARGSH_SOURCE=argsh
 load_source
 
-# Force pure-bash mode when requested (disable all builtins for testing).
-if [[ "${ARGSH_PURE_BASH_TEST:-}" == "1" ]]; then
+# Force pure-bash mode when requested (skip in minified mode).
+if [[ "${ARGSH_PURE_BASH_TEST:-}" == "1" && "${BATS_LOAD:-}" != "argsh.min.sh" ]]; then
   for _b in "${__ARGSH_BUILTINS[@]}"; do
     enable -d "${_b}" 2>/dev/null || true
   done
