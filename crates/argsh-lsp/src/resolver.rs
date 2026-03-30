@@ -100,12 +100,18 @@ fn parse_envrc(project_root: &Path) -> HashMap<String, String> {
 /// Expand `${VAR}` and `$VAR` references using already-parsed variables.
 fn expand_vars(value: &str, vars: &HashMap<String, String>) -> String {
     let mut result = value.to_string();
-    // Expand ${VAR} patterns
-    while let Some(start) = result.find("${") {
-        if let Some(end) = result[start..].find('}') {
-            let var_name = &result[start + 2..start + end];
-            let replacement = vars.get(var_name).cloned().unwrap_or_default();
-            result = format!("{}{}{}", &result[..start], replacement, &result[start + end + 1..]);
+    // Expand ${VAR} patterns — leave unknown variables as-is
+    let mut pos = 0;
+    while let Some(start) = result[pos..].find("${") {
+        let abs_start = pos + start;
+        if let Some(end) = result[abs_start..].find('}') {
+            let var_name = &result[abs_start + 2..abs_start + end];
+            if let Some(replacement) = vars.get(var_name) {
+                result = format!("{}{}{}", &result[..abs_start], replacement, &result[abs_start + end + 1..]);
+                pos = abs_start + replacement.len();
+            } else {
+                pos = abs_start + end + 1; // skip unknown ${VAR}
+            }
         } else {
             break;
         }
@@ -129,7 +135,13 @@ fn expand_vars(value: &str, vars: &HashMap<String, String>) -> String {
                         }
                     }
                     let var_name = &result[start..end];
-                    expanded.push_str(vars.get(var_name).map(|s| s.as_str()).unwrap_or(""));
+                    if let Some(val) = vars.get(var_name) {
+                        expanded.push_str(val);
+                    } else {
+                        // Leave unknown $VAR as-is
+                        expanded.push('$');
+                        expanded.push_str(var_name);
+                    }
                     continue;
                 }
             }
@@ -156,7 +168,7 @@ pub fn resolve_imports(analysis: &DocumentAnalysis, base_path: &Path, max_depth:
     let project_root = find_project_root(base_dir).unwrap_or_else(|| base_dir.to_path_buf());
     let envrc_vars = parse_envrc(&project_root);
 
-    resolve_recursive(analysis, base_dir, &mut result, &mut visited, 0, max_depth, &envrc_vars);
+    resolve_recursive(analysis, base_dir, &mut result, &mut visited, 0, max_depth, &envrc_vars, &project_root);
     result
 }
 
@@ -168,6 +180,7 @@ fn resolve_recursive(
     depth: usize,
     max_depth: usize,
     envrc_vars: &HashMap<String, String>,
+    project_root: &Path,
 ) {
     if depth >= max_depth {
         return;
@@ -185,8 +198,7 @@ fn resolve_recursive(
         let (clean_module, search_dir) = if module.starts_with('@') {
             // @ prefix: prefer PATH_BASE env var, then .envrc fallback, then project root
             let stripped = &module[1..];
-            let pr = find_project_root(base_dir).unwrap_or_else(|| base_dir.to_path_buf());
-            let project_root = std::env::var("PATH_BASE")
+            let resolved_base = std::env::var("PATH_BASE")
                 .ok()
                 .map(PathBuf::from)
                 .filter(|p| p.is_dir())
@@ -194,11 +206,11 @@ fn resolve_recursive(
                     // .envrc fallback: resolve relative paths against project root
                     envrc_vars.get("PATH_BASE").map(|v| {
                         let p = PathBuf::from(v);
-                        if p.is_relative() { pr.join(&p) } else { p }
+                        if p.is_relative() { project_root.join(&p) } else { p }
                     }).filter(|p| p.is_dir())
                 })
-                .unwrap_or(pr);
-            (stripped.to_string(), project_root)
+                .unwrap_or_else(|| project_root.to_path_buf());
+            (stripped.to_string(), resolved_base)
         } else if module.starts_with('^') {
             // ^ prefix: relative to PATH_SCRIPTS — skip if no scripts dir found
             // (matches runtime behavior: fails when PATH_SCRIPTS is unset)
@@ -254,7 +266,7 @@ fn resolve_recursive(
 
             // Recurse into the imported file's imports
             let import_dir = canonical.parent().unwrap_or(base_dir);
-            resolve_recursive(&imported_analysis, import_dir, result, visited, depth + 1, max_depth, envrc_vars);
+            resolve_recursive(&imported_analysis, import_dir, result, visited, depth + 1, max_depth, envrc_vars, project_root);
         }
     }
 
