@@ -6,6 +6,15 @@
 load ../test/helper
 load_source
 
+# Force pure-bash mode when requested (skip in minified mode).
+if [[ "${ARGSH_PURE_BASH_TEST:-}" == "1" && "${BATS_LOAD:-}" != "argsh.min.sh" ]]; then
+  for _b in import import::clear; do
+    enable -d "${_b}" 2>/dev/null || true
+  done
+  # shellcheck disable=SC1091
+  source "${BATS_TEST_DIRNAME}/import.sh" 2>/dev/null
+fi
+
 # Load native builtins when requested.
 declare -g __BUILTIN_SKIP=""
 if [[ "${ARGSH_BUILTIN_TEST:-}" == "1" ]]; then

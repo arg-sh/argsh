@@ -55,9 +55,21 @@ __argsh_try_builtin() {
   done
   return 1
 }
+# ARGSH_BUILTIN: 0 = pure bash, 1 = builtins loaded.
+# Pre-set to 0 to skip builtin loading (pure bash mode).
+# Pre-set to 1 by argsh-so (builtins already loaded via appended binary).
+# Left unset: auto-detect by trying to load the .so.
 # obfus ignore variable
-declare -gi ARGSH_BUILTIN="${ARGSH_BUILTIN:-0}"
-if __argsh_try_builtin; then
+if [[ -z "${ARGSH_BUILTIN+x}" ]]; then
+  # Not set — auto-detect
+  declare -gi ARGSH_BUILTIN=0
+  if __argsh_try_builtin; then
+    ARGSH_BUILTIN=1
+  fi
+else
+  declare -gi ARGSH_BUILTIN="${ARGSH_BUILTIN}"
+fi
+if (( ARGSH_BUILTIN )); then
   ARGSH_BUILTIN=1
   unset -f import 2>/dev/null || true
   # Rail guard: stale .so without import symbol → /usr/bin/import (hangs).
@@ -255,6 +267,7 @@ if ! (( ARGSH_BUILTIN )); then
       [[ "${func}" == "${usage[i]}" ]] || break 2
       
       func="${func/|*}"
+      func="${func/@*/}"
       break 2
     done
   done

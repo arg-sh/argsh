@@ -9,6 +9,16 @@ load ../test/helper
 ARGSH_SOURCE=argsh
 load_source
 
+# Force pure-bash mode when requested (skip in minified mode).
+if [[ "${ARGSH_PURE_BASH_TEST:-}" == "1" && "${BATS_LOAD:-}" != "argsh.min.sh" ]]; then
+  for _b in "${__ARGSH_BUILTINS[@]}"; do
+    enable -d "${_b}" 2>/dev/null || true
+  done
+  # Re-source to get the bash fallback functions
+  # shellcheck disable=SC1091
+  ARGSH_BUILTIN=0 source "${BATS_TEST_DIRNAME}/args.sh" 2>/dev/null
+fi
+
 # Load native builtins when requested.
 # All builtins are loaded from the same .so to ensure consistent coverage tracking.
 declare -g __BUILTIN_SKIP=""
@@ -968,6 +978,50 @@ source "${PATH_FIXTURES}/fmt.sh"
   is_empty stderr
   contains "first-lookup" stdout
 }
+
+# -----------------------------------------------------------------------------
+# Annotation stripping in dispatch
+
+@test "usage: @annotation stripped during dispatch (deploy@destructive)" {
+  (
+    :test::annotated deploy
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains "annotated::deploy" stdout
+}
+
+@test "usage: @annotation stripped during dispatch (status@readonly)" {
+  (
+    :test::annotated status
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains "annotated::status" stdout
+}
+
+@test "usage: @annotation stripped during dispatch (use@idempotent)" {
+  (
+    :test::annotated use
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains "annotated::use" stdout
+}
+
+@test "usage: @annotation with multiple tags (sync@destructive@idempotent)" {
+  (
+    :test::annotated sync
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains "annotated::sync" stdout
+}
+
 
 # -----------------------------------------------------------------------------
 # Missing value for flag (covers args.sh line 490)

@@ -89,6 +89,12 @@ _test() {
 
   case "${target}" in
     all)
+      if [[ -z "${BATS_LOAD:-}" ]]; then
+        echo "▸ Testing: pure bash (no builtins)" >&2
+        ARGSH_PURE_BASH_TEST=1 \
+          argsh::main test libraries .docker/test
+      fi
+      echo "▸ Testing: with native builtins (.so)" >&2
       ARGSH_BUILTIN_TEST=1 \
         argsh::main test libraries .docker/test
       if command -v cargo &>/dev/null; then
@@ -827,6 +833,7 @@ argsh::main() {
   docker run --rm ${tty} $(docker::user) -w /workspace \
     -e "BATS_LOAD" \
     -e "ARGSH_SOURCE" \
+    -e "ARGSH_PURE_BASH_TEST" \
     -e "ARGSH_BUILTIN_TEST" \
     ${ARGSH_BUILTIN_PATH:+-e "ARGSH_BUILTIN_PATH=${ARGSH_BUILTIN_PATH}"} \
     -e "LLVM_PROFILE_FILE" \
