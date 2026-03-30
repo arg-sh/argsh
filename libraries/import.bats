@@ -317,17 +317,16 @@ fi
 }
 
 @test "debug: import silent when ARGSH_DEBUG unset" {
+  # Minified mode: all libs are inlined, no standalone files to import
+  [[ "${BATS_LOAD}" != "argsh.min.sh" ]] || return 0
   (
     unset ARGSH_SOURCE
     import "string"
   ) >"${stdout}" 2>"${stderr}" 3>&- || status="${?}"
 
   assert "${status}" -eq 0
-  # For normal (non-minified) mode, stderr should not contain debug
-  if [[ "${BATS_LOAD}" != "argsh.min.sh" ]]; then
-    ! command grep -q "argsh:debug:" "${stderr}" || {
-      echo "Debug output should not appear without ARGSH_DEBUG=1"
-      return 1
-    }
-  fi
+  ! command grep -q "argsh:debug:" "${stderr}" || {
+    echo "Debug output should not appear without ARGSH_DEBUG=1"
+    return 1
+  }
 }
