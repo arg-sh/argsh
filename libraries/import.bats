@@ -11,6 +11,7 @@ if [[ "${ARGSH_PURE_BASH_TEST:-}" == "1" ]]; then
   for _b in import import::clear; do
     enable -d "${_b}" 2>/dev/null || true
   done
+  # shellcheck disable=SC1091
   source "${BATS_TEST_DIRNAME}/import.sh" 2>/dev/null
 fi
 

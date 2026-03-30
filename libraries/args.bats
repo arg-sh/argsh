@@ -15,6 +15,7 @@ if [[ "${ARGSH_PURE_BASH_TEST:-}" == "1" ]]; then
     enable -d "${_b}" 2>/dev/null || true
   done
   # Re-source to get the bash fallback functions
+  # shellcheck disable=SC1091
   ARGSH_BUILTIN=0 source "${BATS_TEST_DIRNAME}/args.sh" 2>/dev/null
 fi
 
