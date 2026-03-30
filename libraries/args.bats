@@ -9,6 +9,15 @@ load ../test/helper
 ARGSH_SOURCE=argsh
 load_source
 
+# Force pure-bash mode when requested (disable all builtins for testing).
+if [[ "${ARGSH_PURE_BASH_TEST:-}" == "1" ]]; then
+  for _b in "${__ARGSH_BUILTINS[@]}"; do
+    enable -d "${_b}" 2>/dev/null || true
+  done
+  # Re-source to get the bash fallback functions
+  ARGSH_BUILTIN=0 source "${BATS_TEST_DIRNAME}/args.sh" 2>/dev/null
+fi
+
 # Load native builtins when requested.
 # All builtins are loaded from the same .so to ensure consistent coverage tracking.
 declare -g __BUILTIN_SKIP=""

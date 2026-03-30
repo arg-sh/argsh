@@ -6,6 +6,14 @@
 load ../test/helper
 load_source
 
+# Force pure-bash mode when requested.
+if [[ "${ARGSH_PURE_BASH_TEST:-}" == "1" ]]; then
+  for _b in import import::clear; do
+    enable -d "${_b}" 2>/dev/null || true
+  done
+  source "${BATS_TEST_DIRNAME}/import.sh" 2>/dev/null
+fi
+
 # Load native builtins when requested.
 declare -g __BUILTIN_SKIP=""
 if [[ "${ARGSH_BUILTIN_TEST:-}" == "1" ]]; then
