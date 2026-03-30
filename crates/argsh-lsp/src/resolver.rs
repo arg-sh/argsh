@@ -56,12 +56,12 @@ fn parse_envrc(project_root: &Path) -> HashMap<String, String> {
 
         // Pattern 1: : "${VAR:=value}" or : "${VAR:="value"}"
         if trimmed.starts_with(": \"${") {
-            // Extract VAR and value from : "${VAR:=value}" pattern
             if let Some(inner) = trimmed.strip_prefix(": \"${").and_then(|s| s.strip_suffix("}\"")) {
                 if let Some((name, raw_value)) = inner.split_once(":=") {
                     let value = raw_value.trim_matches('"');
                     if !name.is_empty() {
-                        vars.insert(name.to_string(), value.to_string());
+                        let expanded = expand_vars(value, &vars);
+                        vars.insert(name.to_string(), expanded);
                     }
                 }
             }
@@ -75,7 +75,8 @@ fn parse_envrc(project_root: &Path) -> HashMap<String, String> {
                 let name = name.trim();
                 let value = raw_value.trim().trim_matches('"');
                 if !name.is_empty() {
-                    vars.insert(name.to_string(), value.to_string());
+                    let expanded = expand_vars(value, &vars);
+                    vars.insert(name.to_string(), expanded);
                 }
             }
             continue;
@@ -87,12 +88,50 @@ fn parse_envrc(project_root: &Path) -> HashMap<String, String> {
             // Only accept simple variable names (alphanumeric + underscore)
             if !name.is_empty() && name.chars().all(|c| c.is_alphanumeric() || c == '_') {
                 let value = raw_value.trim().trim_matches('"');
-                vars.insert(name.to_string(), value.to_string());
+                let expanded = expand_vars(value, &vars);
+                vars.insert(name.to_string(), expanded);
             }
         }
     }
 
     vars
+}
+
+/// Expand `${VAR}` and `$VAR` references using already-parsed variables.
+fn expand_vars(value: &str, vars: &HashMap<String, String>) -> String {
+    let mut result = value.to_string();
+    // Expand ${VAR} patterns
+    while let Some(start) = result.find("${") {
+        if let Some(end) = result[start..].find('}') {
+            let var_name = &result[start + 2..start + end];
+            let replacement = vars.get(var_name).cloned().unwrap_or_default();
+            result = format!("{}{}{}", &result[..start], replacement, &result[start + end + 1..]);
+        } else {
+            break;
+        }
+    }
+    // Expand $VAR patterns (only word chars after $, not followed by {)
+    let mut i = 0;
+    let bytes = result.as_bytes();
+    let mut expanded = String::new();
+    while i < bytes.len() {
+        if bytes[i] == b'$' && i + 1 < bytes.len() && bytes[i + 1] != b'{' {
+            let start = i + 1;
+            let mut end = start;
+            while end < bytes.len() && (bytes[end].is_ascii_alphanumeric() || bytes[end] == b'_') {
+                end += 1;
+            }
+            if end > start {
+                let var_name = &result[start..end];
+                expanded.push_str(vars.get(var_name).map(|s| s.as_str()).unwrap_or(""));
+                i = end;
+                continue;
+            }
+        }
+        expanded.push(result.as_bytes()[i] as char);
+        i += 1;
+    }
+    expanded
 }
 
 /// Resolve imports from a document analysis, starting from the file at `base_path`.
@@ -756,6 +795,24 @@ mod tests {
         let vars = parse_envrc(dir.path());
         assert!(vars.get("PATH_BASE").is_none(), "Should skip command substitution");
         assert_eq!(vars.get("PATH_SCRIPTS").map(|s| s.as_str()), Some(".scripts"));
+    }
+
+    #[test]
+    fn test_parse_envrc_expands_variables() {
+        let dir = tempfile::tempdir().unwrap();
+        let content = format!(
+            ": \"${{PATH_BASE:={}}}\"\nPATH_SCRIPTS=${{PATH_BASE}}/.scripts\nexport PATH_BIN=\"$PATH_BASE/.bin\"\n",
+            dir.path().display()
+        );
+        fs::write(dir.path().join(".envrc"), &content).unwrap();
+        let vars = parse_envrc(dir.path());
+        assert_eq!(vars.get("PATH_BASE").map(|s| s.as_str()), Some(dir.path().to_str().unwrap()));
+        let expected_scripts = format!("{}/.scripts", dir.path().display());
+        assert_eq!(vars.get("PATH_SCRIPTS").map(|s| s.as_str()), Some(expected_scripts.as_str()),
+            "Should expand ${{PATH_BASE}} in PATH_SCRIPTS");
+        let expected_bin = format!("{}/.bin", dir.path().display());
+        assert_eq!(vars.get("PATH_BIN").map(|s| s.as_str()), Some(expected_bin.as_str()),
+            "Should expand $PATH_BASE in PATH_BIN");
     }
 
     #[test]

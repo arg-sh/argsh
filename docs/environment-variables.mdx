@@ -47,7 +47,7 @@ Example output:
 argsh:debug: searching for argsh.so...
 argsh:debug: loaded builtins from /home/user/.local/lib/bash/argsh.so
 argsh:debug: import string
-argsh:debug: import resolved string -> /path/to/libraries/string.sh
+argsh:debug: import resolved -> /path/to/libraries/string.sh
 ```
 
 ### ARGSH_NO_AUTO_DOWNLOAD
@@ -161,4 +161,15 @@ The argsh language server (LSP) also reads `.envrc` files to discover `PATH_BASE
 - `export VAR=value`
 - `VAR=value` (plain assignment)
 
-Lines containing command substitution (`$(...)`) are skipped for safety.
+Variable references (`${PATH_BASE}` and `$PATH_BASE`) are expanded using previously parsed values. Lines containing command substitution (`$(...)`) are skipped — use literal paths for LSP compatibility:
+
+```bash
+# LSP can parse this:
+: "${PATH_BASE:=/home/user/project}"
+: "${PATH_SCRIPTS:=${PATH_BASE}/.scripts}"   # ${PATH_BASE} is expanded
+
+# LSP skips this (command substitution):
+: "${PATH_BASE:=$(git rev-parse --show-toplevel)}"
+```
+
+When `PATH_BASE` is set via command substitution (common in real `.envrc` files), the LSP falls back to auto-detecting the project root by looking for `.git`, `.envrc`, or `.bin/argsh` directories.
