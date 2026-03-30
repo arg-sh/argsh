@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use argsh_syntax::document::{analyze, DocumentAnalysis, FunctionInfo};
@@ -26,6 +26,75 @@ impl Default for ResolvedImports {
     }
 }
 
+/// Parse a `.envrc` file from the given directory and extract variable assignments.
+///
+/// Supported patterns:
+/// - `: "${VAR:=value}"` and `: "${VAR:="value"}"` (argsh .envrc pattern)
+/// - `export VAR=value` and `export VAR="value"`
+/// - `VAR=value` and `VAR="value"` (plain assignment)
+///
+/// Lines containing `$(` (command substitution) are skipped.
+pub fn parse_envrc(project_root: &Path) -> HashMap<String, String> {
+    let envrc_path = project_root.join(".envrc");
+    let content = match std::fs::read_to_string(&envrc_path) {
+        Ok(c) => c,
+        Err(_) => return HashMap::new(),
+    };
+
+    let mut vars = HashMap::new();
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+        // Skip comments and empty lines
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        // Skip lines with command substitution
+        if trimmed.contains("$(") {
+            continue;
+        }
+
+        // Pattern 1: : "${VAR:=value}" or : "${VAR:="value"}"
+        if trimmed.starts_with(": \"${") {
+            // Extract VAR and value from : "${VAR:=value}" pattern
+            if let Some(inner) = trimmed.strip_prefix(": \"${").and_then(|s| s.strip_suffix("}\"")) {
+                if let Some((name, raw_value)) = inner.split_once(":=") {
+                    let value = raw_value.trim_matches('"');
+                    if !name.is_empty() {
+                        vars.insert(name.to_string(), value.to_string());
+                    }
+                }
+            }
+            continue;
+        }
+
+        // Pattern 2: export VAR=value or export VAR="value"
+        if let Some(rest) = trimmed.strip_prefix("export ") {
+            let rest = rest.trim();
+            if let Some((name, raw_value)) = rest.split_once('=') {
+                let name = name.trim();
+                let value = raw_value.trim().trim_matches('"');
+                if !name.is_empty() {
+                    vars.insert(name.to_string(), value.to_string());
+                }
+            }
+            continue;
+        }
+
+        // Pattern 3: VAR=value or VAR="value" (plain assignment, no spaces around =)
+        if let Some((name, raw_value)) = trimmed.split_once('=') {
+            let name = name.trim();
+            // Only accept simple variable names (alphanumeric + underscore)
+            if !name.is_empty() && name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+                let value = raw_value.trim().trim_matches('"');
+                vars.insert(name.to_string(), value.to_string());
+            }
+        }
+    }
+
+    vars
+}
+
 /// Resolve imports from a document analysis, starting from the file at `base_path`.
 /// Follows `import` and `source` statements up to `max_depth` levels.
 /// Circular imports are handled via canonicalized path tracking.
@@ -39,7 +108,11 @@ pub fn resolve_imports(analysis: &DocumentAnalysis, base_path: &Path, max_depth:
     }
     let base_dir = base_path.parent().unwrap_or(Path::new("."));
 
-    resolve_recursive(analysis, base_dir, &mut result, &mut visited, 0, max_depth);
+    // Parse .envrc from project root for PATH_BASE/PATH_SCRIPTS fallback
+    let project_root = find_project_root(base_dir).unwrap_or_else(|| base_dir.to_path_buf());
+    let envrc_vars = parse_envrc(&project_root);
+
+    resolve_recursive(analysis, base_dir, &mut result, &mut visited, 0, max_depth, &envrc_vars);
     result
 }
 
@@ -50,6 +123,7 @@ fn resolve_recursive(
     visited: &mut HashSet<PathBuf>,
     depth: usize,
     max_depth: usize,
+    envrc_vars: &HashMap<String, String>,
 ) {
     if depth >= max_depth {
         return;
@@ -65,12 +139,13 @@ fn resolve_recursive(
         // ~foo → relative to the script itself
         // foo  → relative to ARGSH_SOURCE directory (base_dir)
         let (clean_module, search_dir) = if module.starts_with('@') {
-            // @ prefix: prefer PATH_BASE env var (matches runtime), fall back to project root
+            // @ prefix: prefer PATH_BASE env var, then .envrc fallback, then project root
             let stripped = &module[1..];
             let project_root = std::env::var("PATH_BASE")
                 .ok()
                 .map(PathBuf::from)
                 .filter(|p| p.is_dir())
+                .or_else(|| envrc_vars.get("PATH_BASE").map(PathBuf::from).filter(|p| p.is_dir()))
                 .unwrap_or_else(|| find_project_root(base_dir).unwrap_or_else(|| base_dir.to_path_buf()));
             (stripped.to_string(), project_root)
         } else if module.starts_with('^') {
@@ -78,7 +153,7 @@ fn resolve_recursive(
             // (matches runtime behavior: fails when PATH_SCRIPTS is unset)
             let stripped = &module[1..];
             let project_root = find_project_root(base_dir).unwrap_or_else(|| base_dir.to_path_buf());
-            match find_scripts_dir(&project_root) {
+            match find_scripts_dir(&project_root, envrc_vars) {
                 Some(scripts_dir) => (stripped.to_string(), scripts_dir),
                 None => continue, // unresolvable — AG013 will flag it
             }
@@ -128,7 +203,7 @@ fn resolve_recursive(
 
             // Recurse into the imported file's imports
             let import_dir = canonical.parent().unwrap_or(base_dir);
-            resolve_recursive(&imported_analysis, import_dir, result, visited, depth + 1, max_depth);
+            resolve_recursive(&imported_analysis, import_dir, result, visited, depth + 1, max_depth, envrc_vars);
         }
     }
 
@@ -185,10 +260,21 @@ fn find_project_root(start: &Path) -> Option<PathBuf> {
 
 /// Find the PATH_SCRIPTS directory from a project root.
 /// Looks for common script directory names.
-fn find_scripts_dir(project_root: &Path) -> Option<PathBuf> {
+fn find_scripts_dir(project_root: &Path, envrc_vars: &HashMap<String, String>) -> Option<PathBuf> {
     // Prefer explicit PATH_SCRIPTS env var (matches runtime behavior)
     if let Ok(path) = std::env::var("PATH_SCRIPTS") {
         let p = PathBuf::from(path);
+        if p.is_dir() {
+            return Some(p);
+        }
+    }
+    // Second: .envrc fallback
+    if let Some(path) = envrc_vars.get("PATH_SCRIPTS") {
+        let p = if Path::new(path).is_relative() {
+            project_root.join(path)
+        } else {
+            PathBuf::from(path)
+        };
         if p.is_dir() {
             return Some(p);
         }
@@ -534,7 +620,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let scripts = dir.path().join(".scripts");
         fs::create_dir_all(&scripts).unwrap();
-        assert_eq!(find_scripts_dir(dir.path()), Some(scripts));
+        assert_eq!(find_scripts_dir(dir.path(), &HashMap::new()), Some(scripts));
     }
 
     #[test]
@@ -543,7 +629,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let scripts = dir.path().join("scripts");
         fs::create_dir_all(&scripts).unwrap();
-        assert_eq!(find_scripts_dir(dir.path()), Some(scripts));
+        assert_eq!(find_scripts_dir(dir.path(), &HashMap::new()), Some(scripts));
     }
 
     #[test]
@@ -552,7 +638,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let bin = dir.path().join("bin");
         fs::create_dir_all(&bin).unwrap();
-        assert_eq!(find_scripts_dir(dir.path()), Some(bin));
+        assert_eq!(find_scripts_dir(dir.path(), &HashMap::new()), Some(bin));
     }
 
     #[test]
@@ -561,14 +647,14 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         fs::create_dir_all(dir.path().join(".scripts")).unwrap();
         fs::create_dir_all(dir.path().join("scripts")).unwrap();
-        assert_eq!(find_scripts_dir(dir.path()), Some(dir.path().join(".scripts")));
+        assert_eq!(find_scripts_dir(dir.path(), &HashMap::new()), Some(dir.path().join(".scripts")));
     }
 
     #[test]
     fn test_find_scripts_dir_none() {
         let _guard = EnvGuard::clear("PATH_SCRIPTS");
         let dir = tempfile::tempdir().unwrap();
-        assert_eq!(find_scripts_dir(dir.path()), None);
+        assert_eq!(find_scripts_dir(dir.path(), &HashMap::new()), None);
     }
 
     #[test]
@@ -633,5 +719,67 @@ mod tests {
         assert!(imports.resolved_files.iter().any(|(name, _)| name == "^mylib"),
             "resolved_files should preserve ^ prefix in module name, got: {:?}",
             imports.resolved_files.iter().map(|(n, _)| n).collect::<Vec<_>>());
+    }
+
+    // -------------------------------------------------------------------------
+    // .envrc parsing tests
+
+    #[test]
+    fn test_parse_envrc_colon_pattern() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join(".envrc"), ": \"${PATH_BASE:=/some/path}\"\n: \"${PATH_SCRIPTS:=.scripts}\"\n").unwrap();
+        let vars = parse_envrc(dir.path());
+        assert_eq!(vars.get("PATH_BASE").map(|s| s.as_str()), Some("/some/path"));
+        assert_eq!(vars.get("PATH_SCRIPTS").map(|s| s.as_str()), Some(".scripts"));
+    }
+
+    #[test]
+    fn test_parse_envrc_export_pattern() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join(".envrc"), "export PATH_BASE=\"/my/project\"\nexport PATH_SCRIPTS=scripts\n").unwrap();
+        let vars = parse_envrc(dir.path());
+        assert_eq!(vars.get("PATH_BASE").map(|s| s.as_str()), Some("/my/project"));
+        assert_eq!(vars.get("PATH_SCRIPTS").map(|s| s.as_str()), Some("scripts"));
+    }
+
+    #[test]
+    fn test_parse_envrc_skips_command_substitution() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join(".envrc"), ": \"${PATH_BASE:=$(git rev-parse --show-toplevel)}\"\nPATH_SCRIPTS=.scripts\n").unwrap();
+        let vars = parse_envrc(dir.path());
+        assert!(vars.get("PATH_BASE").is_none(), "Should skip command substitution");
+        assert_eq!(vars.get("PATH_SCRIPTS").map(|s| s.as_str()), Some(".scripts"));
+    }
+
+    #[test]
+    fn test_parse_envrc_missing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let vars = parse_envrc(dir.path());
+        assert!(vars.is_empty());
+    }
+
+    #[test]
+    fn test_resolve_at_prefix_from_envrc() {
+        let _guard = EnvGuard::clear("PATH_BASE");
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join(".git")).unwrap();
+        // Write .envrc with PATH_BASE pointing to temp dir
+        fs::write(dir.path().join(".envrc"),
+            &format!(": \"${{PATH_BASE:={}}}\"\n", dir.path().display())).unwrap();
+        let libs = dir.path().join("libs");
+        fs::create_dir_all(&libs).unwrap();
+        fs::write(libs.join("helper"), "envrc_func() { :; }").unwrap();
+
+        let sub = dir.path().join("sub");
+        fs::create_dir_all(&sub).unwrap();
+        let main_content = "#!/usr/bin/env bash\nimport @libs/helper\nmain() { echo; }\n";
+        let main_sh = sub.join("main.sh");
+        fs::write(&main_sh, main_content).unwrap();
+
+        let analysis = analyze(main_content);
+        let imports = resolve_imports(&analysis, &main_sh, 2);
+        assert!(imports.functions.iter().any(|f| f.name == "envrc_func"),
+            "Should find function via .envrc PATH_BASE, got: {:?}",
+            imports.functions.iter().map(|f| &f.name).collect::<Vec<_>>());
     }
 }
