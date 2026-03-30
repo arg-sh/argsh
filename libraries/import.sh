@@ -40,7 +40,6 @@ declare -gA import_cache=()
       local _s="${ARGSH_SOURCE:-${BASH_SOURCE[0]}}"
       src="${_s%/*}/${src}"
     fi
-    [[ "${ARGSH_DEBUG:-}" == "1" ]] && echo "argsh:debug: import resolved ${1} -> ${src}" >&2
     import::source "${src}" || exit 1
   }
 }
@@ -49,6 +48,7 @@ import::source() {
   local src="${1}"
   for ext in "" ".sh" ".bash"; do
     if [[ -f "${src}${ext}" ]]; then
+      [[ "${ARGSH_DEBUG:-}" == "1" ]] && echo "argsh:debug: import resolved -> ${src}${ext}" >&2
       # shellcheck disable=SC1090
       . "${src}${ext}"
       return

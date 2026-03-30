@@ -429,9 +429,9 @@ argsh::shebang() {
   # Load builtins: try loading, auto-download if missing (unless --no-builtin)
   # obfus ignore variable
   declare -gi ARGSH_BUILTIN=0
-  [[ "${ARGSH_DEBUG:-}" == "1" ]] && echo "argsh:debug: searching for argsh.so..." >&2
   # shellcheck disable=SC2034
   if (( ! _argsh_no_builtin )); then
+    [[ "${ARGSH_DEBUG:-}" == "1" ]] && echo "argsh:debug: searching for argsh.so..." >&2
     if argsh::builtin::try; then
       ARGSH_BUILTIN=1
       [[ "${ARGSH_DEBUG:-}" == "1" ]] && echo "argsh:debug: loaded builtins from $(argsh::builtin::location 2>/dev/null || echo 'unknown')" >&2

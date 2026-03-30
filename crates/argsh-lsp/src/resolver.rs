@@ -34,7 +34,7 @@ impl Default for ResolvedImports {
 /// - `VAR=value` and `VAR="value"` (plain assignment)
 ///
 /// Lines containing `$(` (command substitution) are skipped.
-pub fn parse_envrc(project_root: &Path) -> HashMap<String, String> {
+fn parse_envrc(project_root: &Path) -> HashMap<String, String> {
     let envrc_path = project_root.join(".envrc");
     let content = match std::fs::read_to_string(&envrc_path) {
         Ok(c) => c,
@@ -81,7 +81,7 @@ pub fn parse_envrc(project_root: &Path) -> HashMap<String, String> {
             continue;
         }
 
-        // Pattern 3: VAR=value or VAR="value" (plain assignment, no spaces around =)
+        // Pattern 3: VAR=value or VAR="value" (plain assignment, optional spaces around =)
         if let Some((name, raw_value)) = trimmed.split_once('=') {
             let name = name.trim();
             // Only accept simple variable names (alphanumeric + underscore)
@@ -141,12 +141,19 @@ fn resolve_recursive(
         let (clean_module, search_dir) = if module.starts_with('@') {
             // @ prefix: prefer PATH_BASE env var, then .envrc fallback, then project root
             let stripped = &module[1..];
+            let pr = find_project_root(base_dir).unwrap_or_else(|| base_dir.to_path_buf());
             let project_root = std::env::var("PATH_BASE")
                 .ok()
                 .map(PathBuf::from)
                 .filter(|p| p.is_dir())
-                .or_else(|| envrc_vars.get("PATH_BASE").map(PathBuf::from).filter(|p| p.is_dir()))
-                .unwrap_or_else(|| find_project_root(base_dir).unwrap_or_else(|| base_dir.to_path_buf()));
+                .or_else(|| {
+                    // .envrc fallback: resolve relative paths against project root
+                    envrc_vars.get("PATH_BASE").map(|v| {
+                        let p = PathBuf::from(v);
+                        if p.is_relative() { pr.join(&p) } else { p }
+                    }).filter(|p| p.is_dir())
+                })
+                .unwrap_or(pr);
             (stripped.to_string(), project_root)
         } else if module.starts_with('^') {
             // ^ prefix: relative to PATH_SCRIPTS — skip if no scripts dir found

@@ -295,9 +295,12 @@ fi
 # ARGSH_DEBUG tests
 
 @test "debug: import shows trace when ARGSH_DEBUG=1" {
+  # Debug output is stripped in minified mode
+  [[ "${BATS_LOAD}" != "argsh.min.sh" ]] || return 0
   (
     unset ARGSH_SOURCE
-    ARGSH_DEBUG=1 import "string"
+    export ARGSH_DEBUG=1
+    import "string"
   ) >"${stdout}" 2>"${stderr}" 3>&- || status="${?}"
 
   # Should have debug output on stderr
