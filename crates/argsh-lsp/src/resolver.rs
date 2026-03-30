@@ -169,7 +169,10 @@ pub fn resolve_imports(analysis: &DocumentAnalysis, base_path: &Path, max_depth:
 
     // Parse .envrc only when env vars are missing (avoids repeated I/O on every change)
     let project_root = find_project_root(base_dir).unwrap_or_else(|| base_dir.to_path_buf());
-    let envrc_vars = if std::env::var("PATH_BASE").is_err() || std::env::var("PATH_SCRIPTS").is_err() {
+    // Parse .envrc when env vars are missing or point to non-existent dirs
+    let envrc_vars = if std::env::var("PATH_BASE").ok().filter(|v| Path::new(v).is_dir()).is_none()
+        || std::env::var("PATH_SCRIPTS").ok().filter(|v| Path::new(v).is_dir()).is_none()
+    {
         parse_envrc(&project_root)
     } else {
         HashMap::new()

@@ -143,17 +143,14 @@ pub fn import_main(args: &[String]) -> i32 {
         Vec::new()
     };
 
-    if debug {
-        shell::write_stderr(&format!("argsh:debug: import {}", module));
-    }
-
     // Cache check — bypass when selective specifiers are present since a prior
     // full import cached the module but we may need different functions.
     if !force && specifiers.is_empty() && shell::assoc_get("import_cache", &module).is_some() {
-        if debug {
-            shell::write_stderr(&format!("argsh:debug: import {} (cached)", module));
-        }
         return 0;
+    }
+
+    if debug {
+        shell::write_stderr(&format!("argsh:debug: import {}", module));
     }
 
     // Resolve module path
