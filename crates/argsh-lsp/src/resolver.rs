@@ -111,25 +111,30 @@ fn expand_vars(value: &str, vars: &HashMap<String, String>) -> String {
         }
     }
     // Expand $VAR patterns (only word chars after $, not followed by {)
-    let mut i = 0;
-    let bytes = result.as_bytes();
     let mut expanded = String::new();
-    while i < bytes.len() {
-        if bytes[i] == b'$' && i + 1 < bytes.len() && bytes[i + 1] != b'{' {
-            let start = i + 1;
-            let mut end = start;
-            while end < bytes.len() && (bytes[end].is_ascii_alphanumeric() || bytes[end] == b'_') {
-                end += 1;
-            }
-            if end > start {
-                let var_name = &result[start..end];
-                expanded.push_str(vars.get(var_name).map(|s| s.as_str()).unwrap_or(""));
-                i = end;
-                continue;
+    let mut chars = result.char_indices().peekable();
+    while let Some((i, ch)) = chars.next() {
+        if ch == '$' {
+            if let Some(&(_, next_ch)) = chars.peek() {
+                if next_ch != '{' && (next_ch.is_ascii_alphanumeric() || next_ch == '_') {
+                    // Collect variable name
+                    let start = i + 1;
+                    let mut end = start;
+                    while let Some(&(pos, c)) = chars.peek() {
+                        if c.is_ascii_alphanumeric() || c == '_' {
+                            end = pos + c.len_utf8();
+                            chars.next();
+                        } else {
+                            break;
+                        }
+                    }
+                    let var_name = &result[start..end];
+                    expanded.push_str(vars.get(var_name).map(|s| s.as_str()).unwrap_or(""));
+                    continue;
+                }
             }
         }
-        expanded.push(result.as_bytes()[i] as char);
-        i += 1;
+        expanded.push(ch);
     }
     expanded
 }

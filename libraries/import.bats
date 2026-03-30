@@ -303,7 +303,7 @@ fi
     import "string"
   ) >"${stdout}" 2>"${stderr}" 3>&- || status="${?}"
 
-  # Should have debug output on stderr
+  assert "${status}" -eq 0
   contains "argsh:debug:" stderr
 }
 
@@ -313,6 +313,7 @@ fi
     import "string"
   ) >"${stdout}" 2>"${stderr}" 3>&- || status="${?}"
 
+  assert "${status}" -eq 0
   # For normal (non-minified) mode, stderr should not contain debug
   if [[ "${BATS_LOAD}" != "argsh.min.sh" ]]; then
     ! grep -q "argsh:debug:" "${stderr}" || {
