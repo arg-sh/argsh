@@ -89,6 +89,10 @@ _test() {
 
   case "${target}" in
     all)
+      # Pure bash (no builtins)
+      ARGSH_BUILTIN=0 \
+        argsh::main test libraries .docker/test
+      # With builtins
       ARGSH_BUILTIN_TEST=1 \
         argsh::main test libraries .docker/test
       if command -v cargo &>/dev/null; then
