@@ -299,3 +299,35 @@ fi
   # Should only print "out" once (second import is cached)
   contains "^out\n$" stdout
 }
+
+# -----------------------------------------------------------------------------
+# ARGSH_DEBUG tests
+
+@test "debug: import shows trace when ARGSH_DEBUG=1" {
+  # Debug output is stripped in minified mode
+  [[ "${BATS_LOAD}" != "argsh.min.sh" ]] || return 0
+  (
+    unset ARGSH_SOURCE
+    export ARGSH_DEBUG=1
+    import "string"
+  ) >"${stdout}" 2>"${stderr}" 3>&- || status="${?}"
+
+  assert "${status}" -eq 0
+  contains "argsh:debug:" stderr
+}
+
+@test "debug: import silent when ARGSH_DEBUG unset" {
+  (
+    unset ARGSH_SOURCE
+    import "string"
+  ) >"${stdout}" 2>"${stderr}" 3>&- || status="${?}"
+
+  assert "${status}" -eq 0
+  # For normal (non-minified) mode, stderr should not contain debug
+  if [[ "${BATS_LOAD}" != "argsh.min.sh" ]]; then
+    ! command grep -q "argsh:debug:" "${stderr}" || {
+      echo "Debug output should not appear without ARGSH_DEBUG=1"
+      return 1
+    }
+  fi
+}

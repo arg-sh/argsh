@@ -23,6 +23,7 @@ declare -gA import_cache=()
  import() {
   local src="${1}"
   (( ${import_cache["${src}"]:-} )) || {
+    [[ "${ARGSH_DEBUG:-}" == "1" ]] && echo "argsh:debug: import ${src}" >&2
     import_cache["${src}"]=1
     # shellcheck disable=SC1090
     if [[ ${src:0:1} == "@" ]]; then
@@ -44,6 +45,7 @@ import::source() {
   local src="${1}"
   for ext in "" ".sh" ".bash"; do
     if [[ -f "${src}${ext}" ]]; then
+      [[ "${ARGSH_DEBUG:-}" == "1" ]] && echo "argsh:debug: import resolved -> ${src}${ext}" >&2
       # shellcheck disable=SC1090
       . "${src}${ext}"
       return

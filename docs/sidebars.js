@@ -287,6 +287,23 @@ module.exports = {
     },
     {
       type: "html",
+      value: "Reference",
+      customProps: {
+        sidebar_is_group_divider: true,
+      },
+      className: "homepage-sidebar-item",
+    },
+    {
+      type: "doc",
+      id: "environment-variables",
+      label: "Environment Variables",
+      customProps: {
+        sidebar_icon: "circle-dotted-line",
+      },
+      className: "homepage-sidebar-item",
+    },
+    {
+      type: "html",
       value: "Additional Resources",
       customProps: {
         sidebar_is_group_divider: true,

@@ -1,0 +1,175 @@
+---
+description: 'Complete reference for all environment variables used by argsh'
+---
+
+# Environment Variables
+
+argsh uses environment variables for configuration. Most are set automatically or via `.envrc` ([direnv](https://direnv.net/)).
+
+## User-Configurable Variables
+
+### ARGSH_SOURCE
+
+Path to the entry-point script. Used by `import` to resolve relative paths. Automatically set by `argsh::shebang()` but can be overridden.
+
+```bash
+export ARGSH_SOURCE="/path/to/myscript.sh"
+```
+
+### ARGSH_FIELD_WIDTH
+
+Width (in characters) for the flag/command name column in help output. Defaults to `24`.
+
+```bash
+export ARGSH_FIELD_WIDTH=30
+```
+
+### ARGSH_BUILTIN_PATH
+
+Explicit full path to `argsh.so`. When set, this path is tried first during builtin loading, bypassing the standard search order.
+
+```bash
+export ARGSH_BUILTIN_PATH="/usr/local/lib/argsh.so"
+```
+
+### ARGSH_DEBUG
+
+*New in v0.6.1*
+
+Enable debug trace output. When set to `1`, argsh prints diagnostic messages to stderr prefixed with `argsh:debug:`. Useful for troubleshooting import resolution and builtin loading.
+
+```bash
+ARGSH_DEBUG=1 argsh ./myscript.sh
+```
+
+Example output:
+```
+argsh:debug: searching for argsh.so...
+argsh:debug: loaded builtins from /home/user/.local/lib/bash/argsh.so
+argsh:debug: import string
+argsh:debug: import resolved -> /path/to/libraries/string.sh
+```
+
+### ARGSH_NO_AUTO_DOWNLOAD
+
+*New in v0.6.1*
+
+When set to `1`, prevents argsh from automatically downloading `argsh.so` from GitHub releases. If a local `.so` is already installed, it will still be loaded.
+
+This is different from `--no-builtin`, which skips ALL builtin loading (including locally installed ones).
+
+```bash
+export ARGSH_NO_AUTO_DOWNLOAD=1
+```
+
+### PATH_BASE
+
+Project root directory. Used by `import @...` to resolve project-relative imports. Typically set in `.envrc`.
+
+```bash
+export PATH_BASE="$(git rev-parse --show-toplevel)"
+```
+
+### PATH_BIN
+
+Project binary directory. Used as a search path for `argsh.so` and as an install target for `argsh builtin install`.
+
+```bash
+export PATH_BIN="${PATH_BASE}/.bin"
+```
+
+### PATH_SCRIPTS
+
+Directory for project scripts. Used by `import ^...` to resolve script-relative imports.
+
+```bash
+export PATH_SCRIPTS="${PATH_BASE}/.scripts"
+```
+
+### PATH_LIB
+
+Project library directory. Used as a search path for `argsh.so`.
+
+```bash
+export PATH_LIB="${PATH_BASE}/.lib"
+```
+
+## Read-Only Variables
+
+These are set by argsh at runtime and should not be modified.
+
+### ARGSH_VERSION
+
+The current argsh version string, set during release builds.
+
+### ARGSH_COMMIT_SHA
+
+The git commit SHA of the argsh build, set during release builds.
+
+### ARGSH_BUILTIN
+
+Set to `1` when native builtins (`.so`) are successfully loaded, `0` otherwise. Used internally to gate pure-Bash fallback definitions.
+
+## Internal Variables
+
+These are implementation details and should not be set manually.
+
+### __ARGSH_BUILTINS
+
+Array of builtin command names that `args.sh` attempts to load from the `.so`. Used by `argsh::builtin::try()`.
+
+### __ARGSH_LIB_DIR
+
+Directory containing the argsh library files. Defaults to the directory of `import.sh`. Used as a fallback for resolving plain `import` names.
+
+## Testing Variables
+
+### MIN_COVERAGE
+
+Minimum code coverage percentage required for CI to pass. Used by the coverage tooling.
+
+### BATS_LOAD
+
+When set to a filename (e.g., `argsh.min.sh`), the test helper sources that file instead of the default `.sh` file matching the `.bats` filename. Used to run tests against the minified bundle.
+
+### ARGSH_BUILTIN_TEST
+
+When set to `1`, bats test files load the native `.so` builtins and run tests using the builtin implementations instead of pure-Bash.
+
+## .envrc Integration
+
+argsh projects typically use [direnv](https://direnv.net/) with an `.envrc` file to set project-specific variables:
+
+```bash
+# Typical .envrc for an argsh project
+: "${PATH_BASE:=$(git rev-parse --show-toplevel)}"
+: "${PATH_BIN:=${PATH_BASE}/.bin}"
+: "${PATH_LIB:=${PATH_BASE}/.lib}"
+: "${PATH_SCRIPTS:=${PATH_BASE}/.scripts}"
+
+export PATH_BASE PATH_BIN PATH_LIB PATH_SCRIPTS
+export PATH="${PATH_BIN}:${PATH}"
+```
+
+The `: "${VAR:=value}"` pattern sets a default only if the variable is not already set — this is the standard argsh convention for `.envrc` files.
+
+### LSP Support
+
+The argsh language server (LSP) also reads `.envrc` files to discover `PATH_BASE` and `PATH_SCRIPTS` for import resolution. This means IDE features like go-to-definition and diagnostics work correctly even without running `direnv allow` first. The LSP parses the following `.envrc` patterns:
+
+- `: "${VAR:=value}"` (argsh default pattern)
+- `export VAR=value`
+- `VAR=value` (plain assignment)
+
+Variable references (`${PATH_BASE}` and `$PATH_BASE`) are expanded using previously parsed values. Lines containing command substitution (`$(...)`) are skipped — use literal paths for LSP compatibility:
+
+```bash
+# LSP can parse this:
+: "${PATH_BASE:=/home/user/project}"
+: "${PATH_SCRIPTS:=${PATH_BASE}/.scripts}"   # ${PATH_BASE} is expanded
+
+# LSP skips this (command substitution):
+: "${PATH_BASE:=$(git rev-parse --show-toplevel)}"
+```
+
+When `PATH_BASE` is set via command substitution (common in real `.envrc` files), the LSP falls back to auto-detecting the project root by looking for `.git`, `.envrc`, or `.bin/argsh` directories.

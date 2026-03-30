@@ -103,6 +103,8 @@ fn parse_specifiers(specs: &[String]) -> Vec<FuncSpec> {
 
 /// Main entry point for import builtin.
 pub fn import_main(args: &[String]) -> i32 {
+    let debug = std::env::var("ARGSH_DEBUG").ok().filter(|v| v == "1").is_some();
+
     // Parse flags
     let mut force = false;
     let mut list_mode = false;
@@ -147,9 +149,18 @@ pub fn import_main(args: &[String]) -> i32 {
         return 0;
     }
 
+    if debug {
+        shell::write_stderr(&format!("argsh:debug: import {}", module));
+    }
+
     // Resolve module path
     let resolved = match resolve_module_path(&module) {
-        Some(path) => path,
+        Some(path) => {
+            if debug {
+                shell::write_stderr(&format!("argsh:debug: import resolved {} -> {}", module, path));
+            }
+            path
+        }
         None => {
             shell::write_stderr(&format!("Library not found {}", module));
             return 1;
@@ -213,6 +224,10 @@ pub fn import_main(args: &[String]) -> i32 {
 
     // Update cache
     shell::assoc_set("import_cache", &module, "1");
+
+    if debug {
+        shell::write_stderr(&format!("argsh:debug: import {} sourced successfully", module));
+    }
 
     0
 }
