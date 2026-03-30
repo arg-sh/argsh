@@ -255,6 +255,7 @@ if ! (( ARGSH_BUILTIN )); then
       [[ "${func}" == "${usage[i]}" ]] || break 2
       
       func="${func/|*}"
+      func="${func/@*/}"
       break 2
     done
   done

@@ -970,6 +970,49 @@ source "${PATH_FIXTURES}/fmt.sh"
 }
 
 # -----------------------------------------------------------------------------
+# Annotation stripping in dispatch
+
+@test "usage: @annotation stripped during dispatch (deploy@destructive)" {
+  (
+    :test::annotated deploy
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains "annotated::deploy" stdout
+}
+
+@test "usage: @annotation stripped during dispatch (status@readonly)" {
+  (
+    :test::annotated status
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains "annotated::status" stdout
+}
+
+@test "usage: @annotation stripped during dispatch (use@idempotent)" {
+  (
+    :test::annotated use
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains "annotated::use" stdout
+}
+
+@test "usage: @annotation with multiple tags (deploy@destructive@idempotent)" {
+  (
+    :test::annotated deploy
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains "annotated::deploy" stdout
+}
+
+# -----------------------------------------------------------------------------
 # Missing value for flag (covers args.sh line 490)
 
 @test "attrs: error: missing value for flag at end of args" {
