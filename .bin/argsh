@@ -831,6 +831,7 @@ argsh::main() {
   docker run --rm ${tty} $(docker::user) -w /workspace \
     -e "BATS_LOAD" \
     -e "ARGSH_SOURCE" \
+    -e "ARGSH_BUILTIN" \
     -e "ARGSH_BUILTIN_TEST" \
     ${ARGSH_BUILTIN_PATH:+-e "ARGSH_BUILTIN_PATH=${ARGSH_BUILTIN_PATH}"} \
     -e "LLVM_PROFILE_FILE" \
