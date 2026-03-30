@@ -316,7 +316,7 @@ fi
   assert "${status}" -eq 0
   # For normal (non-minified) mode, stderr should not contain debug
   if [[ "${BATS_LOAD}" != "argsh.min.sh" ]]; then
-    ! grep -q "argsh:debug:" "${stderr}" || {
+    ! command grep -q "argsh:debug:" "${stderr}" || {
       echo "Debug output should not appear without ARGSH_DEBUG=1"
       return 1
     }
