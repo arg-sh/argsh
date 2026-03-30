@@ -149,9 +149,10 @@ priority::action() {
 # Test: @annotation must be stripped from function name during dispatch
 :test::annotated() {
   local -a usage=(
-    'deploy@destructive' "Deploy the app"
-    'status@readonly'    "Show status"
-    'use@idempotent'     "Use something"
+    'deploy@destructive'            "Deploy the app"
+    'status@readonly'               "Show status"
+    'use@idempotent'                "Use something"
+    'sync@destructive@idempotent'   "Sync with multiple tags"
   )
   :usage "Annotated dispatch test" "${@}"
   "${usage[@]}"
@@ -167,6 +168,10 @@ priority::action() {
 
 :test::annotated::use() {
   echo "annotated::use"
+}
+
+:test::annotated::sync() {
+  echo "annotated::sync"
 }
 
 :test::nosub() {

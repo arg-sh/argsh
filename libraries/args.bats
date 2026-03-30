@@ -1002,14 +1002,14 @@ source "${PATH_FIXTURES}/fmt.sh"
   contains "annotated::use" stdout
 }
 
-@test "usage: @annotation with multiple tags (deploy@destructive@idempotent)" {
+@test "usage: @annotation with multiple tags (sync@destructive@idempotent)" {
   (
-    :test::annotated deploy
+    :test::annotated sync
   ) >"${stdout}" 2>"${stderr}" || status=$?
 
   assert "${status}" -eq 0
   is_empty stderr
-  contains "annotated::deploy" stdout
+  contains "annotated::sync" stdout
 }
 
 
