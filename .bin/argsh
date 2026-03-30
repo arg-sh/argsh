@@ -89,9 +89,11 @@ _test() {
 
   case "${target}" in
     all)
-      echo "▸ Testing: pure bash (no builtins)" >&2
-      ARGSH_PURE_BASH_TEST=1 \
-        argsh::main test libraries .docker/test
+      if [[ -z "${BATS_LOAD:-}" ]]; then
+        echo "▸ Testing: pure bash (no builtins)" >&2
+        ARGSH_PURE_BASH_TEST=1 \
+          argsh::main test libraries .docker/test
+      fi
       echo "▸ Testing: with native builtins (.so)" >&2
       ARGSH_BUILTIN_TEST=1 \
         argsh::main test libraries .docker/test
