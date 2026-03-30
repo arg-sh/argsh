@@ -292,7 +292,9 @@ argsh::help() {
   echo "  --no-builtin       Skip builtin loading and auto-download"
   echo ""
   echo "Environment:"
-  echo "  ARGSH_BUILTIN_PATH  Path to argsh.so (overrides auto-search)"
+  echo "  ARGSH_BUILTIN_PATH       Path to argsh.so (overrides auto-search)"
+  echo "  ARGSH_NO_AUTO_DOWNLOAD   Set to 1 to skip auto-download of builtins"
+  echo "  ARGSH_DEBUG              Set to 1 to enable debug trace output"
 }
 
 # @internal
@@ -435,9 +437,13 @@ argsh::shebang() {
       [[ "${ARGSH_DEBUG:-}" == "1" ]] && echo "argsh:debug: loaded builtins from $(argsh::builtin::location 2>/dev/null || echo 'unknown')" >&2
     else
       [[ "${ARGSH_DEBUG:-}" == "1" ]] && echo "argsh:debug: no builtins found, using pure bash" >&2
-      # Auto-download from latest release (stderr visible for debugging)
-      [[ "${ARGSH_DEBUG:-}" == "1" ]] && echo "argsh:debug: attempting auto-download of builtins" >&2
-      argsh::builtin::download 0 && argsh::builtin::try && ARGSH_BUILTIN=1
+      # Auto-download from latest release (unless ARGSH_NO_AUTO_DOWNLOAD=1)
+      if [[ "${ARGSH_NO_AUTO_DOWNLOAD:-}" != "1" ]]; then
+        [[ "${ARGSH_DEBUG:-}" == "1" ]] && echo "argsh:debug: attempting auto-download of builtins" >&2
+        argsh::builtin::download 0 && argsh::builtin::try && ARGSH_BUILTIN=1
+      else
+        [[ "${ARGSH_DEBUG:-}" == "1" ]] && echo "argsh:debug: auto-download disabled (ARGSH_NO_AUTO_DOWNLOAD=1)" >&2
+      fi
     fi
   fi
 
