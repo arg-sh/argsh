@@ -144,6 +144,36 @@ priority::action() {
 
 # --- coverage: no visible subcommands, long-only flag ---
 
+# --- annotation stripping in dispatch ---
+
+# Test: @annotation must be stripped from function name during dispatch
+:test::annotated() {
+  local -a usage=(
+    'deploy@destructive'            "Deploy the app"
+    'status@readonly'               "Show status"
+    'use@idempotent'                "Use something"
+    'sync@destructive@idempotent'   "Sync with multiple tags"
+  )
+  :usage "Annotated dispatch test" "${@}"
+  "${usage[@]}"
+}
+
+:test::annotated::deploy() {
+  echo "annotated::deploy"
+}
+
+:test::annotated::status() {
+  echo "annotated::status"
+}
+
+:test::annotated::use() {
+  echo "annotated::use"
+}
+
+:test::annotated::sync() {
+  echo "annotated::sync"
+}
+
 :test::nosub() {
   local longonly
   local -a args=(
