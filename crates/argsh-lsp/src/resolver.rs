@@ -157,6 +157,9 @@ fn expand_vars(value: &str, vars: &HashMap<String, String>) -> String {
 pub fn resolve_imports(analysis: &DocumentAnalysis, base_path: &Path, max_depth: usize) -> ResolvedImports {
     let mut result = ResolvedImports::default();
     result.resolution_ran = max_depth > 0;
+    if max_depth == 0 {
+        return result;
+    }
     let mut visited = HashSet::new();
     // Add the current file to visited to prevent self-referencing
     if let Ok(canonical) = base_path.canonicalize() {
@@ -215,8 +218,7 @@ fn resolve_recursive(
             // ^ prefix: relative to PATH_SCRIPTS — skip if no scripts dir found
             // (matches runtime behavior: fails when PATH_SCRIPTS is unset)
             let stripped = &module[1..];
-            let project_root = find_project_root(base_dir).unwrap_or_else(|| base_dir.to_path_buf());
-            match find_scripts_dir(&project_root, envrc_vars) {
+            match find_scripts_dir(project_root, envrc_vars) {
                 Some(scripts_dir) => (stripped.to_string(), scripts_dir),
                 None => continue, // unresolvable — AG013 will flag it
             }

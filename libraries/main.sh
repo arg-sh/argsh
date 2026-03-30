@@ -436,7 +436,7 @@ argsh::shebang() {
       ARGSH_BUILTIN=1
       [[ "${ARGSH_DEBUG:-}" == "1" ]] && echo "argsh:debug: loaded builtins from $(argsh::builtin::location 2>/dev/null || echo 'unknown')" >&2
     else
-      [[ "${ARGSH_DEBUG:-}" == "1" ]] && echo "argsh:debug: no builtins found, using pure bash" >&2
+      [[ "${ARGSH_DEBUG:-}" == "1" ]] && echo "argsh:debug: builtins not found locally" >&2
       # Auto-download from latest release (unless ARGSH_NO_AUTO_DOWNLOAD=1)
       if [[ "${ARGSH_NO_AUTO_DOWNLOAD:-}" != "1" ]]; then
         [[ "${ARGSH_DEBUG:-}" == "1" ]] && echo "argsh:debug: attempting auto-download of builtins" >&2
