@@ -42,11 +42,27 @@ To skip builtin loading entirely (pure-Bash mode):
 argsh --no-builtin ./myscript.sh
 ```
 
-Or control via environment variable:
+To skip only the auto-download (local `.so` still loads if present):
+
+```bash
+export ARGSH_NO_AUTO_DOWNLOAD=1
+```
+
+Or control the search path via environment variable:
 
 ```bash
 export ARGSH_BUILTIN_PATH="/path/to/argsh.so"  # explicit path
 ```
+
+### Debugging
+
+Set `ARGSH_DEBUG=1` to see detailed trace output for builtin loading and import resolution:
+
+```bash
+ARGSH_DEBUG=1 argsh ./myscript.sh
+```
+
+See [Environment Variables](/environment-variables) for the full reference.
 
 ### CLI Flags
 

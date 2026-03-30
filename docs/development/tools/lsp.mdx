@@ -207,6 +207,21 @@ language-servers = ["bash-language-server", "argsh-lsp"]
 command = "argsh-lsp"
 ```
 
+## .envrc Parsing
+
+The LSP server reads `.envrc` files from the project root to discover configuration variables like `PATH_BASE` and `PATH_SCRIPTS`. This enables accurate import resolution even without running `direnv allow` or setting environment variables manually.
+
+Supported patterns:
+- `: "${VAR:=value}"` (argsh default pattern)
+- `export VAR=value` and `export VAR="value"`
+- `VAR=value` (plain assignment)
+
+Lines with command substitution (`$(...)`) are skipped. Environment variables always take precedence over `.envrc` values.
+
+:::tip
+Set `ARGSH_DEBUG=1` to see debug trace output for import resolution and builtin loading. See [Environment Variables](/environment-variables) for the full reference.
+:::
+
 ## Architecture
 
 ```
