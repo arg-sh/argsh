@@ -23,10 +23,7 @@ declare -gA import_cache=()
  import() {
   local src="${1}"
   [[ "${ARGSH_DEBUG:-}" == "1" ]] && echo "argsh:debug: import ${src}" >&2
-  (( ${import_cache["${src}"]:-} )) && {
-    [[ "${ARGSH_DEBUG:-}" == "1" ]] && echo "argsh:debug: import ${src} (cached)" >&2
-    return 0
-  } || {
+  (( ${import_cache["${src}"]:-} )) || {
     import_cache["${src}"]=1
     # shellcheck disable=SC1090
     if [[ ${src:0:1} == "@" ]]; then
