@@ -208,7 +208,7 @@ argsh::builtins() { argsh::builtin "${@}"; }
 # @internal
 argsh::discover_dirs() {
   _search_dirs=()
-  local _d
+  local _d _existing _skip _rd _re
   # PATH_TEST: semicolon-separated list of directories
   if [[ -n "${PATH_TEST:-}" ]]; then
     IFS=';' read -ra _search_dirs <<< "${PATH_TEST}"
@@ -221,9 +221,11 @@ argsh::discover_dirs() {
     "${PATH_BASE:-.}/tests" \
     "${PATH_BASE:-.}/libraries"; do
     [[ -d "${_d}" ]] || continue
-    local _skip=0 _existing
+    _skip=0
+    _rd="$(realpath "${_d}" 2>/dev/null || echo "${_d}")"
     for _existing in "${_search_dirs[@]}"; do
-      [[ "$(realpath "${_d}" 2>/dev/null)" != "$(realpath "${_existing}" 2>/dev/null)" ]] || { _skip=1; break; }
+      _re="$(realpath "${_existing}" 2>/dev/null || echo "${_existing}")"
+      [[ "${_rd}" != "${_re}" ]] || { _skip=1; break; }
     done
     (( _skip )) || _search_dirs+=("${_d}")
   done
@@ -307,6 +309,7 @@ argsh::status() {
 
   # Coverage — search for coverage.json under PATH_BASE
   local -a _cov_files=()
+  local _d _cov_file
   for _d in "${PATH_BASE:-.}" "${PATH_BASE:-.}"/*/; do
     _d="${_d%/}"
     [[ -f "${_d}/coverage.json" ]] && _cov_files+=("${_d}/coverage.json")
@@ -346,6 +349,7 @@ argsh::help() {
   echo "  ARGSH_BUILTIN_PATH       Path to argsh.so (overrides auto-search)"
   echo "  ARGSH_NO_AUTO_DOWNLOAD   Set to 1 to skip auto-download of builtins"
   echo "  ARGSH_DEBUG              Set to 1 to enable debug trace output"
+  echo "  PATH_TEST                Semicolon-separated dirs for test/script discovery"
 }
 
 # @internal
