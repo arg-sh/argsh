@@ -207,24 +207,27 @@ argsh::builtins() { argsh::builtin "${@}"; }
 # @set _search_dirs array Directories to search (deduplicated)
 # @internal
 argsh::discover_dirs() {
+  local -a _raw_dirs=()
   _search_dirs=()
   local _d _existing _skip _rd _re
   # PATH_TEST: semicolon-separated list of directories
   if [[ -n "${PATH_TEST:-}" ]]; then
-    IFS=';' read -ra _search_dirs <<< "${PATH_TEST}"
+    IFS=';' read -ra _raw_dirs <<< "${PATH_TEST}"
   fi
-  # Common locations (skip duplicates)
-  for _d in \
-    "${BASH_SOURCE[0]%/*}" \
-    "${PATH_BASE:-.}" \
-    "${PATH_BASE:-.}/test" \
-    "${PATH_BASE:-.}/tests" \
-    "${PATH_BASE:-.}/libraries"; do
+  # Append common locations
+  _raw_dirs+=(
+    "${BASH_SOURCE[0]%/*}"
+    "${PATH_BASE:-.}"
+    "${PATH_BASE:-.}/test"
+    "${PATH_BASE:-.}/tests"
+    "${PATH_BASE:-.}/libraries"
+  )
+  # Deduplicate all entries
+  for _d in "${_raw_dirs[@]}"; do
     [[ -d "${_d}" ]] || continue
     _skip=0
     _rd="$(realpath "${_d}" 2>/dev/null || echo "${_d}")"
     for _existing in "${_search_dirs[@]}"; do
-      [[ -d "${_existing}" ]] || continue
       _re="$(realpath "${_existing}" 2>/dev/null || echo "${_existing}")"
       [[ "${_rd}" != "${_re}" ]] || { _skip=1; break; }
     done
