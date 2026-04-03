@@ -202,6 +202,53 @@ argsh::builtin() {
 # @internal
 argsh::builtins() { argsh::builtin "${@}"; }
 
+# @description Discover search directories for scripts and tests.
+# Uses PATH_TEST (semicolon-separated), then common locations under PATH_BASE.
+# @set _search_dirs array Directories to search (deduplicated)
+# @internal
+argsh::discover_dirs() {
+  _search_dirs=()
+  local _d
+  # PATH_TEST: semicolon-separated list of directories
+  if [[ -n "${PATH_TEST:-}" ]]; then
+    IFS=';' read -ra _search_dirs <<< "${PATH_TEST}"
+  fi
+  # Common locations (skip duplicates)
+  for _d in \
+    "${BASH_SOURCE[0]%/*}" \
+    "${PATH_BASE:-.}" \
+    "${PATH_BASE:-.}/test" \
+    "${PATH_BASE:-.}/tests" \
+    "${PATH_BASE:-.}/libraries"; do
+    [[ -d "${_d}" ]] || continue
+    local _skip=0 _existing
+    for _existing in "${_search_dirs[@]}"; do
+      [[ "$(realpath "${_d}" 2>/dev/null)" != "$(realpath "${_existing}" 2>/dev/null)" ]] || { _skip=1; break; }
+    done
+    (( _skip )) || _search_dirs+=("${_d}")
+  done
+}
+
+# @description Find files matching a pattern across discovered directories.
+# Caller must declare: local -a _found_files=()
+# @arg $@ string Glob patterns to search (e.g. "*.sh" "*.bats")
+# @set _found_files array Matching files (appended to caller's array)
+# @internal
+argsh::discover_files() {
+  local -a _search_dirs=()
+  argsh::discover_dirs
+  local _d _f _pattern
+  for _d in "${_search_dirs[@]}"; do
+    [[ -d "${_d}" ]] || continue
+    for _pattern in "${@}"; do
+      for _f in "${_d}"/${_pattern}; do
+        [[ -f "${_f}" ]] || continue
+        _found_files+=("${_f}")
+      done
+    done
+  done
+}
+
 # @description Show comprehensive argsh runtime status.
 # @stdout Multi-line status report
 # @example
@@ -245,36 +292,13 @@ argsh::status() {
   fi
   echo ""
 
-  # Tests — search PATH_TEST dirs, then common locations under PATH_BASE
-  local -a _bats=() _search_dirs=()
-  local _d _f
-  # PATH_TEST: semicolon-separated list of directories
-  if [[ -n "${PATH_TEST:-}" ]]; then
-    IFS=';' read -ra _search_dirs <<< "${PATH_TEST}"
-  fi
-  # Common locations (skip duplicates)
-  for _d in \
-    "${BASH_SOURCE[0]%/*}" \
-    "${PATH_BASE:-.}" \
-    "${PATH_BASE:-.}/test" \
-    "${PATH_BASE:-.}/tests" \
-    "${PATH_BASE:-.}/libraries"; do
-    [[ -d "${_d}" ]] || continue
-    local _skip=0
-    for _existing in "${_search_dirs[@]}"; do
-      [[ "$(realpath "${_d}" 2>/dev/null)" != "$(realpath "${_existing}" 2>/dev/null)" ]] || { _skip=1; break; }
-    done
-    (( _skip )) || _search_dirs+=("${_d}")
-  done
-  for _d in "${_search_dirs[@]}"; do
-    [[ -d "${_d}" ]] || continue
-    for _f in "${_d}"/*.bats; do
-      [[ -f "${_f}" ]] && _bats+=("${_f}")
-    done
-  done
-  if (( ${#_bats[@]} > 0 )); then
-    echo "Tests: ${#_bats[@]} .bats file(s)"
-    for _f in "${_bats[@]}"; do
+  # Tests
+  local -a _found_files=()
+  argsh::discover_files "*.bats"
+  if (( ${#_found_files[@]} > 0 )); then
+    echo "Tests: ${#_found_files[@]} .bats file(s)"
+    local _f
+    for _f in "${_found_files[@]}"; do
       echo "  ${_f}"
     done
   else

@@ -70,10 +70,27 @@ argsh::lint() {
     'files'  "Files to lint, can be a glob pattern"
   )
   :args "Lint Bash files" "${@}"
-  ! is::uninitialized files || {
-    :args::error_usage "No files to lint"
-    return 1
-  }
+  # Fall back to discovered files when no args given
+  if is::uninitialized files; then
+    local -a _found_files=()
+    argsh::discover_files "*.sh" "*.bash" "*.bats"
+    # Also find extensionless scripts with bash/sh shebang
+    local -a _search_dirs=()
+    argsh::discover_dirs
+    local _d _f
+    for _d in "${_search_dirs[@]}"; do
+      [[ -d "${_d}" ]] || continue
+      for _f in "${_d}"/*; do
+        [[ -f "${_f}" && ! "${_f}" == *.* ]] || continue
+        head -1 "${_f}" 2>/dev/null | grep -qE '^#!.*(bash|sh|argsh)' && _found_files+=("${_f}")
+      done
+    done
+    if (( ${#_found_files[@]} == 0 )); then
+      echo "No files to lint (set PATH_TEST or pass files as arguments)" >&2
+      return 1
+    fi
+    files=("${_found_files[@]}")
+  fi
 
   local file f
   local -a glob
@@ -94,10 +111,20 @@ argsh::lint() {
 
 argsh::test() {
   # shellcheck disable=SC2034
-  local -a tests=(".") args=(
+  local -a tests args=(
     'tests'    "Path to the bats test files"
   )
   :args "Run tests" "${@}"
+  # Fall back to discovered .bats files when no args given
+  if is::uninitialized tests; then
+    local -a _found_files=()
+    argsh::discover_files "*.bats"
+    if (( ${#_found_files[@]} == 0 )); then
+      echo "No test files found (set PATH_TEST or pass files as arguments)" >&2
+      return 1
+    fi
+    tests=("${_found_files[@]}")
+  fi
   [[ -z "${BATS_LOAD:-}" ]] || {
     echo "Running tests for ${BATS_LOAD}" >&2
   }
