@@ -828,6 +828,7 @@ argsh::main() {
     }
   fi
 
+  tty="-i"
   [[ ! -t 1 ]] || tty="-it"
   # shellcheck disable=SC2046
   docker run --rm ${tty} $(docker::user) -w /workspace \
