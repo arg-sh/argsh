@@ -195,7 +195,7 @@ declare -gi ARGSH_BUILTIN="${ARGSH_BUILTIN:-0}"
   contains "\.bats file" stdout
   # Count .bats occurrences — each file should appear only once
   local _count
-  _count=$(grep -c "\.bats$" "${stdout}" || true)
+  _count=$(command grep -c "\.bats$" "${stdout}" || echo 0)
   # libraries has 4 .bats files, shouldn't be doubled
   assert "${_count}" -le 6
 }

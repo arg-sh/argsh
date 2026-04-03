@@ -86,7 +86,7 @@ argsh::lint() {
         local _basename="${_f##*/}"
         [[ "${_basename}" != *.* ]] || continue
         # Only include scripts with bash/sh/argsh shebang
-        head -1 "${_f}" 2>/dev/null | grep -qE '^#!/.*(ba)?sh(\s|$)|^#!/.*argsh' && _found_files+=("${_f}")
+        head -1 "${_f}" 2>/dev/null | grep -qE '^#!/.*(ba)?sh([[:space:]]|$)|^#!/.*argsh' && _found_files+=("${_f}")
       done
     done
     if (( ${#_found_files[@]} == 0 )); then
