@@ -202,6 +202,59 @@ argsh::builtin() {
 # @internal
 argsh::builtins() { argsh::builtin "${@}"; }
 
+# @description Discover search directories for scripts and tests.
+# Uses PATH_TEST (semicolon-separated), then common locations under PATH_BASE.
+# @set _search_dirs array Directories to search (deduplicated)
+# @internal
+argsh::discover_dirs() {
+  local -a _raw_dirs=()
+  _search_dirs=()
+  local _d _existing _skip _rd _re
+  # PATH_TEST: semicolon-separated list of directories
+  if [[ -n "${PATH_TEST:-}" ]]; then
+    IFS=';' read -ra _raw_dirs <<< "${PATH_TEST}"
+  fi
+  # Append common locations
+  _raw_dirs+=(
+    "${BASH_SOURCE[0]%/*}"
+    "${PATH_BASE:-.}"
+    "${PATH_BASE:-.}/test"
+    "${PATH_BASE:-.}/tests"
+    "${PATH_BASE:-.}/libraries"
+  )
+  # Deduplicate all entries
+  for _d in "${_raw_dirs[@]}"; do
+    [[ -d "${_d}" ]] || continue
+    _skip=0
+    _rd="$(realpath "${_d}" 2>/dev/null || echo "${_d}")"
+    for _existing in "${_search_dirs[@]}"; do
+      _re="$(realpath "${_existing}" 2>/dev/null || echo "${_existing}")"
+      [[ "${_rd}" != "${_re}" ]] || { _skip=1; break; }
+    done
+    (( _skip )) || _search_dirs+=("${_d}")
+  done
+}
+
+# @description Find files matching a pattern across discovered directories.
+# Caller must declare: local -a _found_files=()
+# @arg $@ string Glob patterns to search (e.g. "*.sh" "*.bats")
+# @set _found_files array Matching files (appended to caller's array)
+# @internal
+argsh::discover_files() {
+  local -a _search_dirs=()
+  argsh::discover_dirs
+  local _d _f _pattern
+  for _d in "${_search_dirs[@]}"; do
+    [[ -d "${_d}" ]] || continue
+    for _pattern in "${@}"; do
+      for _f in "${_d}"/${_pattern}; do
+        [[ -f "${_f}" ]] || continue
+        _found_files+=("${_f}")
+      done
+    done
+  done
+}
+
 # @description Show comprehensive argsh runtime status.
 # @stdout Multi-line status report
 # @example
@@ -246,28 +299,33 @@ argsh::status() {
   echo ""
 
   # Tests
-  local _lib_dir _bats_count
-  _lib_dir="${BASH_SOURCE[0]%/*}"
-  local -a _bats=()
-  local _f
-  for _f in "${_lib_dir}"/*.bats; do
-    [[ -f "${_f}" ]] && _bats+=("$(basename "${_f}")")
-  done
-  _bats_count="${#_bats[@]}"
-  if (( _bats_count > 0 )); then
-    echo "Tests: ${_bats_count} .bats file(s): ${_bats[*]}"
+  local -a _found_files=()
+  argsh::discover_files "*.bats"
+  if (( ${#_found_files[@]} > 0 )); then
+    echo "Tests: ${#_found_files[@]} .bats file(s)"
+    local _f
+    for _f in "${_found_files[@]}"; do
+      echo "  ${_f}"
+    done
   else
     echo "Tests: none found"
   fi
 
-  # Coverage
-  local _cov_file
-  _cov_file="${_lib_dir}/../builtin/coverage.json"
-  if [[ -f "${_cov_file}" ]]; then
-    local _pct="?" _date="?"
-    _pct="$(grep -o '"percent_covered"[^"]*"[^"]*"' "${_cov_file}" | tail -1)" && [[ "${_pct}" =~ \"([0-9.]+)\"$ ]] && _pct="${BASH_REMATCH[1]}"
-    _date="$(grep -o '"date"[^"]*"[^"]*"' "${_cov_file}")" && [[ "${_date}" =~ \"([^\"]+)\"$ ]] && _date="${BASH_REMATCH[1]}"
-    echo "Coverage: ${_pct}% (${_date})"
+  # Coverage — search for coverage.json under PATH_BASE
+  local -a _cov_files=()
+  local _d _cov_file
+  for _d in "${PATH_BASE:-.}" "${PATH_BASE:-.}"/*/; do
+    _d="${_d%/}"
+    [[ -f "${_d}/coverage.json" ]] && _cov_files+=("${_d}/coverage.json")
+  done
+  if (( ${#_cov_files[@]} > 0 )); then
+    echo "Coverage:"
+    for _cov_file in "${_cov_files[@]}"; do
+      local _pct="?" _date="?"
+      _pct="$(grep -o '"percent_covered"[^"]*"[^"]*"' "${_cov_file}" | tail -1)" && [[ "${_pct}" =~ \"([0-9.]+)\"$ ]] && _pct="${BASH_REMATCH[1]}"
+      _date="$(grep -o '"date"[^"]*"[^"]*"' "${_cov_file}")" && [[ "${_date}" =~ \"([^\"]+)\"$ ]] && _date="${BASH_REMATCH[1]}"
+      echo "  ${_cov_file##"${PATH_BASE:-.}"/}: ${_pct}% (${_date})"
+    done
   else
     echo "Coverage: no coverage.json found"
   fi
@@ -295,6 +353,7 @@ argsh::help() {
   echo "  ARGSH_BUILTIN_PATH       Path to argsh.so (overrides auto-search)"
   echo "  ARGSH_NO_AUTO_DOWNLOAD   Set to 1 to skip auto-download of builtins"
   echo "  ARGSH_DEBUG              Set to 1 to enable debug trace output"
+  echo "  PATH_TEST                Semicolon-separated dirs for test/script discovery"
 }
 
 # @internal

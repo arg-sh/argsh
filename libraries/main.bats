@@ -161,6 +161,52 @@ declare -gi ARGSH_BUILTIN="${ARGSH_BUILTIN:-0}"
   contains "Features:" stdout
 }
 
+# -----------------------------------------------------------------------------
+# Discovery tests
+
+@test "status: discovers bats files" {
+  ARGSH_BUILTIN=0 argsh::shebang status >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains "\.bats file" stdout
+}
+
+@test "status: PATH_TEST adds custom directory" {
+  local _tmp
+  _tmp="$(mktemp -d)"
+  touch "${_tmp}/custom.bats"
+  (
+    PATH_TEST="${_tmp}" ARGSH_BUILTIN=0 argsh::shebang status
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+  rm -rf "${_tmp}"
+
+  assert "${status}" -eq 0
+  contains "custom.bats" stdout
+}
+
+@test "status: deduplicates overlapping dirs" {
+  (
+    # PATH_BASE/libraries is already in defaults, adding it via PATH_TEST shouldn't double-count
+    export PATH_TEST="${PATH_BASE:-${BATS_TEST_DIRNAME}/..}/libraries"
+    ARGSH_BUILTIN=0 argsh::status
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains "\.bats file" stdout
+  # Count .bats occurrences — each file should appear only once
+  local _count
+  _count=$(command grep -c "\.bats$" "${stdout}" || echo 0)
+  # libraries has 4 .bats files, shouldn't be doubled
+  assert "${_count}" -le 6
+}
+
+@test "status: discovers coverage.json" {
+  ARGSH_BUILTIN=0 argsh::shebang status >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains "coverage.json" stdout
+}
+
 @test "shebang: --version shows version" {
   ARGSH_VERSION="test-ver" argsh::shebang --version >"${stdout}" 2>"${stderr}" || status=$?
 

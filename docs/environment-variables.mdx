@@ -94,6 +94,26 @@ Project library directory. Used as a search path for `argsh.so`.
 export PATH_LIB="${PATH_BASE}/.lib"
 ```
 
+### PATH_TEST
+
+Semicolon-separated list of directories to search for test and script files. Used by `argsh status`, `argsh lint` (auto-discovery), and `argsh test` (auto-discovery).
+
+When unset, argsh searches these locations automatically:
+- argsh library directory (`BASH_SOURCE`)
+- `PATH_BASE` (project root)
+- `PATH_BASE/test`, `PATH_BASE/tests`, `PATH_BASE/libraries`
+
+```bash
+# Single directory
+export PATH_TEST="tests"
+
+# Multiple directories
+export PATH_TEST="tests;integration;e2e"
+```
+
+`argsh lint` discovers `*.sh`, `*.bash`, `*.bats`, and extensionless files with a bash/sh shebang.
+`argsh test` discovers `*.bats` files.
+
 ## Read-Only Variables
 
 These are set by argsh at runtime and should not be modified.
