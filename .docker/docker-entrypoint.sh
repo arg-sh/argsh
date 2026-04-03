@@ -81,8 +81,12 @@ argsh::lint() {
     for _d in "${_search_dirs[@]}"; do
       [[ -d "${_d}" ]] || continue
       for _f in "${_d}"/*; do
-        [[ -f "${_f}" && ! "${_f}" == *.* ]] || continue
-        head -1 "${_f}" 2>/dev/null | grep -qE '^#!.*(bash|sh|argsh)' && _found_files+=("${_f}")
+        [[ -f "${_f}" ]] || continue
+        # Skip files with extensions (check basename to handle dotted directories)
+        local _basename="${_f##*/}"
+        [[ "${_basename}" != *.* ]] || continue
+        # Only include scripts with bash/sh/argsh shebang
+        head -1 "${_f}" 2>/dev/null | grep -qE '^#!/.*(ba)?sh(\s|$)|^#!/.*argsh' && _found_files+=("${_f}")
       done
     done
     if (( ${#_found_files[@]} == 0 )); then

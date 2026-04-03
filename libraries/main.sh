@@ -224,6 +224,7 @@ argsh::discover_dirs() {
     _skip=0
     _rd="$(realpath "${_d}" 2>/dev/null || echo "${_d}")"
     for _existing in "${_search_dirs[@]}"; do
+      [[ -d "${_existing}" ]] || continue
       _re="$(realpath "${_existing}" 2>/dev/null || echo "${_existing}")"
       [[ "${_rd}" != "${_re}" ]] || { _skip=1; break; }
     done
