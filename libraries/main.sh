@@ -410,7 +410,7 @@ argsh::shebang() {
       echo "This script requires Docker to be installed"
       return 1
     } >&2
-    local tty=""
+    local tty="-i"
     ! tty -s || tty="-it"
     # shellcheck disable=SC2046
     docker run --rm ${tty} $(docker::user) \
