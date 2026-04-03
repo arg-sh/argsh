@@ -52,7 +52,8 @@ RUN set -eux \
 COPY --from=koalaman/shellcheck:stable /bin/shellcheck /usr/local/bin/shellcheck
 
 # tools
-COPY --from=ghcr.io/jqlang/jq:latest /jq /usr/local/bin/jq
+COPY --from=ghcr.io/jqlang/jq:jq-1.8.1 /jq /usr/local/bin/jq
+COPY --from=mikefarah/yq:v4.52.5 /usr/bin/yq /usr/local/bin/yq
 RUN set -eux \
   && apt update \
   && apt install -y gettext-base \
