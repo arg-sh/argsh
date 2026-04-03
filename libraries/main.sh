@@ -245,29 +245,56 @@ argsh::status() {
   fi
   echo ""
 
-  # Tests
-  local _lib_dir _bats_count
-  _lib_dir="${BASH_SOURCE[0]%/*}"
-  local -a _bats=()
-  local _f
-  for _f in "${_lib_dir}"/*.bats; do
-    [[ -f "${_f}" ]] && _bats+=("$(basename "${_f}")")
+  # Tests — search PATH_TEST dirs, then common locations under PATH_BASE
+  local -a _bats=() _search_dirs=()
+  local _d _f
+  # PATH_TEST: semicolon-separated list of directories
+  if [[ -n "${PATH_TEST:-}" ]]; then
+    IFS=';' read -ra _search_dirs <<< "${PATH_TEST}"
+  fi
+  # Common locations (skip duplicates)
+  for _d in \
+    "${BASH_SOURCE[0]%/*}" \
+    "${PATH_BASE:-.}" \
+    "${PATH_BASE:-.}/test" \
+    "${PATH_BASE:-.}/tests" \
+    "${PATH_BASE:-.}/libraries"; do
+    [[ -d "${_d}" ]] || continue
+    local _skip=0
+    for _existing in "${_search_dirs[@]}"; do
+      [[ "$(realpath "${_d}" 2>/dev/null)" != "$(realpath "${_existing}" 2>/dev/null)" ]] || { _skip=1; break; }
+    done
+    (( _skip )) || _search_dirs+=("${_d}")
   done
-  _bats_count="${#_bats[@]}"
-  if (( _bats_count > 0 )); then
-    echo "Tests: ${_bats_count} .bats file(s): ${_bats[*]}"
+  for _d in "${_search_dirs[@]}"; do
+    [[ -d "${_d}" ]] || continue
+    for _f in "${_d}"/*.bats; do
+      [[ -f "${_f}" ]] && _bats+=("${_f}")
+    done
+  done
+  if (( ${#_bats[@]} > 0 )); then
+    echo "Tests: ${#_bats[@]} .bats file(s)"
+    for _f in "${_bats[@]}"; do
+      echo "  ${_f}"
+    done
   else
     echo "Tests: none found"
   fi
 
-  # Coverage
-  local _cov_file
-  _cov_file="${_lib_dir}/../builtin/coverage.json"
-  if [[ -f "${_cov_file}" ]]; then
-    local _pct="?" _date="?"
-    _pct="$(grep -o '"percent_covered"[^"]*"[^"]*"' "${_cov_file}" | tail -1)" && [[ "${_pct}" =~ \"([0-9.]+)\"$ ]] && _pct="${BASH_REMATCH[1]}"
-    _date="$(grep -o '"date"[^"]*"[^"]*"' "${_cov_file}")" && [[ "${_date}" =~ \"([^\"]+)\"$ ]] && _date="${BASH_REMATCH[1]}"
-    echo "Coverage: ${_pct}% (${_date})"
+  # Coverage — search for coverage.json under PATH_BASE
+  local -a _cov_files=()
+  for _d in "${PATH_BASE:-.}" "${PATH_BASE:-.}"/*/; do
+    _d="${_d%/}"
+    [[ -f "${_d}/coverage.json" ]] && _cov_files+=("${_d}/coverage.json")
+  done
+  if (( ${#_cov_files[@]} > 0 )); then
+    echo "Coverage:"
+    for _cov_file in "${_cov_files[@]}"; do
+      local _pct="?" _date="?"
+      _pct="$(grep -o '"percent_covered"[^"]*"[^"]*"' "${_cov_file}" | tail -1)" && [[ "${_pct}" =~ \"([0-9.]+)\"$ ]] && _pct="${BASH_REMATCH[1]}"
+      _date="$(grep -o '"date"[^"]*"[^"]*"' "${_cov_file}")" && [[ "${_date}" =~ \"([^\"]+)\"$ ]] && _date="${BASH_REMATCH[1]}"
+      echo "  ${_cov_file##"${PATH_BASE:-.}"/}: ${_pct}% (${_date})"
+    done
   else
     echo "Coverage: no coverage.json found"
   fi
