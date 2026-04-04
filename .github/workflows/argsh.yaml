@@ -476,7 +476,9 @@ jobs:
           TAG_NAME: ${{ github.ref_name }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "${TAG_NAME}" --draft --title "argsh ${TAG_NAME}" --generate-notes
+          # Create or update release (idempotent for re-runs)
+          gh release create "${TAG_NAME}" --draft --title "argsh ${TAG_NAME}" --generate-notes 2>/dev/null \
+            || gh release edit "${TAG_NAME}" --draft --title "argsh ${TAG_NAME}"
           gh release upload "${TAG_NAME}" --clobber release/*
 
           git config user.name 'github-actions[bot]'
@@ -487,5 +489,7 @@ jobs:
           cp artifacts/argsh.min.sh argsh.min.sh
           git add argsh.min.sh
           git commit -m "${title}"
-          git push origin "HEAD:refs/heads/${branch}"
-          gh pr create --title "${title}" --body "" --head "${branch}"
+          # Force-push branch (handles re-runs where branch already exists)
+          git push --force origin "HEAD:refs/heads/${branch}"
+          gh pr create --title "${title}" --body "" --head "${branch}" 2>/dev/null \
+            || echo "PR already exists for ${branch}"
