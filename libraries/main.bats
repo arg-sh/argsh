@@ -238,6 +238,7 @@ declare -gi ARGSH_BUILTIN="${ARGSH_BUILTIN:-0}"
   # Stub binary::exists so argsh::test takes the local path (not docker forward).
   binary::exists() { [[ "${1}" == "bats" ]] || command -v "${1}" &>/dev/null; }
 
+  # shellcheck disable=SC2119
   (PATH_TEST="${_tmp}" argsh::test) >"${stdout}" 2>"${stderr}" || status=$?
   rm -rf "${_tmp}"
 
@@ -253,6 +254,7 @@ declare -gi ARGSH_BUILTIN="${ARGSH_BUILTIN:-0}"
   # Stub discover_files to return nothing, simulating an empty project.
   argsh::discover_files() { :; }
 
+  # shellcheck disable=SC2119
   (argsh::test) >"${stdout}" 2>"${stderr}" || status=$?
 
   assert "${status}" -ne 0
@@ -267,6 +269,7 @@ declare -gi ARGSH_BUILTIN="${ARGSH_BUILTIN:-0}"
   argsh::discover_files() { :; }
   argsh::discover_dirs() { _search_dirs=(); }
 
+  # shellcheck disable=SC2119
   (argsh::lint) >"${stdout}" 2>"${stderr}" || status=$?
 
   assert "${status}" -ne 0
@@ -286,6 +289,7 @@ declare -gi ARGSH_BUILTIN="${ARGSH_BUILTIN:-0}"
 @test "argsh::main: dispatches test subcommand to argsh::test" {
   if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
   # Override argsh::test to prove dispatch reached the handler
+  # shellcheck disable=SC2120
   argsh::test() { echo "dispatched-to-test: $*"; }
 
   (argsh::main test foo bar) >"${stdout}" 2>"${stderr}" || status=$?
@@ -296,6 +300,7 @@ declare -gi ARGSH_BUILTIN="${ARGSH_BUILTIN:-0}"
 
 @test "argsh::main: dispatches lint subcommand to argsh::lint" {
   if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
+  # shellcheck disable=SC2120
   argsh::lint() { echo "dispatched-to-lint: $*"; }
 
   (argsh::main lint a b) >"${stdout}" 2>"${stderr}" || status=$?
