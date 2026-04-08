@@ -342,7 +342,9 @@ argsh::status() {
 # @arg $@ string Command and arguments to forward
 # @internal
 argsh::_docker_forward() {
-  binary::exists docker || {
+  # Suppress binary::exists's own "docker is required" message — we print
+  # a more contextual one below.
+  binary::exists docker 2>/dev/null || {
     echo "argsh: this command requires either the tool installed locally or Docker" >&2
     return 1
   }
@@ -362,7 +364,7 @@ argsh::_docker_forward() {
 # @description Minify Bash files into a single script.
 # @arg $@ string Files or directories, plus flags (-t, -o, -i)
 argsh::minify() {
-  if ! binary::exists minifier; then
+  if ! binary::exists minifier 2>/dev/null; then
     argsh::_docker_forward minify "${@}"
     return
   fi
@@ -416,6 +418,10 @@ argsh::minify() {
     echo -n "${data}" >"${out}"
     return 0
   fi
+  binary::exists envsubst 2>/dev/null || {
+    echo "argsh: envsubst is required for -t/--template (install gettext)" >&2
+    return 1
+  }
   # obfus ignore variable
   local commit_sha="${GIT_COMMIT_SHA:-}"
   # obfus ignore variable
@@ -428,7 +434,7 @@ argsh::minify() {
 # @description Lint Bash files with shellcheck.
 # @arg $@ string Files or directories (optional; auto-discovered via PATH_TEST)
 argsh::lint() {
-  if ! binary::exists shellcheck; then
+  if ! binary::exists shellcheck 2>/dev/null; then
     argsh::_docker_forward lint "${@}"
     return
   fi
@@ -490,7 +496,7 @@ argsh::lint() {
 # @description Run bats tests.
 # @arg $@ string Paths to .bats files (optional; auto-discovered via PATH_TEST)
 argsh::test() {
-  if ! binary::exists bats; then
+  if ! binary::exists bats 2>/dev/null; then
     argsh::_docker_forward test "${@}"
     return
   fi
@@ -517,7 +523,9 @@ argsh::test() {
 # @description Generate coverage report for Bash scripts.
 # @arg $@ string Paths to .bats files, plus flags (-o, --min)
 argsh::coverage() {
-  if ! binary::exists kcov; then
+  # Both kcov (run) and jq (report parse) are required locally; otherwise
+  # forward to docker which has both.
+  if ! binary::exists kcov 2>/dev/null || ! binary::exists jq 2>/dev/null; then
     argsh::_docker_forward coverage "${@}"
     return
   fi
@@ -558,7 +566,7 @@ argsh::coverage() {
 # @description Generate documentation for Bash libraries.
 # @arg $@ string --in, --out, --prefix
 argsh::docs() {
-  if ! binary::exists shdoc; then
+  if ! binary::exists shdoc 2>/dev/null; then
     argsh::_docker_forward docs "${@}"
     return
   fi
