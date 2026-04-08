@@ -31,6 +31,7 @@ binary::exists() {
 #   latest="$(github::latest "cli/cli")"
 #   binary::github "./bin/gh" "cli/cli" "${latest}/gh_${latest:1}_$(uname -s)_$(uname -m).tar.gz" "gh_${latest:-1}_$(uname -s)_$(uname -m)/bin/gh"
 binary::github() {
+  # obfus ignore variable
   local path="${1}"
   local repo="${2}"
   local file="${3}"

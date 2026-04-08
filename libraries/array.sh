@@ -47,6 +47,7 @@ array::join() {
 #   array::nth new_arr 2 "${arr[@]}"
 #   echo "${new_arr[@]}" # b d
 array::nth() {
+  # obfus ignore variable
   local -n out="${1}"
   local -r nth="${2}"
   shift 2

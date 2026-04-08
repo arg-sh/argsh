@@ -12,6 +12,11 @@ import bash
 import binary
 import docker
 import github
+# args pulls in string/fmt/is/to/error/array (needed for :usage/:args dispatch).
+# Only import if not already loaded. In argsh.min.sh, args.sh is concatenated
+# earlier so :usage already exists (as a function or builtin). `type -t` finds
+# both forms; `declare -F` would miss builtin-loaded :usage.
+[[ -n "$(type -t :usage 2>/dev/null)" ]] || import args
 
 # @description Try loading argsh native builtins (.so).
 # Delegates search to __argsh_try_builtin() (defined in args.sh) to avoid
@@ -331,29 +336,286 @@ argsh::status() {
   fi
 }
 
-# @description Print argsh help/usage information.
+# @description Forward a command to the argsh docker image.
+# Used by handlers (test/lint/minify/coverage/docs) when the required host
+# tool (bats/shellcheck/kcov/minifier/shdoc) is not available locally.
+# @arg $@ string Command and arguments to forward
 # @internal
-argsh::help() {
-  echo "argsh ${ARGSH_VERSION:-unknown}"
-  echo ""
-  echo "Usage: argsh [flags] <script> [script-args...]"
-  echo "       argsh <command> [args...]"
-  echo ""
-  echo "Commands:"
-  echo "  builtin [install|update|status]  Manage native builtins (.so)"
-  echo "  status                           Show argsh runtime status"
-  echo ""
-  echo "Flags:"
-  echo "  --version          Print version and exit"
-  echo "  --help, -h         Show this help and exit"
-  echo "  -i, --import LIB   Import library before running script"
-  echo "  --no-builtin       Skip builtin loading and auto-download"
-  echo ""
-  echo "Environment:"
-  echo "  ARGSH_BUILTIN_PATH       Path to argsh.so (overrides auto-search)"
-  echo "  ARGSH_NO_AUTO_DOWNLOAD   Set to 1 to skip auto-download of builtins"
-  echo "  ARGSH_DEBUG              Set to 1 to enable debug trace output"
-  echo "  PATH_TEST                Semicolon-separated dirs for test/script discovery"
+argsh::_docker_forward() {
+  binary::exists docker || {
+    echo "argsh: this command requires either the tool installed locally or Docker" >&2
+    return 1
+  }
+  local tty="-i"
+  ! tty -s || tty="-it"
+  local -r image="${ARGSH_DOCKER_IMAGE:-ghcr.io/arg-sh/argsh:latest}"
+  # shellcheck disable=SC2046
+  docker run --rm ${tty} $(docker::user) \
+    -e "BATS_LOAD" \
+    -e "ARGSH_SOURCE" \
+    -e "PATH_TEST" \
+    -e "GIT_COMMIT_SHA=$(git rev-parse HEAD 2>/dev/null || :)" \
+    -e "GIT_VERSION=$(git describe --tags --dirty 2>/dev/null || :)" \
+    "${image}" "${@}"
+}
+
+# @description Minify Bash files into a single script.
+# @arg $@ string Files or directories, plus flags (-t, -o, -i)
+argsh::minify() {
+  if ! binary::exists minifier; then
+    argsh::_docker_forward minify "${@}"
+    return
+  fi
+  # obfus ignore variable
+  local template out="/dev/stdout"
+  # shellcheck disable=SC2034
+  # obfus ignore variable
+  local -a files ignore_variable args=(
+    'files'              "Files to minify, can be a glob pattern"
+    'template|t:~file'   "Path to a template file to use for the minified file"
+    'out|o'              "Path to the output file"
+    'ignore-variable|i'  "Ignores specific variable names from obfuscation"
+  )
+  :args "Minify Bash files" "${@}"
+  ! is::uninitialized files || {
+    :args::error_usage "No files to minify"
+    return 1
+  }
+  local _content _tout
+  _content="$(mktemp)"
+  _tout="$(mktemp)"
+  # shellcheck disable=SC2064
+  trap "rm -f ${_content} ${_tout}" EXIT
+
+  local _f _file
+  local -a _glob
+  for _f in "${files[@]}"; do
+    if [[ -d "${_f}" ]]; then
+      _glob=("${_f}"/*.{sh,bash})
+    else
+      # shellcheck disable=SC2206 disable=SC2128
+      _glob=(${_f})
+    fi
+    for _file in "${_glob[@]}"; do
+      [[ -e "${_file}" ]] || continue
+      {
+        cat "${_file}"
+        echo
+      } >>"${_content}"
+    done
+  done
+  local -a _iVars=()
+  if ! is::uninitialized ignore_variable && (( ${#ignore_variable[@]} )); then
+    _iVars=(-I "$(array::join "," "${ignore_variable[@]}")")
+  fi
+  # shellcheck disable=SC2086
+  minifier -i "${_content}" -o "${_tout}" -O "${_iVars[@]}"
+  # obfus ignore variable
+  local -r data="$(cat "${_tout}")"
+  if [[ -z "${template:-}" ]]; then
+    echo -n "${data}" >"${out}"
+    return 0
+  fi
+  # obfus ignore variable
+  local commit_sha="${GIT_COMMIT_SHA:-}"
+  # obfus ignore variable
+  local version="${GIT_VERSION:-}"
+  export data commit_sha version
+  # shellcheck disable=SC2016
+  envsubst '$data,$commit_sha,$version' <"${template}" >"${out}"
+}
+
+# @description Lint Bash files with shellcheck.
+# @arg $@ string Files or directories (optional; auto-discovered via PATH_TEST)
+argsh::lint() {
+  if ! binary::exists shellcheck; then
+    argsh::_docker_forward lint "${@}"
+    return
+  fi
+  # shellcheck disable=SC2034
+  # obfus ignore variable
+  local -a files args=(
+    'files'  "Files to lint, can be a glob pattern"
+  )
+  :args "Lint Bash files" "${@}"
+  if is::uninitialized files; then
+    local -a _found_files=()
+    argsh::discover_files "*.sh" "*.bash" "*.bats"
+    # Also find extensionless scripts with bash/sh shebang
+    local -a _search_dirs=()
+    argsh::discover_dirs
+    local _d _f
+    for _d in "${_search_dirs[@]}"; do
+      [[ -d "${_d}" ]] || continue
+      for _f in "${_d}"/*; do
+        [[ -f "${_f}" ]] || continue
+        local _basename="${_f##*/}"
+        [[ "${_basename}" != *.* ]] || continue
+        # Check shebang line without a complex regex (the minifier mangles
+        # single-quoted regexes containing `|`).
+        local _shebang
+        _shebang="$(head -1 "${_f}" 2>/dev/null || :)"
+        if [[ "${_shebang}" == "#!"*bash* \
+           || "${_shebang}" == "#!"*"/sh"* \
+           || "${_shebang}" == "#!"*argsh* ]]; then
+          _found_files+=("${_f}")
+        fi
+      done
+    done
+    if (( ${#_found_files[@]} == 0 )); then
+      echo "No files to lint (set PATH_TEST or pass files as arguments)" >&2
+      return 1
+    fi
+    # obfus ignore variable
+    files=("${_found_files[@]}")
+  fi
+
+  local _file _f
+  local -a _glob
+  for _f in "${files[@]}"; do
+    if [[ -d "${_f}" ]]; then
+      _glob=("${_f}"/*.{sh,bash,bats})
+    else
+      # shellcheck disable=SC2206 disable=SC2128
+      _glob=(${_f})
+    fi
+    for _file in "${_glob[@]}"; do
+      [[ -e "${_file}" ]] || continue
+      echo "Linting ${_file}" >&2
+      shellcheck "${_file}"
+    done
+  done
+}
+
+# @description Run bats tests.
+# @arg $@ string Paths to .bats files (optional; auto-discovered via PATH_TEST)
+argsh::test() {
+  if ! binary::exists bats; then
+    argsh::_docker_forward test "${@}"
+    return
+  fi
+  # shellcheck disable=SC2034
+  # obfus ignore variable
+  local -a path args=(
+    'path'  "Path to the bats test files"
+  )
+  :args "Run tests" "${@}"
+  if is::uninitialized path; then
+    local -a _found_files=()
+    argsh::discover_files "*.bats"
+    if (( ${#_found_files[@]} == 0 )); then
+      echo "No test files found (set PATH_TEST or pass files as arguments)" >&2
+      return 1
+    fi
+    # obfus ignore variable
+    path=("${_found_files[@]}")
+  fi
+  [[ -z "${BATS_LOAD:-}" ]] || echo "Running tests for ${BATS_LOAD}" >&2
+  bats "${path[@]}"
+}
+
+# @description Generate coverage report for Bash scripts.
+# @arg $@ string Paths to .bats files, plus flags (-o, --min)
+argsh::coverage() {
+  if ! binary::exists kcov; then
+    argsh::_docker_forward coverage "${@}"
+    return
+  fi
+  # obfus ignore variable
+  local out="./coverage" min=75
+  # shellcheck disable=SC2034
+  # obfus ignore variable
+  local -a tests=(".") args=(
+    'tests'     "Path to the bats test files"
+    'out|o'     "Path to the output directory"
+    'min|:~int' "Minimum coverage required"
+  )
+  :args "Generate coverage report for your Bash scripts" "${@}"
+
+  echo "Generating coverage report for: ${tests[*]}" >&2
+  kcov \
+    --clean \
+    --bash-dont-parse-binary-dir \
+    --include-pattern=.sh \
+    --exclude-pattern=tests \
+    --include-path=. \
+    "${out}" bats "${tests[@]}" >/dev/null 2>&1 || {
+      echo "Failed to generate coverage report"
+      echo "Run tests with 'argsh test' to see what went wrong"
+      return 1
+    } >&2
+
+  cp "${out}"/bats.*/coverage.json "${out}/coverage.json"
+  # obfus ignore variable
+  local coverage
+  # obfus ignore variable
+  coverage="$(jq -r '.percent_covered | tonumber | floor' "${out}/coverage.json")"
+
+  echo "Coverage is ${coverage}% of required ${min}%"
+  (( coverage > min )) || return 1
+}
+
+# @description Generate documentation for Bash libraries.
+# @arg $@ string --in, --out, --prefix
+argsh::docs() {
+  if ! binary::exists shdoc; then
+    argsh::_docker_forward docs "${@}"
+    return
+  fi
+  # obfus ignore variable
+  local in out prefix=""
+  # shellcheck disable=SC2034
+  # obfus ignore variable
+  local -a args=(
+    'in'      "Path to the source files to generate documentation from, can be a glob pattern"
+    'out'     "Path to the output directory"
+    'prefix'  "Prefix for each md file"
+  )
+  :args "Generate documentation" "${@}"
+  [[ -d "${out}" ]] || {
+    :args::error_usage "out is not a directory"
+    return 1
+  }
+  local -a shdoc_args=(-o "${out}")
+  [[ -z "${prefix}" ]] || shdoc_args+=(-p "${prefix}")
+  # shellcheck disable=SC2086
+  shdoc "${shdoc_args[@]}" ${in}
+}
+
+# @description Top-level argsh CLI dispatcher.
+# Registers all subcommands via :usage. Called by argsh::shebang when the
+# first positional argument is a subcommand (not an existing file).
+# @arg $@ string Command and arguments
+# @internal
+argsh::main() {
+  local -a usage=(
+    '-'                          "Tools"
+    'minify:-argsh::minify'      "Minify Bash files"
+    'lint:-argsh::lint'          "Lint Bash files"
+    'test:-argsh::test'          "Run tests"
+    'coverage:-argsh::coverage'  "Generate coverage report for your Bash scripts"
+    'docs:-argsh::docs'          "Generate documentation"
+    '-'                          "Runtime"
+    'builtin:-argsh::builtin'    "Manage native builtins (.so)"
+    'status:-argsh::_status_cmd' "Show argsh runtime status"
+  )
+  :usage "Enhance your Bash scripting by promoting structure and maintainability,
+          making it easier to write, understand,
+          and maintain even complex scripts." "${@}"
+  "${usage[@]}"
+}
+
+# @description status subcommand wrapper: loads builtins first so the
+# report reflects actual runtime state. Respects --no-builtin via the
+# parent's _argsh_no_builtin variable (dynamic scope from argsh::shebang).
+# @internal
+argsh::_status_cmd() {
+  declare -gi ARGSH_BUILTIN=0
+  # shellcheck disable=SC2034
+  if (( ${_argsh_no_builtin:-0} == 0 )) && declare -p __ARGSH_BUILTINS &>/dev/null; then
+    argsh::builtin::try && ARGSH_BUILTIN=1
+  fi
+  argsh::status "${@}"
 }
 
 # @internal
@@ -413,7 +675,9 @@ argsh::shebang() {
   while [[ "${1:-}" == -* ]]; do
     case "${1}" in
       --help|-h)
-        argsh::help
+        # :usage::help calls exit, wrap in subshell so callers (and tests)
+        # don't get terminated.
+        (argsh::main --help) || true
         return 0
         ;;
       --import|-i)
@@ -439,9 +703,9 @@ argsh::shebang() {
     esac
   done
 
-  # No args: show help
+  # No args: show help via the :usage dispatcher (subshell — :usage::help exits)
   if [[ -z "${1:-}" ]]; then
-    argsh::help
+    (argsh::main --help) || true
     return 0
   fi
 
@@ -449,37 +713,19 @@ argsh::shebang() {
   : "${ARGSH_SOURCE="${file}"}"
   export ARGSH_SOURCE
 
-  # Handle commands before file/docker check
-  case "${file}" in
-    builtin)  shift; argsh::builtin "${@}";  return ;;
-    builtins) shift; argsh::builtins "${@}"; return ;;
-    status)
-      # Try loading builtins first so status reports accurate state
-      # obfus ignore variable
-      declare -gi ARGSH_BUILTIN=0
-      # shellcheck disable=SC2034
-      if (( ! _argsh_no_builtin )) && declare -p __ARGSH_BUILTINS &>/dev/null; then
-        argsh::builtin::try && ARGSH_BUILTIN=1
-      fi
-      shift; argsh::status "${@}"; return ;;
-  esac
-
-  [[ "${BASH_SOURCE[-1]}" != "${file}" && -f "${file}" ]] || {
-    binary::exists docker || {
-      echo "This script requires Docker to be installed"
-      return 1
-    } >&2
-    local tty="-i"
-    ! tty -s || tty="-it"
-    # shellcheck disable=SC2046
-    docker run --rm ${tty} $(docker::user) \
-      -e "BATS_LOAD" \
-      -e "ARGSH_SOURCE" \
-      -e "GIT_COMMIT_SHA=$(git rev-parse HEAD 2>/dev/null || :)" \
-      -e "GIT_VERSION=$(git describe --tags --dirty 2>/dev/null || :)" \
-      ghcr.io/arg-sh/argsh:latest "${@}"
-    return 0
-  }
+  # If first arg is not an existing file, treat it as a subcommand and
+  # dispatch through argsh::main. This handles minify/lint/test/coverage/
+  # docs/builtin/status/builtins uniformly (plus did-you-mean suggestions).
+  if [[ "${BASH_SOURCE[-1]}" == "${file}" || ! -f "${file}" ]]; then
+    # Backward-compat alias: "builtins" → "builtin"
+    if [[ "${file}" == "builtins" ]]; then
+      shift
+      argsh::builtin "${@}"
+      return
+    fi
+    argsh::main "${@}"
+    return
+  fi
   bash::version 4 3 0 || {
     echo "This script requires bash 4.3.0 or later"
     return 1
