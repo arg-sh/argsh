@@ -463,27 +463,32 @@ argsh::lint() {
         local _basename="${_f##*/}"
         [[ "${_basename}" != *.* ]] || continue
         # Check shebang line without a complex regex (the minifier mangles
-        # single-quoted regexes containing `|`). Covers the common forms:
-        # direct (/bin/bash, /bin/sh), env-based (env bash, env -S sh), and
-        # argsh. Uses `case` to avoid the substring-match pitfall where
-        # `*"/sh"*` misses `env sh` (no `/` before `sh`).
-        local _shebang
+        # single-quoted regexes containing `|`). Covers direct paths
+        # (/bin/bash, /bin/sh), env-based (env bash, env sh, env -S bash,
+        # env -S sh), and argsh. Uses `case` to avoid the substring-match
+        # pitfall where `*"/sh"*` misses `env sh` (no `/` before `sh`).
+        local _shebang _is_shell=0
         _shebang="$(head -1 "${_f}" 2>/dev/null || :)"
-        case "${_shebang}" in
-          '#!'*'/bash'|'#!'*'/bash '*            \
-          |'#!'*'/sh'|'#!'*'/sh '*               \
-          |'#!/usr/bin/env bash'                 \
-          |'#!/usr/bin/env bash '*               \
-          |'#!/usr/bin/env sh'                   \
-          |'#!/usr/bin/env sh '*                 \
-          |'#!/usr/bin/env -S bash'              \
-          |'#!/usr/bin/env -S bash '*            \
-          |'#!/usr/bin/env -S sh'                \
-          |'#!/usr/bin/env -S sh '*              \
-          |'#!'*argsh*)
-            _found_files+=("${_f}")
+        # Strip the "#!" prefix + optional "/usr/bin/env " + optional "-S ",
+        # then the leading interpreter path/name should begin with bash/sh/argsh.
+        local _interp="${_shebang#\#!}"
+        _interp="${_interp# }"
+        # If env-style, drop through "env" and optional "-S"
+        case "${_interp}" in
+          */env|*/env\ *)
+            _interp="${_interp#*env}"
+            _interp="${_interp# }"
+            [[ "${_interp}" != -S* ]] || { _interp="${_interp#-S}"; _interp="${_interp# }"; }
             ;;
         esac
+        # Now _interp should start with the shell name (possibly with path).
+        # Take the basename (last path component) of the first whitespace-delimited token.
+        local _first="${_interp%% *}"
+        _first="${_first##*/}"
+        case "${_first}" in
+          bash|sh|argsh) _is_shell=1 ;;
+        esac
+        (( _is_shell )) && _found_files+=("${_f}")
       done
     done
     if (( ${#_found_files[@]} == 0 )); then
