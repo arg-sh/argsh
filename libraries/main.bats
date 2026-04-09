@@ -276,6 +276,33 @@ declare -gi ARGSH_BUILTIN="${ARGSH_BUILTIN:-0}"
   contains "No files to lint" stderr
 }
 
+@test "argsh::lint: detects extensionless scripts with #!/usr/bin/env sh shebang" {
+  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
+  local _tmp
+  _tmp="$(mktemp -d)"
+  # Extensionless script with env-style sh shebang — previously missed by
+  # the `*"/sh"*` substring pattern.
+  cat >"${_tmp}/envsh-script" <<'EOF'
+#!/usr/bin/env sh
+echo hi
+EOF
+  chmod +x "${_tmp}/envsh-script"
+
+  # Stub shellcheck so we just echo the files passed to it.
+  shellcheck() { echo "LINT: $*"; }
+  export -f shellcheck
+  binary::exists() { [[ "${1}" == "shellcheck" ]] || command -v "${1}" &>/dev/null; }
+  argsh::discover_files() { :; }
+  argsh::discover_dirs() { _search_dirs=("${_tmp}"); }
+
+  # shellcheck disable=SC2119
+  (argsh::lint) >"${stdout}" 2>"${stderr}" || status=$?
+  rm -rf "${_tmp}"
+
+  assert "${status}" -eq 0
+  contains "envsh-script" stdout
+}
+
 @test "argsh::_docker_forward: errors without docker" {
   if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
   binary::exists() { [[ "${1}" != "docker" ]]; }

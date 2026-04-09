@@ -463,14 +463,27 @@ argsh::lint() {
         local _basename="${_f##*/}"
         [[ "${_basename}" != *.* ]] || continue
         # Check shebang line without a complex regex (the minifier mangles
-        # single-quoted regexes containing `|`).
+        # single-quoted regexes containing `|`). Covers the common forms:
+        # direct (/bin/bash, /bin/sh), env-based (env bash, env -S sh), and
+        # argsh. Uses `case` to avoid the substring-match pitfall where
+        # `*"/sh"*` misses `env sh` (no `/` before `sh`).
         local _shebang
         _shebang="$(head -1 "${_f}" 2>/dev/null || :)"
-        if [[ "${_shebang}" == "#!"*bash* \
-           || "${_shebang}" == "#!"*"/sh"* \
-           || "${_shebang}" == "#!"*argsh* ]]; then
-          _found_files+=("${_f}")
-        fi
+        case "${_shebang}" in
+          '#!'*'/bash'|'#!'*'/bash '*            \
+          |'#!'*'/sh'|'#!'*'/sh '*               \
+          |'#!/usr/bin/env bash'                 \
+          |'#!/usr/bin/env bash '*               \
+          |'#!/usr/bin/env sh'                   \
+          |'#!/usr/bin/env sh '*                 \
+          |'#!/usr/bin/env -S bash'              \
+          |'#!/usr/bin/env -S bash '*            \
+          |'#!/usr/bin/env -S sh'                \
+          |'#!/usr/bin/env -S sh '*              \
+          |'#!'*argsh*)
+            _found_files+=("${_f}")
+            ;;
+        esac
       done
     done
     if (( ${#_found_files[@]} == 0 )); then
@@ -569,7 +582,9 @@ argsh::coverage() {
 }
 
 # @description Generate documentation for Bash libraries.
-# @arg $@ string --in, --out, --prefix
+# @arg $1 string in — source files (glob ok)
+# @arg $2 string out — output directory
+# @arg $3 string prefix — optional prefix for each md file
 argsh::docs() {
   if ! binary::exists shdoc 2>/dev/null; then
     argsh::_docker_forward docs "${@}"
@@ -723,13 +738,19 @@ argsh::shebang() {
   fi
 
   local -r file="${1}"
-  : "${ARGSH_SOURCE="${file}"}"
-  export ARGSH_SOURCE
 
   # If first arg is not an existing file, treat it as a subcommand and
   # dispatch through argsh::main. This handles minify/lint/test/coverage/
   # docs/builtin/status/builtins uniformly (plus did-you-mean suggestions).
+  #
+  # Important: do NOT set ARGSH_SOURCE=<subcommand> here. It would propagate
+  # through argsh::_docker_forward and cause the container's COMMANDNAME to
+  # start as the subcommand (e.g. "test"), re-introducing the "test test ..."
+  # usage rendering regression. Only set ARGSH_SOURCE when running a script
+  # file.
   if [[ "${BASH_SOURCE[-1]}" == "${file}" || ! -f "${file}" ]]; then
+    : "${ARGSH_SOURCE:=argsh}"
+    export ARGSH_SOURCE
     # Backward-compat alias: "builtins" → "builtin"
     if [[ "${file}" == "builtins" ]]; then
       shift
@@ -739,6 +760,8 @@ argsh::shebang() {
     argsh::main "${@}"
     return
   fi
+  : "${ARGSH_SOURCE="${file}"}"
+  export ARGSH_SOURCE
   bash::version 4 3 0 || {
     echo "This script requires bash 4.3.0 or later"
     return 1
