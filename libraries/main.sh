@@ -383,52 +383,57 @@ argsh::minify() {
     :args::error_usage "No files to minify"
     return 1
   }
-  local _content _tout
-  _content="$(mktemp)"
-  _tout="$(mktemp)"
-  # shellcheck disable=SC2064
-  trap "rm -f ${_content} ${_tout}" EXIT
+  # Run the rest in a subshell so the EXIT trap that cleans up temp files
+  # is scoped to this function's invocation and does not clobber any
+  # caller-installed EXIT trap. :args-set vars are inherited by the subshell.
+  (
+    local _content _tout
+    _content="$(mktemp)"
+    _tout="$(mktemp)"
+    # shellcheck disable=SC2064
+    trap "rm -f ${_content} ${_tout}" EXIT
 
-  local _f _file
-  local -a _glob
-  for _f in "${files[@]}"; do
-    if [[ -d "${_f}" ]]; then
-      _glob=("${_f}"/*.{sh,bash})
-    else
-      # shellcheck disable=SC2206 disable=SC2128
-      _glob=(${_f})
-    fi
-    for _file in "${_glob[@]}"; do
-      [[ -e "${_file}" ]] || continue
-      {
-        cat "${_file}"
-        echo
-      } >>"${_content}"
+    local _f _file
+    local -a _glob
+    for _f in "${files[@]}"; do
+      if [[ -d "${_f}" ]]; then
+        _glob=("${_f}"/*.{sh,bash})
+      else
+        # shellcheck disable=SC2206 disable=SC2128
+        _glob=(${_f})
+      fi
+      for _file in "${_glob[@]}"; do
+        [[ -e "${_file}" ]] || continue
+        {
+          cat "${_file}"
+          echo
+        } >>"${_content}"
+      done
     done
-  done
-  local -a _iVars=()
-  if ! is::uninitialized ignore_variable && (( ${#ignore_variable[@]} )); then
-    _iVars=(-I "$(array::join "," "${ignore_variable[@]}")")
-  fi
-  # shellcheck disable=SC2086
-  minifier -i "${_content}" -o "${_tout}" -O "${_iVars[@]}"
-  # obfus ignore variable
-  local -r data="$(cat "${_tout}")"
-  if [[ -z "${template:-}" ]]; then
-    echo -n "${data}" >"${out}"
-    return 0
-  fi
-  binary::exists envsubst 2>/dev/null || {
-    echo "argsh: envsubst is required for -t/--template (install gettext)" >&2
-    return 1
-  }
-  # obfus ignore variable
-  local commit_sha="${GIT_COMMIT_SHA:-}"
-  # obfus ignore variable
-  local version="${GIT_VERSION:-}"
-  export data commit_sha version
-  # shellcheck disable=SC2016
-  envsubst '$data,$commit_sha,$version' <"${template}" >"${out}"
+    local -a _iVars=()
+    if ! is::uninitialized ignore_variable && (( ${#ignore_variable[@]} )); then
+      _iVars=(-I "$(array::join "," "${ignore_variable[@]}")")
+    fi
+    # shellcheck disable=SC2086
+    minifier -i "${_content}" -o "${_tout}" -O "${_iVars[@]}"
+    # obfus ignore variable
+    local -r data="$(cat "${_tout}")"
+    if [[ -z "${template:-}" ]]; then
+      echo -n "${data}" >"${out}"
+      exit 0
+    fi
+    binary::exists envsubst 2>/dev/null || {
+      echo "argsh: envsubst is required for -t/--template (install gettext)" >&2
+      exit 1
+    }
+    # obfus ignore variable
+    local commit_sha="${GIT_COMMIT_SHA:-}"
+    # obfus ignore variable
+    local version="${GIT_VERSION:-}"
+    export data commit_sha version
+    # shellcheck disable=SC2016
+    envsubst '$data,$commit_sha,$version' <"${template}" >"${out}"
+  )
 }
 
 # @description Lint Bash files with shellcheck.
@@ -560,7 +565,7 @@ argsh::coverage() {
   coverage="$(jq -r '.percent_covered | tonumber | floor' "${out}/coverage.json")"
 
   echo "Coverage is ${coverage}% of required ${min}%"
-  (( coverage > min )) || return 1
+  (( coverage >= min )) || return 1
 }
 
 # @description Generate documentation for Bash libraries.
