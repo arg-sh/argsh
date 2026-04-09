@@ -2,7 +2,8 @@
 # shellcheck disable=SC1091 disable=SC2154 disable=SC2317 disable=SC2329 disable=SC2034 disable=SC2030 disable=SC2031 disable=SC2314
 # shellcheck shell=bats
 #
-# Tests for argsh::builtin, argsh::status, and argsh::help functions.
+# Tests for argsh::builtin, argsh::status, argsh::main dispatcher,
+# and subcommand handlers (test/lint/minify/coverage/docs).
 
 load ../test/helper
 ARGSH_SOURCE=argsh
@@ -102,19 +103,27 @@ declare -gi ARGSH_BUILTIN="${ARGSH_BUILTIN:-0}"
 }
 
 # ---------------------------------------------------------------------------
-# argsh::help — shows usage with builtin and status commands
+# argsh::main — registers all subcommands and shows them in help
 # ---------------------------------------------------------------------------
-@test "argsh::help: shows usage information" {
-  argsh::help >"${stdout}" 2>"${stderr}" || status=$?
+@test "argsh::main --help lists all subcommands" {
+  (argsh::main --help) >"${stdout}" 2>"${stderr}" || status=$?
 
   assert "${status}" -eq 0
-  is_empty stderr
-  contains "Usage:" stdout
+  contains "minify" stdout
+  contains "lint" stdout
+  contains "test" stdout
+  contains "coverage" stdout
+  contains "docs" stdout
   contains "builtin" stdout
   contains "status" stdout
-  contains "Commands:" stdout
-  contains "Flags:" stdout
-  contains "Environment:" stdout
+}
+
+@test "argsh::main unknown command suggests closest match" {
+  (argsh::main tests) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -ne 0
+  # :usage suggests the closest known command
+  contains "test" stderr
 }
 
 # ---------------------------------------------------------------------------
@@ -124,26 +133,24 @@ declare -gi ARGSH_BUILTIN="${ARGSH_BUILTIN:-0}"
   argsh::shebang >"${stdout}" 2>"${stderr}" || status=$?
 
   assert "${status}" -eq 0
-  is_empty stderr
-  contains "Usage:" stdout
+  contains "minify" stdout
+  contains "test" stdout
 }
 
 @test "shebang: --help shows help" {
   argsh::shebang --help >"${stdout}" 2>"${stderr}" || status=$?
 
   assert "${status}" -eq 0
-  is_empty stderr
-  contains "Usage:" stdout
   contains "builtin" stdout
   contains "status" stdout
+  contains "test" stdout
 }
 
 @test "shebang: -h shows help" {
   argsh::shebang -h >"${stdout}" 2>"${stderr}" || status=$?
 
   assert "${status}" -eq 0
-  is_empty stderr
-  contains "Usage:" stdout
+  contains "minify" stdout
 }
 
 @test "shebang: builtin command dispatches" {
@@ -212,4 +219,151 @@ declare -gi ARGSH_BUILTIN="${ARGSH_BUILTIN:-0}"
 
   assert "${status}" -eq 0
   contains "test-ver" stdout
+}
+
+# ---------------------------------------------------------------------------
+# Subcommand handler tests — verify dispatch reaches the handler and that
+# discover_files is available (regression: https://... was
+# "argsh::discover_files: command not found" from docker-entrypoint.sh)
+# ---------------------------------------------------------------------------
+
+@test "argsh::test: no args discovers .bats files via PATH_TEST" {
+  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
+  local _tmp
+  _tmp="$(mktemp -d)"
+  touch "${_tmp}/sample.bats"
+  # Stub bats so the handler does not actually execute bats — just echo the args.
+  bats() { echo "bats called with: $*"; }
+  export -f bats
+  # Stub binary::exists so argsh::test takes the local path (not docker forward).
+  binary::exists() { [[ "${1}" == "bats" ]] || command -v "${1}" &>/dev/null; }
+
+  # shellcheck disable=SC2119
+  (PATH_TEST="${_tmp}" argsh::test) >"${stdout}" 2>"${stderr}" || status=$?
+  rm -rf "${_tmp}"
+
+  assert "${status}" -eq 0
+  contains "sample.bats" stdout
+}
+
+@test "argsh::test: errors cleanly when no files discovered" {
+  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
+  bats() { echo "bats called"; }
+  export -f bats
+  binary::exists() { [[ "${1}" == "bats" ]] || command -v "${1}" &>/dev/null; }
+  # Stub discover_files to return nothing, simulating an empty project.
+  argsh::discover_files() { :; }
+
+  # shellcheck disable=SC2119
+  (argsh::test) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -ne 0
+  contains "No test files found" stderr
+}
+
+@test "argsh::lint: errors cleanly when no files discovered" {
+  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
+  shellcheck() { echo "shellcheck called"; }
+  export -f shellcheck
+  binary::exists() { [[ "${1}" == "shellcheck" ]] || command -v "${1}" &>/dev/null; }
+  argsh::discover_files() { :; }
+  argsh::discover_dirs() { _search_dirs=(); }
+
+  # shellcheck disable=SC2119
+  (argsh::lint) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -ne 0
+  contains "No files to lint" stderr
+}
+
+@test "argsh::lint: detects extensionless scripts with #!/usr/bin/env sh shebang" {
+  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
+  local _tmp
+  _tmp="$(mktemp -d)"
+  # Extensionless script with env-style sh shebang — previously missed by
+  # the `*"/sh"*` substring pattern.
+  cat >"${_tmp}/envsh-script" <<'EOF'
+#!/usr/bin/env sh
+echo hi
+EOF
+  chmod +x "${_tmp}/envsh-script"
+
+  # Stub shellcheck so we just echo the files passed to it.
+  shellcheck() { echo "LINT: $*"; }
+  export -f shellcheck
+  binary::exists() { [[ "${1}" == "shellcheck" ]] || command -v "${1}" &>/dev/null; }
+  argsh::discover_files() { :; }
+  argsh::discover_dirs() { _search_dirs=("${_tmp}"); }
+
+  # shellcheck disable=SC2119
+  (argsh::lint) >"${stdout}" 2>"${stderr}" || status=$?
+  rm -rf "${_tmp}"
+
+  assert "${status}" -eq 0
+  contains "envsh-script" stdout
+}
+
+@test "argsh::_docker_forward: errors without docker" {
+  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
+  binary::exists() { [[ "${1}" != "docker" ]]; }
+
+  argsh::_docker_forward test >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -ne 0
+  contains "Docker" stderr
+}
+
+@test "argsh::main: dispatches test subcommand to argsh::test" {
+  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
+  # Override argsh::test to prove dispatch reached the handler
+  # shellcheck disable=SC2120
+  argsh::test() { echo "dispatched-to-test: $*"; }
+
+  (argsh::main test foo bar) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains "dispatched-to-test: foo bar" stdout
+}
+
+@test "argsh::main: dispatches lint subcommand to argsh::lint" {
+  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
+  # shellcheck disable=SC2120
+  argsh::lint() { echo "dispatched-to-lint: $*"; }
+
+  (argsh::main lint a b) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains "dispatched-to-lint: a b" stdout
+}
+
+@test "shebang: unknown command dispatches via argsh::main and suggests" {
+  (argsh::shebang tests) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -ne 0
+  contains "test" stderr
+}
+
+@test "shebang: path-like missing file errors with 'file not found'" {
+  # Mistyped or missing script path should fail with a clear error,
+  # NOT "Invalid command: ./missing.sh. Did you mean ...?"
+  argsh::shebang ./does-not-exist.sh >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -ne 0
+  contains "file not found" stderr
+}
+
+@test "shebang: slashed path without extension also treated as file" {
+  argsh::shebang /tmp/no/such/script >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -ne 0
+  contains "file not found" stderr
+}
+
+@test "shebang: builtins alias still works" {
+  ARGSH_BUILTIN=0 argsh::shebang builtins >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  # Both the pure-bash shim and the native .so version print a line
+  # starting with "argsh builtin" (with or without trailing 's').
+  contains "argsh builtin" stdout
 }

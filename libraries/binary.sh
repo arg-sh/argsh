@@ -31,6 +31,7 @@ binary::exists() {
 #   latest="$(github::latest "cli/cli")"
 #   binary::github "./bin/gh" "cli/cli" "${latest}/gh_${latest:1}_$(uname -s)_$(uname -m).tar.gz" "gh_${latest:-1}_$(uname -s)_$(uname -m)/bin/gh"
 binary::github() {
+  # obfus ignore variable
   local path="${1}"
   local repo="${2}"
   local file="${3}"
@@ -66,6 +67,7 @@ binary::arch() {
 # https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-amd64
 binary::jq() {
   binary::exists "jq" 2>/dev/null || {
+    # obfus ignore variable
     local -r latest="$(github::latest "stedolan/jq")" system="$(uname -s)"
     binary::github "${PATH_BIN?}/jq" "stedolan/jq" "${latest}/jq-${system,,}-$(binary::arch)"
   }
@@ -77,6 +79,7 @@ binary::jq() {
 # https://github.com/errata-ai/vale/releases/download/v2.28.0/vale_2.28.0_Linux_64-bit.tar.gz
 binary::vale() {
   binary::exists "vale" 2>/dev/null || {
+    # obfus ignore variable
     local -r latest="$(github::latest "errata-ai/vale")" system="$(uname -s)"
     binary::github "${PATH_BIN?}/vale" "errata-ai/vale" "${latest}/vale_${latest:1}_$(uname -s)_$(binary::arch 1).tar.gz" "vale"
   }
