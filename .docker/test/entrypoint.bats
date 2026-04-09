@@ -62,7 +62,7 @@ EOF
 
   assert "${status}" -eq 0
   # Must NOT contain the old awkward 'test test ...tests' rendering.
-  grep -vq "test test" "${stdout}"
+  ! grep -q "test test" "${stdout}"
   # Should advertise the renamed positional.
   contains "path" stdout
 }

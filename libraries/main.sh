@@ -744,6 +744,19 @@ argsh::shebang() {
 
   local -r file="${1}"
 
+  # If the first arg looks like a script path (contains a slash or has a
+  # shell extension) but the file doesn't exist, fail with a clear "file
+  # not found" error instead of dispatching it as a subcommand (which
+  # would give a confusing "Invalid command" / did-you-mean error).
+  if [[ "${BASH_SOURCE[-1]}" != "${file}" && ! -f "${file}" ]]; then
+    case "${file}" in
+      */*|*.sh|*.bash)
+        echo "argsh: file not found: ${file}" >&2
+        return 1
+        ;;
+    esac
+  fi
+
   # If first arg is not an existing file, treat it as a subcommand and
   # dispatch through argsh::main. This handles minify/lint/test/coverage/
   # docs/builtin/status/builtins uniformly (plus did-you-mean suggestions).

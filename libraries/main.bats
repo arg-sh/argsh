@@ -343,6 +343,22 @@ EOF
   contains "test" stderr
 }
 
+@test "shebang: path-like missing file errors with 'file not found'" {
+  # Mistyped or missing script path should fail with a clear error,
+  # NOT "Invalid command: ./missing.sh. Did you mean ...?"
+  argsh::shebang ./does-not-exist.sh >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -ne 0
+  contains "file not found" stderr
+}
+
+@test "shebang: slashed path without extension also treated as file" {
+  argsh::shebang /tmp/no/such/script >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -ne 0
+  contains "file not found" stderr
+}
+
 @test "shebang: builtins alias still works" {
   ARGSH_BUILTIN=0 argsh::shebang builtins >"${stdout}" 2>"${stderr}" || status=$?
 
