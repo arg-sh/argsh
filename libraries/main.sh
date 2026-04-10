@@ -358,14 +358,17 @@ argsh::_docker_forward() {
     tty="-i"
   fi
   local -r image="${ARGSH_DOCKER_IMAGE:-ghcr.io/arg-sh/argsh:latest}"
-  # Collect user-defined env vars to forward: any ARGSH_ENV_FOO=bar
+  # Collect user-defined env vars to forward: any exported ARGSH_ENV_FOO=bar
   # on the host is passed as FOO=bar inside the container.
+  # Uses compgen -e (exported only) so unexported locals aren't leaked.
   local -a _user_env=()
   local _var _name
   while IFS='=' read -r _var _; do
     _name="${_var#ARGSH_ENV_}"
+    [[ -n "${_name}" ]] || continue
+    [[ "${_name}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
     _user_env+=(-e "${_name}=${!_var}")
-  done < <(compgen -v ARGSH_ENV_ 2>/dev/null || :)
+  done < <(compgen -e ARGSH_ENV_ 2>/dev/null || :)
   # shellcheck disable=SC2046
   docker run --rm ${tty} $(docker::user) \
     -e "BATS_LOAD" \

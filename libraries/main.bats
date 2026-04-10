@@ -313,6 +313,45 @@ EOF
   contains "Docker" stderr
 }
 
+@test "argsh::_docker_forward: forwards exported ARGSH_ENV_* vars" {
+  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
+  # Stub docker to capture the args it receives.
+  docker() { echo "DOCKER_ARGS: $*"; }
+  export -f docker
+  binary::exists() { true; }
+  docker::user() { echo ""; }
+  export ARGSH_ENV_MY_TOKEN=secret123
+  export ARGSH_ENV_DEBUG=1
+
+  argsh::_docker_forward test >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains "MY_TOKEN=secret123" stdout
+  contains "DEBUG=1" stdout
+  unset ARGSH_ENV_MY_TOKEN ARGSH_ENV_DEBUG
+}
+
+@test "argsh::_docker_forward: skips invalid ARGSH_ENV_ names" {
+  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
+  docker() { echo "DOCKER_ARGS: $*"; }
+  export -f docker
+  binary::exists() { true; }
+  docker::user() { echo ""; }
+  # ARGSH_ENV_ alone (empty name) and ARGSH_ENV_1BAD (starts with digit)
+  export ARGSH_ENV_=empty
+  export ARGSH_ENV_1BAD=nope
+  export ARGSH_ENV_GOOD=yes
+
+  argsh::_docker_forward test >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains "GOOD=yes" stdout
+  # Must not contain the invalid ones
+  ! grep -q "1BAD" "${stdout}"
+  ! grep -q -- "-e =empty" "${stdout}"
+  unset ARGSH_ENV_ ARGSH_ENV_1BAD ARGSH_ENV_GOOD
+}
+
 @test "argsh::main: dispatches test subcommand to argsh::test" {
   if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
   # Override argsh::test to prove dispatch reached the handler
