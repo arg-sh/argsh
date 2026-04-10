@@ -326,9 +326,13 @@ EOF
   argsh::_docker_forward test >"${stdout}" 2>"${stderr}" || status=$?
 
   assert "${status}" -eq 0
-  contains "MY_TOKEN=secret123" stdout
-  contains "DEBUG=1" stdout
-  unset ARGSH_ENV_MY_TOKEN ARGSH_ENV_DEBUG
+  # Values are passed via process env (not argv) for security,
+  # so docker args contain only the name: -e MY_TOKEN, -e DEBUG.
+  contains "-e MY_TOKEN" stdout
+  contains "-e DEBUG" stdout
+  # Verify the value isn't in the argv (security: no secret leaks in ps).
+  ! grep -q "secret123" "${stdout}"
+  unset ARGSH_ENV_MY_TOKEN ARGSH_ENV_DEBUG MY_TOKEN DEBUG
 }
 
 @test "argsh::_docker_forward: skips invalid ARGSH_ENV_ names" {
@@ -345,11 +349,11 @@ EOF
   argsh::_docker_forward test >"${stdout}" 2>"${stderr}" || status=$?
 
   assert "${status}" -eq 0
-  contains "GOOD=yes" stdout
+  contains "-e GOOD" stdout
   # Must not contain the invalid ones
   ! grep -q "1BAD" "${stdout}"
-  ! grep -q -- "-e =empty" "${stdout}"
-  unset ARGSH_ENV_ ARGSH_ENV_1BAD ARGSH_ENV_GOOD
+  ! grep -q -- "-e =" "${stdout}"
+  unset ARGSH_ENV_ ARGSH_ENV_1BAD ARGSH_ENV_GOOD GOOD
 }
 
 @test "argsh::main: dispatches test subcommand to argsh::test" {

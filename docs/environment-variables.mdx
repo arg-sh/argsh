@@ -116,7 +116,7 @@ export PATH_TESTS="tests;integration;e2e"
 
 ### ARGSH_ENV_*
 
-Forward custom environment variables into the Docker container when argsh delegates to Docker (e.g., `argsh test`, `argsh lint`). Any variable prefixed with `ARGSH_ENV_` is forwarded with the prefix stripped.
+Forward custom environment variables into the Docker container when argsh delegates to Docker (e.g., `argsh test`, `argsh lint`). Any **exported** variable prefixed with `ARGSH_ENV_` (e.g., `export ARGSH_ENV_FOO=bar`) is forwarded with the prefix stripped. Values are passed via the process environment, not the command line, so secrets don't leak into `ps` output.
 
 ```bash
 export ARGSH_ENV_MY_TOKEN=secret

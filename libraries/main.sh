@@ -361,13 +361,16 @@ argsh::_docker_forward() {
   # Collect user-defined env vars to forward: any exported ARGSH_ENV_FOO=bar
   # on the host is passed as FOO=bar inside the container.
   # Uses compgen -e (exported only) so unexported locals aren't leaked.
+  # Values are exported under the stripped name and forwarded via `-e NAME`
+  # (not `-e NAME=value`) so secrets don't appear in the process argv.
   local -a _user_env=()
   local _var _name
   while IFS='=' read -r _var _; do
     _name="${_var#ARGSH_ENV_}"
     [[ -n "${_name}" ]] || continue
     [[ "${_name}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
-    _user_env+=(-e "${_name}=${!_var}")
+    export "${_name}=${!_var}"
+    _user_env+=(-e "${_name}")
   done < <(compgen -e ARGSH_ENV_ 2>/dev/null || :)
   # shellcheck disable=SC2046
   docker run --rm ${tty} $(docker::user) \
