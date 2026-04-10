@@ -358,6 +358,14 @@ argsh::_docker_forward() {
     tty="-i"
   fi
   local -r image="${ARGSH_DOCKER_IMAGE:-ghcr.io/arg-sh/argsh:latest}"
+  # Collect user-defined env vars to forward: any ARGSH_ENV_FOO=bar
+  # on the host is passed as FOO=bar inside the container.
+  local -a _user_env=()
+  local _var _name
+  while IFS='=' read -r _var _; do
+    _name="${_var#ARGSH_ENV_}"
+    _user_env+=(-e "${_name}=${!_var}")
+  done < <(compgen -v ARGSH_ENV_ 2>/dev/null || :)
   # shellcheck disable=SC2046
   docker run --rm ${tty} $(docker::user) \
     -e "BATS_LOAD" \
@@ -365,6 +373,7 @@ argsh::_docker_forward() {
     -e "PATH_TESTS" \
     -e "GIT_COMMIT_SHA=$(git rev-parse HEAD 2>/dev/null || :)" \
     -e "GIT_VERSION=$(git describe --tags --dirty 2>/dev/null || :)" \
+    "${_user_env[@]}" \
     "${image}" "${@}"
 }
 
