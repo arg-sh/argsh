@@ -71,6 +71,7 @@ COPY --from=builtin-build /build/target/release/libargsh.so /usr/local/lib/argsh
 COPY ./argsh.min.sh /usr/local/bin/argsh
 ENV ARGSH_BUILTIN_PATH=/usr/local/lib/argsh.so
 ENV BATS_LIB_PATH=/usr/local/lib
+ENV PATH_BASE=/workspace
 
 # docker
 COPY ./.docker/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
