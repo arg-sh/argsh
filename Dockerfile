@@ -36,14 +36,15 @@ COPY --from=builtin-build /build/target/release/libargsh.so /libargsh.so
 FROM kcov/kcov
 
 # test — bats-core + standard helper libraries (support, assert, file)
+# Pinned to latest release tags; shallow clones for faster builds.
 RUN set -eux \
   && apt update \
   && apt install -y git \
-  && git clone https://github.com/bats-core/bats-core.git \
+  && git clone --depth 1 --branch v1.13.0 https://github.com/bats-core/bats-core.git \
   && cd bats-core && ./install.sh /usr/local && cd .. \
-  && git clone https://github.com/bats-core/bats-support.git /usr/local/lib/bats-support \
-  && git clone https://github.com/bats-core/bats-assert.git /usr/local/lib/bats-assert \
-  && git clone https://github.com/bats-core/bats-file.git /usr/local/lib/bats-file \
+  && git clone --depth 1 --branch v0.3.0 https://github.com/bats-core/bats-support.git /usr/local/lib/bats-support \
+  && git clone --depth 1 --branch v2.2.4 https://github.com/bats-core/bats-assert.git /usr/local/lib/bats-assert \
+  && git clone --depth 1 --branch v0.4.0 https://github.com/bats-core/bats-file.git /usr/local/lib/bats-file \
   && rm -rf bats-core \
       /usr/local/lib/bats-support/.git \
       /usr/local/lib/bats-assert/.git \
