@@ -358,14 +358,45 @@ argsh::_docker_forward() {
     tty="-i"
   fi
   local -r image="${ARGSH_DOCKER_IMAGE:-ghcr.io/arg-sh/argsh:latest}"
-  # shellcheck disable=SC2046
-  docker run --rm ${tty} $(docker::user) \
-    -e "BATS_LOAD" \
-    -e "ARGSH_SOURCE" \
-    -e "PATH_TESTS" \
-    -e "GIT_COMMIT_SHA=$(git rev-parse HEAD 2>/dev/null || :)" \
-    -e "GIT_VERSION=$(git describe --tags --dirty 2>/dev/null || :)" \
-    "${image}" "${@}"
+  # Collect user-defined env vars to forward: any exported ARGSH_ENV_FOO=bar
+  # on the host is passed as FOO=bar inside the container.
+  # Uses compgen -e (exported only) so unexported locals aren't leaked.
+  # The docker run is wrapped in a subshell so that:
+  #   - exports of the stripped names don't pollute the parent process env
+  #   - read-only/special vars (UID, BASHOPTS, etc.) are safely skipped
+  #   - secrets stay out of the process argv (passed via env, not -e NAME=value)
+  # Collect candidate env vars to forward (name=value pairs).
+  local -a _env_candidates=()
+  local _var _name
+  while IFS='=' read -r _var _; do
+    _name="${_var#ARGSH_ENV_}"
+    [[ -n "${_name}" ]] || continue
+    [[ "${_name}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+    _env_candidates+=("${_name}=${!_var}")
+  done < <(compgen -e ARGSH_ENV_ 2>/dev/null || :)
+  # Run docker in a subshell so exports don't pollute the parent env.
+  # The -e flags are built AFTER export succeeds — if a name is
+  # read-only (UID, BASHOPTS), the export fails silently and no -e
+  # flag is added, so docker never receives a stale/empty value.
+  # shellcheck disable=SC2046 disable=SC2030
+  (
+    local -a _docker_env_flags=()
+    local _kv
+    for _kv in "${_env_candidates[@]}"; do
+      # shellcheck disable=SC2163
+      if export "${_kv}" 2>/dev/null; then
+        _docker_env_flags+=(-e "${_kv%%=*}")
+      fi
+    done
+    docker run --rm ${tty} $(docker::user) \
+      -e "BATS_LOAD" \
+      -e "ARGSH_SOURCE" \
+      -e "PATH_TESTS" \
+      -e "GIT_COMMIT_SHA=$(git rev-parse HEAD 2>/dev/null || :)" \
+      -e "GIT_VERSION=$(git describe --tags --dirty 2>/dev/null || :)" \
+      "${_docker_env_flags[@]}" \
+      "${image}" "${@}"
+  )
 }
 
 # @description Minify Bash files into a single script.
