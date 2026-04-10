@@ -35,15 +35,19 @@ COPY --from=builtin-build /build/target/release/libargsh.so /libargsh.so
 # coverage
 FROM kcov/kcov
 
-# test
+# test — bats-core + standard helper libraries (support, assert, file)
 RUN set -eux \
   && apt update \
   && apt install -y git \
   && git clone https://github.com/bats-core/bats-core.git \
-  && cd bats-core \
-  && ./install.sh /usr/local \
-  && cd .. \
+  && cd bats-core && ./install.sh /usr/local && cd .. \
+  && git clone https://github.com/bats-core/bats-support.git /usr/local/lib/bats-support \
+  && git clone https://github.com/bats-core/bats-assert.git /usr/local/lib/bats-assert \
+  && git clone https://github.com/bats-core/bats-file.git /usr/local/lib/bats-file \
   && rm -rf bats-core \
+      /usr/local/lib/bats-support/.git \
+      /usr/local/lib/bats-assert/.git \
+      /usr/local/lib/bats-file/.git \
   && apt remove -y git \
   && apt autoremove -y \
   && rm -rf /var/lib/apt/lists/*
