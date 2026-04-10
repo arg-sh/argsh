@@ -92,5 +92,5 @@
   "percent_low": 25,
   "percent_high": 75,
   "command": "bats+llvm-cov",
-  "date": "2026-04-10 16:31:47"
+  "date": "2026-04-10 16:42:59"
 }
