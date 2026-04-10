@@ -80,3 +80,15 @@ to::custom() {
   echo "pos1: ${pos1:-}"
   echo "rest: ${rest[*]:-}"
 }
+
+:test::help_with_flag() {
+  local pos1 flag1=""
+  # shellcheck disable=SC2034
+  local -a args=(
+    'pos1'     "Positional parameter 1"
+    'flag1|f'  "Flag with value"
+  )
+  :args "Help with flag test" "${@}"
+  echo "pos1: ${pos1}"
+  echo "flag1: ${flag1}"
+}

@@ -84,6 +84,44 @@ source "${PATH_FIXTURES}/attrs.sh"
   snapshot stdout
 }
 
+@test "attrs: -h/--help after positional arguments" {
+  (
+    :test::attrs2 somevalue -h
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  snapshot stdout
+
+  (
+    :test::attrs2 somevalue --help
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  snapshot stdout
+}
+
+@test "attrs: --help after flags" {
+  (
+    :test::help_with_flag --flag1 val --help
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  snapshot stdout
+}
+
+@test "attrs: -h as flag value does not trigger help" {
+  (
+    :test::help_with_flag mypos --flag1 -h
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  snapshot stdout
+}
+
 @test "attrs: positional parameters (with required arguments)" {
   :validate() {
     assert "${pos1}" = "pos1"

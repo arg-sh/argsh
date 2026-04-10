@@ -1,0 +1,14 @@
+Help with flag test
+
+Usage:
+  argsh <pos1>
+
+Arguments:
+   pos1 string             Positional parameter 1
+
+Options:
+   -f, --flag1 string (default: val)
+           Flag with value
+   -h, --help 
+           Show this help message
+
