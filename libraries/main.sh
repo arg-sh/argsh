@@ -348,8 +348,15 @@ argsh::_docker_forward() {
     echo "argsh: this command requires either the tool installed locally or Docker" >&2
     return 1
   }
-  local tty="-i"
-  ! tty -s || tty="-it"
+  # Only attach stdin (-i) when it's connected (TTY or pipe).
+  # In non-TTY contexts (MCP subprocesses, some CI) stdin may be
+  # /dev/null — passing -i there makes Docker hang waiting for EOF.
+  local tty=""
+  if [[ -t 0 ]]; then
+    tty="-it"
+  elif [[ -p /dev/stdin ]]; then
+    tty="-i"
+  fi
   local -r image="${ARGSH_DOCKER_IMAGE:-ghcr.io/arg-sh/argsh:latest}"
   # shellcheck disable=SC2046
   docker run --rm ${tty} $(docker::user) \
