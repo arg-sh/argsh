@@ -365,25 +365,28 @@ argsh::_docker_forward() {
   #   - exports of the stripped names don't pollute the parent process env
   #   - read-only/special vars (UID, BASHOPTS, etc.) are safely skipped
   #   - secrets stay out of the process argv (passed via env, not -e NAME=value)
-  # Build the user-env -e flags and a parallel export list.
-  local -a _docker_env_flags=() _env_exports=()
+  # Collect candidate env vars to forward (name=value pairs).
+  local -a _env_candidates=()
   local _var _name
   while IFS='=' read -r _var _; do
     _name="${_var#ARGSH_ENV_}"
     [[ -n "${_name}" ]] || continue
     [[ "${_name}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
-    _docker_env_flags+=(-e "${_name}")
-    _env_exports+=("${_name}=${!_var}")
+    _env_candidates+=("${_name}=${!_var}")
   done < <(compgen -e ARGSH_ENV_ 2>/dev/null || :)
-  # Run docker in a subshell so exports of the stripped names don't
-  # pollute the parent env. Read-only vars (UID, BASHOPTS) are safely
-  # skipped via || true.
+  # Run docker in a subshell so exports don't pollute the parent env.
+  # The -e flags are built AFTER export succeeds — if a name is
+  # read-only (UID, BASHOPTS), the export fails silently and no -e
+  # flag is added, so docker never receives a stale/empty value.
   # shellcheck disable=SC2046 disable=SC2030
   (
+    local -a _docker_env_flags=()
     local _kv
-    for _kv in "${_env_exports[@]}"; do
+    for _kv in "${_env_candidates[@]}"; do
       # shellcheck disable=SC2163
-      export "${_kv}" 2>/dev/null || true
+      if export "${_kv}" 2>/dev/null; then
+        _docker_env_flags+=(-e "${_kv%%=*}")
+      fi
     done
     docker run --rm ${tty} $(docker::user) \
       -e "BATS_LOAD" \
