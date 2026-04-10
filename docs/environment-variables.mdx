@@ -114,6 +114,18 @@ export PATH_TESTS="tests;integration;e2e"
 `argsh lint` discovers `*.sh`, `*.bash`, `*.bats`, and extensionless files with a bash/sh shebang.
 `argsh test` discovers `*.bats` files.
 
+### ARGSH_ENV_*
+
+Forward custom environment variables into the Docker container when argsh delegates to Docker (e.g., `argsh test`, `argsh lint`). Any variable prefixed with `ARGSH_ENV_` is forwarded with the prefix stripped.
+
+```bash
+export ARGSH_ENV_MY_TOKEN=secret
+export ARGSH_ENV_DEBUG=1
+argsh test   # container sees MY_TOKEN=secret, DEBUG=1
+```
+
+This is useful for passing secrets, feature flags, or tool configuration without modifying argsh itself. Works in `.envrc`, CI, and MCP contexts.
+
 ## Read-Only Variables
 
 These are set by argsh at runtime and should not be modified.
