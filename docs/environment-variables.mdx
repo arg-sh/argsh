@@ -94,7 +94,7 @@ Project library directory. Used as a search path for `argsh.so`.
 export PATH_LIB="${PATH_BASE}/.lib"
 ```
 
-### PATH_TEST
+### PATH_TESTS
 
 Semicolon-separated list of directories to search for test and script files. Used by `argsh status`, `argsh lint` (auto-discovery), and `argsh test` (auto-discovery).
 
@@ -105,10 +105,10 @@ When unset, argsh searches these locations automatically:
 
 ```bash
 # Single directory
-export PATH_TEST="tests"
+export PATH_TESTS="tests"
 
 # Multiple directories
-export PATH_TEST="tests;integration;e2e"
+export PATH_TESTS="tests;integration;e2e"
 ```
 
 `argsh lint` discovers `*.sh`, `*.bash`, `*.bats`, and extensionless files with a bash/sh shebang.

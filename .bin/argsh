@@ -836,6 +836,7 @@ argsh::main() {
     -e "ARGSH_SOURCE" \
     -e "ARGSH_PURE_BASH_TEST" \
     -e "ARGSH_BUILTIN_TEST" \
+    -e "PATH_TESTS" \
     ${ARGSH_BUILTIN_PATH:+-e "ARGSH_BUILTIN_PATH=${ARGSH_BUILTIN_PATH}"} \
     -e "LLVM_PROFILE_FILE" \
     -e "GIT_COMMIT_SHA=$(git rev-parse HEAD 2>/dev/null || :)" \

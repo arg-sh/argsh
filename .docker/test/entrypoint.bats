@@ -39,7 +39,7 @@ load_source
   contains "test" stderr
 }
 
-@test "entrypoint: test with no args discovers .bats files via PATH_TEST" {
+@test "entrypoint: test with no args discovers .bats files via PATH_TESTS" {
   local _tmp
   _tmp="$(mktemp -d)"
   cat >"${_tmp}/sample.bats" <<'EOF'
@@ -47,7 +47,7 @@ load_source
 @test "sample" { true; }
 EOF
   (
-    PATH_TEST="${_tmp}" docker-entrypoint.sh test
+    PATH_TESTS="${_tmp}" docker-entrypoint.sh test
   ) >"${stdout}" 2>"${stderr}" || status="${?}"
   rm -rf "${_tmp}"
 
