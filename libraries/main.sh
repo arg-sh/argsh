@@ -208,16 +208,16 @@ argsh::builtin() {
 argsh::builtins() { argsh::builtin "${@}"; }
 
 # @description Discover search directories for scripts and tests.
-# Uses PATH_TEST (semicolon-separated), then common locations under PATH_BASE.
+# Uses PATH_TESTS (semicolon-separated), then common locations under PATH_BASE.
 # @set _search_dirs array Directories to search (deduplicated)
 # @internal
 argsh::discover_dirs() {
   local -a _raw_dirs=()
   _search_dirs=()
   local _d _existing _skip _rd _re
-  # PATH_TEST: semicolon-separated list of directories
-  if [[ -n "${PATH_TEST:-}" ]]; then
-    IFS=';' read -ra _raw_dirs <<< "${PATH_TEST}"
+  # PATH_TESTS: semicolon-separated list of directories
+  if [[ -n "${PATH_TESTS:-}" ]]; then
+    IFS=';' read -ra _raw_dirs <<< "${PATH_TESTS}"
   fi
   # Append common locations
   _raw_dirs+=(
@@ -355,7 +355,7 @@ argsh::_docker_forward() {
   docker run --rm ${tty} $(docker::user) \
     -e "BATS_LOAD" \
     -e "ARGSH_SOURCE" \
-    -e "PATH_TEST" \
+    -e "PATH_TESTS" \
     -e "GIT_COMMIT_SHA=$(git rev-parse HEAD 2>/dev/null || :)" \
     -e "GIT_VERSION=$(git describe --tags --dirty 2>/dev/null || :)" \
     "${image}" "${@}"
@@ -437,7 +437,7 @@ argsh::minify() {
 }
 
 # @description Lint Bash files with shellcheck.
-# @arg $@ string Files or directories (optional; auto-discovered via PATH_TEST)
+# @arg $@ string Files or directories (optional; auto-discovered via PATH_TESTS)
 argsh::lint() {
   if ! binary::exists shellcheck 2>/dev/null; then
     argsh::_docker_forward lint "${@}"
@@ -492,7 +492,7 @@ argsh::lint() {
       done
     done
     if (( ${#_found_files[@]} == 0 )); then
-      echo "No files to lint (set PATH_TEST or pass files as arguments)" >&2
+      echo "No files to lint (set PATH_TESTS or pass files as arguments)" >&2
       return 1
     fi
     # obfus ignore variable
@@ -517,7 +517,7 @@ argsh::lint() {
 }
 
 # @description Run bats tests.
-# @arg $@ string Paths to .bats files (optional; auto-discovered via PATH_TEST)
+# @arg $@ string Paths to .bats files (optional; auto-discovered via PATH_TESTS)
 argsh::test() {
   if ! binary::exists bats 2>/dev/null; then
     argsh::_docker_forward test "${@}"
@@ -533,7 +533,7 @@ argsh::test() {
     local -a _found_files=()
     argsh::discover_files "*.bats"
     if (( ${#_found_files[@]} == 0 )); then
-      echo "No test files found (set PATH_TEST or pass files as arguments)" >&2
+      echo "No test files found (set PATH_TESTS or pass files as arguments)" >&2
       return 1
     fi
     # obfus ignore variable

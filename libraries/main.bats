@@ -178,12 +178,12 @@ declare -gi ARGSH_BUILTIN="${ARGSH_BUILTIN:-0}"
   contains "\.bats file" stdout
 }
 
-@test "status: PATH_TEST adds custom directory" {
+@test "status: PATH_TESTS adds custom directory" {
   local _tmp
   _tmp="$(mktemp -d)"
   touch "${_tmp}/custom.bats"
   (
-    PATH_TEST="${_tmp}" ARGSH_BUILTIN=0 argsh::shebang status
+    PATH_TESTS="${_tmp}" ARGSH_BUILTIN=0 argsh::shebang status
   ) >"${stdout}" 2>"${stderr}" || status=$?
   rm -rf "${_tmp}"
 
@@ -193,8 +193,8 @@ declare -gi ARGSH_BUILTIN="${ARGSH_BUILTIN:-0}"
 
 @test "status: deduplicates overlapping dirs" {
   (
-    # PATH_BASE/libraries is already in defaults, adding it via PATH_TEST shouldn't double-count
-    export PATH_TEST="${PATH_BASE:-${BATS_TEST_DIRNAME}/..}/libraries"
+    # PATH_BASE/libraries is already in defaults, adding it via PATH_TESTS shouldn't double-count
+    export PATH_TESTS="${PATH_BASE:-${BATS_TEST_DIRNAME}/..}/libraries"
     ARGSH_BUILTIN=0 argsh::status
   ) >"${stdout}" 2>"${stderr}" || status=$?
 
@@ -227,7 +227,7 @@ declare -gi ARGSH_BUILTIN="${ARGSH_BUILTIN:-0}"
 # "argsh::discover_files: command not found" from docker-entrypoint.sh)
 # ---------------------------------------------------------------------------
 
-@test "argsh::test: no args discovers .bats files via PATH_TEST" {
+@test "argsh::test: no args discovers .bats files via PATH_TESTS" {
   if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
   local _tmp
   _tmp="$(mktemp -d)"
@@ -239,7 +239,7 @@ declare -gi ARGSH_BUILTIN="${ARGSH_BUILTIN:-0}"
   binary::exists() { [[ "${1}" == "bats" ]] || command -v "${1}" &>/dev/null; }
 
   # shellcheck disable=SC2119
-  (PATH_TEST="${_tmp}" argsh::test) >"${stdout}" 2>"${stderr}" || status=$?
+  (PATH_TESTS="${_tmp}" argsh::test) >"${stdout}" 2>"${stderr}" || status=$?
   rm -rf "${_tmp}"
 
   assert "${status}" -eq 0

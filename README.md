@@ -184,7 +184,7 @@ Runtime
 
 | Command | What it does | Backed by |
 |---|---|---|
-| [`argsh test`](https://arg.sh/development/fundamentals/test) | Run `.bats` tests; auto-discovers tests via `PATH_TEST` | [bats-core](https://github.com/bats-core/bats-core) |
+| [`argsh test`](https://arg.sh/development/fundamentals/test) | Run `.bats` tests; auto-discovers tests via `PATH_TESTS` | [bats-core](https://github.com/bats-core/bats-core) |
 | [`argsh lint`](https://arg.sh/development/fundamentals/lint) | Lint all shell files in your project | [shellcheck](https://www.shellcheck.net/) |
 | [`argsh coverage`](https://arg.sh/development/fundamentals/coverage) | Generate a coverage report with a minimum threshold | [kcov](https://github.com/SimonKagstrom/kcov) |
 | [`argsh docs`](https://arg.sh/development/fundamentals/docs) | Generate Markdown docs from `@description` comments | [shdoc](https://github.com/reconquest/shdoc) |
@@ -194,7 +194,7 @@ Runtime
 
 Each utility runs locally when its backing tool is installed, and transparently forwards to the official [docker image](https://github.com/arg-sh/argsh/pkgs/container/argsh) otherwise — so `argsh test` works on any machine with just Docker. Every command has its own `-h`/`--help`, and unknown commands get typo suggestions (`argsh tests` → `Did you mean 'test'?`).
 
-Zero config: drop `.bats` files anywhere under `${PATH_TEST:-.}` and `argsh test` finds them. See [`argsh status`](https://arg.sh/development/fundamentals/test) to verify discovery.
+Zero config: drop `.bats` files anywhere under `${PATH_TESTS:-.}` and `argsh test` finds them. See [`argsh status`](https://arg.sh/development/fundamentals/test) to verify discovery.
 
 &nbsp;
 
