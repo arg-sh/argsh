@@ -40,6 +40,31 @@ argsh test scripts/*.sh
 
 Use `argsh test --help` to get more information about the available options.
 
+### Included bats libraries
+
+The argsh docker image ships with the standard bats helper libraries pre-installed:
+
+| Library | Path | Purpose |
+|---|---|---|
+| [bats-support](https://github.com/bats-core/bats-support) | `/usr/local/lib/bats-support` | Common helper functions (output formatting, error handling) |
+| [bats-assert](https://github.com/bats-core/bats-assert) | `/usr/local/lib/bats-assert` | Assertions (`assert_success`, `assert_output`, `assert_line`, etc.) |
+| [bats-file](https://github.com/bats-core/bats-file) | `/usr/local/lib/bats-file` | File system assertions (`assert_file_exists`, `assert_dir_exists`, etc.) |
+
+Load them in your tests:
+
+```bash
+load '/usr/local/lib/bats-support/load'
+load '/usr/local/lib/bats-assert/load'
+
+@test "my command succeeds" {
+  run my_command --flag value
+  assert_success
+  assert_output --partial "expected text"
+}
+```
+
+These are available automatically when running tests via `argsh test` (which uses the docker image). For local development, install them with your package manager or clone them into your project.
+
 ### Bats helper
 
 Argsh provides a helper function that you can use in your tests. If you [bootstrapped your project](../../getting-started#bootstrap-a-new-project), you already have it in your project.

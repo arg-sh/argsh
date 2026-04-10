@@ -71,5 +71,5 @@
   "percent_low": 25,
   "percent_high": 75,
   "command": "cargo-test+llvm-cov",
-  "date": "2026-04-10 09:11:57"
+  "date": "2026-04-10 09:07:52"
 }
