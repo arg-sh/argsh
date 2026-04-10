@@ -273,11 +273,16 @@ echo "arg2: ${arg2}"
 echo "flag: ${flag:-}"
 ```
 
-Note that arguments are positional and flags are not. Flags can be called with a short or long version. Positional arguments are required and flags are optional (if not otherwise defined).
+Note that arguments are positional and flags are not. Flags can be called with a short or long version. By default, positional arguments are required (when declared without a value) and flags are optional (if not otherwise defined). See [Positional arguments](#positional-arguments) for how to make a positional optional.
 
 ### Positional arguments
 
-Positional arguments are defined by their name and a description. They are required and positional (as their name suggests). You can define as many positional arguments as you like. You can also define their type (string, number, boolean, ...) and default value.
+Positional arguments are defined by their name and a description. They are positional (as their name suggests) and matched by position on the command line. You can define as many positional arguments as you like. You can also define their type (string, number, boolean, ...) and default value.
+
+Whether a positional argument is **required** or **optional** is determined by the variable's initialization — not by a modifier in the field spec:
+
+- **Required** — declare the variable without a value: `local arg1`
+- **Optional** — declare the variable with a default value: `local arg2="default"`
 
 ```bash
 local arg1 arg2="default"
@@ -287,6 +292,12 @@ local -a args=(
 )
 :args "Brief description of your command" "${@}"
 ```
+
+Here `arg1` is required (uninitialized) and `arg2` is optional (has a default). The help text reflects this: required positionals show as `<arg1>`, optional ones as `[arg2]`.
+
+:::note
+The `:!` modifier only applies to **flags**, not positional arguments. For positionals, use variable initialization to control whether they are required.
+:::
 
 ### Catch all arguments
 
