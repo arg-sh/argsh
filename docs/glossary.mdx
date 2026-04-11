@@ -27,7 +27,7 @@ A Bash array of pairs `(command_spec description)` that defines the subcommands 
 A specification string in the `args` array that defines an argument. Format: `name|short:modifiers`. Examples: `'verbose|v:+'`, `'port|p:~int!'`, `'files'`.
 
 **Positional**
-A field without a pipe `|` character. Matched by position on the command line rather than by flag name. Array positionals consume all remaining arguments.
+A field without a pipe `|` character. Matched by position on the command line rather than by flag name. A positional is **required** when its variable is uninitialized (`local name`) and **optional** when initialized with a default (`local name=""`). Array positionals consume all remaining arguments.
 
 **Flag**
 A field with a pipe `|` character (e.g., `name|n`). Matched by `--name` or `-n` on the command line.
@@ -39,7 +39,7 @@ Characters after `:` in a field spec that control parsing behavior:
 |----------|---------|---------|
 | `:+` | Boolean flag (no value, sets to `1`) | `verbose\|v:+` |
 | `:~type` | Type constraint for validation | `port\|p:~int` |
-| `:!` | Required (must be provided) | `env\|e:!` |
+| `:!` | Required flag (must be provided; flags only — positional required/optional is controlled by variable initialization) | `env\|e:!` |
 
 Modifiers combine: `:~int!` means required integer.
 

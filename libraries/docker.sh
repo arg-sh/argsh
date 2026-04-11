@@ -44,4 +44,15 @@ docker::user() {
 
   echo "-v ${PATH_BASE:-"$(pwd)"}:${home}"
   echo "-w ${curr}"
+
+  # Mount PATH_BIN into the container if it's set and resolves to a real
+  # directory. Mounted read-only to /usr/local/sbin/ which is empty in the
+  # argsh image and already on PATH — host-built tools (argsh.so, custom
+  # binaries) become immediately available without any PATH manipulation.
+  if [[ -n "${PATH_BIN:-}" && -d "${PATH_BIN}" ]]; then
+    local _abs_bin
+    _abs_bin="$(realpath "${PATH_BIN}" 2>/dev/null || echo "${PATH_BIN}")"
+    echo "-v ${_abs_bin}:/usr/local/sbin:ro"
+    echo "-e PATH_BIN=/usr/local/sbin"
+  fi
 }

@@ -11,4 +11,6 @@
 set -euo pipefail
 : "${ARGSH_SOURCE:="argsh"}"
 export ARGSH_SOURCE
-exec argsh "${@}"
+# Use absolute path — /usr/local/sbin may shadow argsh when PATH_BIN
+# is mounted there (it comes before /usr/local/bin on PATH).
+exec /usr/local/bin/argsh "${@}"
