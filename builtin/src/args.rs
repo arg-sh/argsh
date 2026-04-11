@@ -71,7 +71,7 @@ pub fn args_main(args: &[String]) -> i32 {
         return shared::error_usage("", "args array must have an even number of elements");
     }
 
-    // Handle -h, --help
+    // Handle -h, --help as first argument
     if cli_args.first().map(|s| s.as_str()) == Some("-h")
         || cli_args.first().map(|s| s.as_str()) == Some("--help")
     {
@@ -126,6 +126,13 @@ pub fn args_main(args: &[String]) -> i32 {
             cli.remove(idx);
             positional_index += 1;
             continue;
+        }
+
+        // Handle -h/--help at any position (but only as a standalone flag,
+        // not when consumed as a value by a preceding flag)
+        if cli[idx] == "-h" || cli[idx] == "--help" {
+            args_help_text(title, &args_arr);
+            return shared::HELP_EXIT;
         }
 
         // Flag argument -- set_bool for :args just sets scalar "1"

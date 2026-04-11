@@ -404,18 +404,18 @@ if ! (( ARGSH_BUILTIN )); then
   local first=0 field="" i positional_index=1
   local -A match=()
   local -a cli=("${@}")
-  
+
   while (( ${#cli[@]} )); do
     # positional
     if [[ ${cli[0]:0:1} != "-" ]]; then
       local name value
       i="$(:args::field_positional "${positional_index}")" ||
         :args::error_usage "too many arguments: ${cli[0]}"
-      
+
       field="${args[i]}"
       name="$(args::field_name "${field}")"
       value="$(:args::field_value "${cli[0]}")" || exit "${?}"
-    
+
       # shellcheck disable=SC2155
       local -n ref="${name}"
       if is::array "${name}"; then
@@ -433,7 +433,14 @@ if ! (( ARGSH_BUILTIN )); then
       continue
     fi
 
-    :args::parse_flag || 
+    # Handle -h/--help at any position (but only as a standalone flag,
+    # not when consumed as a value by a preceding flag)
+    if [[ "${cli[0]}" == "-h" || "${cli[0]}" == "--help" ]]; then
+      :args::text
+      exit 0
+    fi
+
+    :args::parse_flag ||
       :args::error_usage "unknown flag: ${cli[0]}"
     match["${field}"]=1
   done
