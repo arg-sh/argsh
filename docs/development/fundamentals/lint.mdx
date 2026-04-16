@@ -9,9 +9,9 @@ linter pipeline, which combines two complementary tools:
 
 1. **shellcheck** — general-purpose Bash linter (covers quoting, subshells,
    command substitution, POSIX portability, etc.).
-2. **argsh-lint** — argsh-specific static analysis (AG001–AG013) for
-   `:args` / `:usage` declarations, field specs, variable declarations,
-   imports, and more.
+2. **argsh-lint** — argsh-specific static analysis (AG001–AG010, AG012–AG013;
+   AG011 is reserved) for `:args` / `:usage` declarations, field specs,
+   variable declarations, imports, and more.
 
 Running `argsh lint` invokes **both** by default. Each can be selected
 individually via flags.

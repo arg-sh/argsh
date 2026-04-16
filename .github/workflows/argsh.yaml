@@ -458,10 +458,18 @@ jobs:
         with:
           pattern: argsh-so-linux-*
           path: artifacts
-      - name: Download all LSP/lint binaries
+      # download-artifact patterns use glob, not brace expansion — download
+      # the two binaries in separate steps, merging into the same dir.
+      - name: Download all LSP binaries
         uses: actions/download-artifact@v8
         with:
-          pattern: argsh-ls{p,int}-*
+          pattern: argsh-lsp-*
+          path: artifacts/lsp
+          merge-multiple: true
+      - name: Download all argsh-lint binaries
+        uses: actions/download-artifact@v8
+        with:
+          pattern: argsh-lint-*
           path: artifacts/lsp
           merge-multiple: true
       - name: Download all VSIX packages

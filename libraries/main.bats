@@ -502,7 +502,9 @@ declare -gi ARGSH_BUILTIN="${ARGSH_BUILTIN:-0}"
 
   assert "${status}" -eq 0
   # Must NOT contain shellcheck stub output (only argsh-lint should run).
-  ! grep -q "SHELLCHECK:" "${stdout}"
+  # Use `command grep` — bats overrides `grep` to print failure diagnostics
+  # on non-zero exit, which would be noise here (we expect no match).
+  ! command grep -q "SHELLCHECK:" "${stdout}"
   # MUST contain argsh-lint stub output.
   contains "ARGSH_LINT:" stdout
 }
@@ -523,7 +525,8 @@ declare -gi ARGSH_BUILTIN="${ARGSH_BUILTIN:-0}"
 
   assert "${status}" -eq 0
   contains "SHELLCHECK:" stdout
-  ! grep -q "ARGSH_LINT:" "${stdout}"
+  # Use `command grep` for the negative case to silence bats' helper noise.
+  ! command grep -q "ARGSH_LINT:" "${stdout}"
 }
 
 @test "argsh::lint: both --only-* flags together is a usage error" {

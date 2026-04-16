@@ -44,16 +44,28 @@ fn run(args: &[&str], stdin_input: Option<&str>) -> (String, String, i32) {
     )
 }
 
-/// Write a temp file with the given content; returns the path.
-fn tmpfile(name: &str, content: &str) -> PathBuf {
+/// Owning handle for a temp file: keeps the `TempDir` alive (auto-cleans on
+/// Drop) while exposing the path. Dereffing the handle yields the path so
+/// callers can pass it to `run`, etc.
+struct TmpFile {
+    // Kept alive for RAII cleanup; not otherwise used.
+    _dir: tempfile::TempDir,
+    path: PathBuf,
+}
+
+impl TmpFile {
+    fn as_str(&self) -> &str {
+        self.path.to_str().unwrap()
+    }
+}
+
+/// Write a temp file with the given content under a freshly-created temp dir.
+/// The returned `TmpFile` owns the dir — cleanup happens when it is dropped.
+fn tmpfile(name: &str, content: &str) -> TmpFile {
     let dir = tempfile::tempdir_in(std::env::temp_dir()).unwrap();
     let path = dir.path().join(name);
     std::fs::write(&path, content).unwrap();
-    // Leak the tempdir so the file persists for the duration of the test.
-    // tempfile::TempDir has a `into_path()` which disables cleanup; we use it
-    // so tests remain simple (files are cleaned up at OS level on reboot).
-    let _ = dir.into_path();
-    path
+    TmpFile { _dir: dir, path }
 }
 
 // -----------------------------------------------------------------------------
@@ -102,7 +114,7 @@ fn clean_file_produces_no_output_and_exits_zero() {
            :args \"Test\" \"${@}\"\n\
          }\n",
     );
-    let (stdout, _stderr, code) = run(&[path.to_str().unwrap()], None);
+    let (stdout, _stderr, code) = run(&[path.as_str()], None);
     assert_eq!(code, 0);
     assert!(stdout.is_empty(), "expected no output, got: {}", stdout);
 }
@@ -123,7 +135,7 @@ fn file_with_diagnostics_exits_one_and_emits_gcc_format() {
            :args \"Test\" \"${@}\"\n\
          }\n",
     );
-    let (stdout, _stderr, code) = run(&[path.to_str().unwrap()], None);
+    let (stdout, _stderr, code) = run(&[path.as_str()], None);
     assert_eq!(code, 1);
     // gcc-style: file:line:col: severity: message
     assert!(stdout.contains("bad.sh:"), "stdout: {}", stdout);
@@ -160,7 +172,7 @@ fn json_format_emits_valid_json_per_line() {
            :args \"Test\" \"${@}\"\n\
          }\n",
     );
-    let (stdout, _stderr, code) = run(&["--format", "json", path.to_str().unwrap()], None);
+    let (stdout, _stderr, code) = run(&["--format", "json", path.as_str()], None);
     assert_eq!(code, 1);
     for line in stdout.lines() {
         // Each line must parse as JSON
@@ -212,7 +224,7 @@ fn multiple_files_concatenate_diagnostics() {
          }\n",
     );
     let (stdout, _stderr, code) = run(
-        &[bad.to_str().unwrap(), clean.to_str().unwrap()],
+        &[bad.as_str(), clean.as_str()],
         None,
     );
     assert_eq!(code, 1);
@@ -236,7 +248,7 @@ fn dash_dash_separator_allows_filename_starting_with_dash() {
            :args \"T\" \"${@}\"\n\
          }\n",
     );
-    let (_stdout, _stderr, code) = run(&["--", path.to_str().unwrap()], None);
+    let (_stdout, _stderr, code) = run(&["--", path.as_str()], None);
     assert_eq!(code, 0);
 }
 
@@ -255,7 +267,7 @@ fn exclude_filters_out_specific_codes() {
          }\n",
     );
     let (stdout, _stderr, code) = run(
-        &["--exclude=AG004", path.to_str().unwrap()],
+        &["--exclude=AG004", path.as_str()],
         None,
     );
     assert_eq!(code, 0, "stdout: {}", stdout);
@@ -274,7 +286,7 @@ fn short_e_flag_matches_exclude_long_form() {
          }\n",
     );
     let (stdout, _stderr, code) = run(
-        &["-e", "AG004", path.to_str().unwrap()],
+        &["-e", "AG004", path.as_str()],
         None,
     );
     assert_eq!(code, 0, "stdout: {}", stdout);
@@ -294,7 +306,7 @@ fn include_restricts_to_whitelisted_codes() {
          }\n",
     );
     let (stdout, _stderr, code) = run(
-        &["--include=AG007", path.to_str().unwrap()],
+        &["--include=AG007", path.as_str()],
         None,
     );
     assert_eq!(code, 0, "stdout: {}", stdout);
@@ -314,7 +326,7 @@ fn severity_filter_drops_below_threshold() {
          }\n",
     );
     let (stdout, _stderr, code) = run(
-        &["--severity=error", path.to_str().unwrap()],
+        &["--severity=error", path.as_str()],
         None,
     );
     assert_eq!(code, 0, "stdout: {}", stdout);
@@ -333,7 +345,7 @@ fn short_s_severity_flag_works() {
          }\n",
     );
     let (stdout, _stderr, code) = run(
-        &["-S", "error", path.to_str().unwrap()],
+        &["-S", "error", path.as_str()],
         None,
     );
     assert_eq!(code, 0, "stdout: {}", stdout);
@@ -353,7 +365,7 @@ fn severity_warning_keeps_warnings() {
          }\n",
     );
     let (stdout, _stderr, code) = run(
-        &["--severity=warning", path.to_str().unwrap()],
+        &["--severity=warning", path.as_str()],
         None,
     );
     assert_eq!(code, 1);
@@ -371,7 +383,7 @@ fn quiet_format_emits_nothing_but_sets_exit_code() {
            :args \"T\" \"${@}\"\n\
          }\n",
     );
-    let (stdout, _stderr, code) = run(&["--format=quiet", path.to_str().unwrap()], None);
+    let (stdout, _stderr, code) = run(&["--format=quiet", path.as_str()], None);
     assert_eq!(code, 1, "stdout: {}", stdout);
     assert!(stdout.is_empty(), "stdout: {}", stdout);
 }
@@ -387,7 +399,7 @@ fn checkstyle_format_emits_xml_document() {
            :args \"T\" \"${@}\"\n\
          }\n",
     );
-    let (stdout, _stderr, code) = run(&["--format=checkstyle", path.to_str().unwrap()], None);
+    let (stdout, _stderr, code) = run(&["--format=checkstyle", path.as_str()], None);
     assert_eq!(code, 1);
     assert!(stdout.starts_with("<?xml"), "stdout: {}", stdout);
     assert!(stdout.contains("<checkstyle"), "stdout: {}", stdout);
@@ -409,7 +421,7 @@ fn color_never_suppresses_ansi_escapes_in_tty_format() {
          }\n",
     );
     let (stdout, _stderr, code) = run(
-        &["--format=tty", "--color=never", path.to_str().unwrap()],
+        &["--format=tty", "--color=never", path.as_str()],
         None,
     );
     assert_eq!(code, 1);
@@ -429,7 +441,7 @@ fn color_always_emits_ansi_escapes_in_tty_format() {
          }\n",
     );
     let (stdout, _stderr, code) = run(
-        &["--format=tty", "--color=always", path.to_str().unwrap()],
+        &["--format=tty", "--color=always", path.as_str()],
         None,
     );
     assert_eq!(code, 1);
@@ -447,7 +459,7 @@ fn short_f_flag_maps_to_format() {
            :args \"T\" \"${@}\"\n\
          }\n",
     );
-    let (stdout, _stderr, code) = run(&["-f", "json", path.to_str().unwrap()], None);
+    let (stdout, _stderr, code) = run(&["-f", "json", path.as_str()], None);
     assert_eq!(code, 1);
     // First line should parse as JSON.
     let first = stdout.lines().next().unwrap_or("");
@@ -481,7 +493,7 @@ fn no_resolve_flag_still_runs_diagnostics() {
            :args \"T\" \"${@}\"\n\
          }\n",
     );
-    let (stdout, _stderr, code) = run(&["--no-resolve", path.to_str().unwrap()], None);
+    let (stdout, _stderr, code) = run(&["--no-resolve", path.as_str()], None);
     assert_eq!(code, 1);
     assert!(stdout.contains("AG004"), "stdout: {}", stdout);
     // Must not contain AG013 since resolution was skipped.
@@ -504,7 +516,7 @@ fn suppression_comment_silences_diagnostic() {
            :args \"T\" \"${@}\"\n\
          }\n",
     );
-    let (stdout, _stderr, code) = run(&[path.to_str().unwrap()], None);
+    let (stdout, _stderr, code) = run(&[path.as_str()], None);
     assert_eq!(code, 0, "stdout: {}", stdout);
     assert!(stdout.is_empty());
 }
