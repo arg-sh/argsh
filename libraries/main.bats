@@ -414,6 +414,63 @@ declare -gi ARGSH_BUILTIN="${ARGSH_BUILTIN:-0}"
   rm -rf "${_tmp}"
 }
 
+@test "builtin::download: fresh install uses 0644 mode (not mktemp's 0600)" {
+  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
+  local _tmp
+  _tmp="$(mktemp -d)"
+  github::latest() { echo "v0.0.0-test"; }
+  curl() {
+    local _out=""
+    while [[ $# -gt 0 ]]; do
+      [[ "${1}" == "-o" ]] && { _out="${2}"; shift 2; continue; }
+      shift
+    done
+    echo "new-content" > "${_out}"
+  }
+  enable() { :; }
+  export -f github::latest curl enable
+
+  PATH_BIN="${_tmp}" argsh::builtin::download 1 >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  # Must NOT be 0600 (mktemp default) — that would break shared install dirs.
+  local _mode
+  _mode="$(stat -c '%a' "${_tmp}/argsh.so")"
+  assert "${_mode}" = "644"
+
+  rm -rf "${_tmp}"
+}
+
+@test "builtin::download: preserves existing .so mode on update" {
+  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
+  local _tmp
+  _tmp="$(mktemp -d)"
+  # Pre-existing .so with a custom (non-default) mode set by the operator.
+  echo "old-content" > "${_tmp}/argsh.so"
+  chmod 0755 "${_tmp}/argsh.so"
+  github::latest() { echo "v0.0.0-test"; }
+  curl() {
+    local _out=""
+    while [[ $# -gt 0 ]]; do
+      [[ "${1}" == "-o" ]] && { _out="${2}"; shift 2; continue; }
+      shift
+    done
+    echo "new-content" > "${_out}"
+  }
+  enable() { :; }
+  export -f github::latest curl enable
+
+  PATH_BIN="${_tmp}" argsh::builtin::download 1 >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  # Mode must be preserved across updates so operator customizations stick.
+  local _mode
+  _mode="$(stat -c '%a' "${_tmp}/argsh.so")"
+  assert "${_mode}" = "755"
+
+  rm -rf "${_tmp}"
+}
+
 @test "argsh::lint: errors cleanly when no files discovered" {
   if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
   shellcheck() { echo "shellcheck called"; }

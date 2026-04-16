@@ -193,6 +193,18 @@ argsh::builtin::download() {
     return 1
   }
 
+  # mktemp creates files with mode 0600. Set a sensible mode before the
+  # atomic move so the installed .so isn't unexpectedly restrictive in shared
+  # install locations. If a previous .so exists, preserve its mode (operator
+  # may have customized it); otherwise default to 0644, matching what
+  # `curl -o` (the previous direct-write approach) would produce under a
+  # typical 0022 umask.
+  local _mode="644"
+  if [[ -f "${_dest}" ]]; then
+    _mode="$(stat -c '%a' "${_dest}" 2>/dev/null || echo 644)"
+  fi
+  chmod "${_mode}" "${_tmp}" 2>/dev/null || true
+
   # Atomically replace the destination. mv on the same filesystem is atomic.
   mv -f "${_tmp}" "${_dest}" || {
     echo "argsh: failed to install to ${_dest}" >&2
