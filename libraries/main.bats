@@ -261,6 +261,128 @@ declare -gi ARGSH_BUILTIN="${ARGSH_BUILTIN:-0}"
   contains "No test files found" stderr
 }
 
+# ---------------------------------------------------------------------------
+# argsh::builtin::download — atomic install via temp file
+#
+# Regression: `argsh builtin update` segfaulted when overwriting the .so file
+# already loaded into the current bash process. Fix downloads to a temp path
+# and atomically `mv`s into place.
+# ---------------------------------------------------------------------------
+
+@test "builtin::download: writes to temp path then atomically moves" {
+  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
+  local _tmp
+  _tmp="$(mktemp -d)"
+  # Stub the network and verification — we want to assert on filesystem behavior.
+  github::latest() { echo "v0.0.0-test"; }
+  curl() {
+    # Find -o argument and write a fake payload there. Verify it is NOT the
+    # final destination path (regression: previous code wrote directly to dest).
+    local _out=""
+    while [[ $# -gt 0 ]]; do
+      [[ "${1}" == "-o" ]] && { _out="${2}"; shift 2; continue; }
+      shift
+    done
+    [[ -n "${_out}" ]] || return 1
+    [[ "${_out}" != "${_tmp}/argsh.so" ]] || {
+      echo "regression: curl wrote directly to destination, not temp" >&2
+      return 1
+    }
+    echo "fake-so-content" > "${_out}"
+  }
+  argsh::builtin::try() { :; }  # always succeeds
+  export -f github::latest curl argsh::builtin::try
+
+  PATH_BIN="${_tmp}" argsh::builtin::download 1 >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  # Final destination exists with the downloaded content
+  assert -f "${_tmp}/argsh.so"
+  assert "$(cat "${_tmp}/argsh.so")" = "fake-so-content"
+  # No leftover temp files
+  local _leftover
+  _leftover=$(command ls "${_tmp}"/*.download.* 2>/dev/null || true)
+  assert "${_leftover}" = ""
+
+  rm -rf "${_tmp}"
+}
+
+@test "builtin::download: cleans up temp file on download failure" {
+  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
+  local _tmp
+  _tmp="$(mktemp -d)"
+  github::latest() { echo "v0.0.0-test"; }
+  curl() { return 1; }  # simulate download failure
+  export -f github::latest curl
+
+  PATH_BIN="${_tmp}" argsh::builtin::download 1 >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -ne 0
+  contains "download failed" stderr
+  # No leftover files at all
+  assert ! -f "${_tmp}/argsh.so"
+  local _leftover
+  _leftover=$(command ls "${_tmp}"/*.download.* 2>/dev/null || true)
+  assert "${_leftover}" = ""
+
+  rm -rf "${_tmp}"
+}
+
+@test "builtin::download: cleans up temp file on verify failure" {
+  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
+  local _tmp
+  _tmp="$(mktemp -d)"
+  github::latest() { echo "v0.0.0-test"; }
+  curl() {
+    local _out=""
+    while [[ $# -gt 0 ]]; do
+      [[ "${1}" == "-o" ]] && { _out="${2}"; shift 2; continue; }
+      shift
+    done
+    echo "bad" > "${_out}"
+  }
+  argsh::builtin::try() { return 1; }  # simulate failed load
+  export -f github::latest curl argsh::builtin::try
+
+  PATH_BIN="${_tmp}" argsh::builtin::download 1 >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -ne 0
+  contains "failed to load as builtin" stderr
+  # No final file written, no temp leftovers
+  assert ! -f "${_tmp}/argsh.so"
+  local _leftover
+  _leftover=$(command ls "${_tmp}"/*.download.* 2>/dev/null || true)
+  assert "${_leftover}" = ""
+
+  rm -rf "${_tmp}"
+}
+
+@test "builtin::download: overwriting existing .so does not crash and replaces content" {
+  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
+  local _tmp
+  _tmp="$(mktemp -d)"
+  # Pre-existing .so with old content (simulates already-installed builtin).
+  echo "old-content" > "${_tmp}/argsh.so"
+  github::latest() { echo "v0.0.0-test"; }
+  curl() {
+    local _out=""
+    while [[ $# -gt 0 ]]; do
+      [[ "${1}" == "-o" ]] && { _out="${2}"; shift 2; continue; }
+      shift
+    done
+    echo "new-content" > "${_out}"
+  }
+  argsh::builtin::try() { :; }
+  export -f github::latest curl argsh::builtin::try
+
+  PATH_BIN="${_tmp}" argsh::builtin::download 1 >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  assert "$(cat "${_tmp}/argsh.so")" = "new-content"
+
+  rm -rf "${_tmp}"
+}
+
 @test "argsh::lint: errors cleanly when no files discovered" {
   if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
   shellcheck() { echo "shellcheck called"; }

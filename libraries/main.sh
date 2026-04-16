@@ -154,23 +154,40 @@ argsh::builtin::download() {
   }
 
   local _asset="argsh-linux-${_arch}.so"
+  # Download to a temp file alongside the destination, then atomically move
+  # into place. This avoids two failure modes:
+  #   1. A partially-downloaded .so being left at the destination on network
+  #      failure.
+  #   2. SIGSEGV when the destination is the same path as a .so already loaded
+  #      into the current bash process — overwriting an mmap'd dynamic
+  #      library in place can crash on subsequent dlopen of that path.
+  local _tmp="${_dest}.download.$$"
   echo "argsh: downloading ${_asset} (${_tag})..." >&2
-  curl -fsSL -o "${_dest}" \
+  curl -fsSL -o "${_tmp}" \
     "https://github.com/arg-sh/argsh/releases/download/${_tag}/${_asset}" || {
     echo "argsh: download failed" >&2
     echo "  Asset ${_asset} may not exist for ${_tag}" >&2
-    rm -f "${_dest}"
+    rm -f "${_tmp}"
+    return 1
+  }
+
+  # Verify the downloaded file loads as a builtin. Run in a subshell so any
+  # interaction with the parent process's already-loaded builtins (e.g. via
+  # `enable -f`) cannot affect or crash the parent.
+  (argsh::builtin::try "${_tmp}") 2>/dev/null || {
+    echo "argsh: downloaded file failed to load as builtin" >&2
+    rm -f "${_tmp}"
+    return 1
+  }
+
+  # Atomically replace the destination. mv on the same filesystem is atomic.
+  mv -f "${_tmp}" "${_dest}" || {
+    echo "argsh: failed to install to ${_dest}" >&2
+    rm -f "${_tmp}"
     return 1
   }
 
   echo "argsh: installed to ${_dest}" >&2
-
-  # Verify it actually loads
-  argsh::builtin::try "${_dest}" || {
-    echo "argsh: downloaded file failed to load as builtin" >&2
-    rm -f "${_dest}"
-    return 1
-  }
   return 0
 }
 
