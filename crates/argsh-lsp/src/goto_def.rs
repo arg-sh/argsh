@@ -2,7 +2,8 @@ use tower_lsp::lsp_types::*;
 
 use argsh_syntax::document::{analyze, DocumentAnalysis};
 
-use crate::resolver::ResolvedImports;
+use argsh_lsp::resolver::ResolvedImports;
+
 use crate::util::extract_word_at;
 
 /// Go-to-definition: resolve the symbol under the cursor to a location.

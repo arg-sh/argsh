@@ -3,8 +3,21 @@ name = "argsh-lsp"
 version = "0.1.0"
 edition = "2021"
 
+# Library exposing diagnostic and resolver logic so it can be reused by
+# standalone CLI binaries (e.g. argsh-lint) without duplicating code.
+[lib]
+name = "argsh_lsp"
+path = "src/lib.rs"
+
 [[bin]]
 name = "argsh-lsp"
+path = "src/main.rs"
+
+# Standalone CLI linter that emits shellcheck-style diagnostics for CI/editor
+# pipelines. Reuses the LSP analysis library.
+[[bin]]
+name = "argsh-lint"
+path = "src/bin/argsh-lint.rs"
 
 [dependencies]
 argsh-syntax = { path = "../argsh-syntax" }

@@ -15,6 +15,7 @@ on:
       - 'builtin/**'
       - 'minifier/**'
       - 'shdoc/**'
+      - 'crates/**'
       - '.envrc'
 
 concurrency:
@@ -115,6 +116,22 @@ jobs:
           git diff --exit-code \
             --ignore-matching-lines '^  "date":' \
             -- shdoc/coverage.json
+
+  lsp-coverage:
+    runs-on: ubuntu-latest
+    needs: [test]
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v6
+      - name: Direnv
+        uses: HatsuneMiku3939/direnv-action@v1
+      - name: Coverage
+        run: argsh coverage lsp
+      - name: Is insync
+        run: |
+          git diff --exit-code \
+            --ignore-matching-lines '^  "date":' \
+            -- crates/argsh-lsp/coverage.json
 
   minify:
     runs-on: ubuntu-latest
@@ -324,7 +341,7 @@ jobs:
           labels: ${{ steps.metadata.outputs.labels }}
 
   build-lsp:
-    name: Build argsh-lsp (${{ matrix.target }})
+    name: Build argsh-lsp/lint (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
     if: startsWith(github.ref, 'refs/tags/v')
     strategy:
@@ -332,16 +349,16 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            artifact: argsh-lsp-linux-x64
+            platform: linux-x64
           - os: ubuntu-latest
             target: aarch64-unknown-linux-gnu
-            artifact: argsh-lsp-linux-arm64
+            platform: linux-arm64
           - os: macos-latest
             target: x86_64-apple-darwin
-            artifact: argsh-lsp-darwin-x64
+            platform: darwin-x64
           - os: macos-latest
             target: aarch64-apple-darwin
-            artifact: argsh-lsp-darwin-arm64
+            platform: darwin-arm64
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
@@ -356,19 +373,25 @@ jobs:
           echo '[target.aarch64-unknown-linux-gnu]' >> ~/.cargo/config.toml
           echo 'linker = "aarch64-linux-gnu-gcc"' >> ~/.cargo/config.toml
 
-      - name: Build
-        run: cargo build --release --manifest-path crates/argsh-lsp/Cargo.toml --target ${{ matrix.target }}
+      - name: Build both binaries
+        run: cargo build --release --manifest-path crates/argsh-lsp/Cargo.toml --bins --target ${{ matrix.target }}
 
       - name: Package
         run: |
           mkdir -p dist
-          cp crates/argsh-lsp/target/${{ matrix.target }}/release/argsh-lsp dist/${{ matrix.artifact }}
-          chmod +x dist/${{ matrix.artifact }}
+          cp crates/argsh-lsp/target/${{ matrix.target }}/release/argsh-lsp  dist/argsh-lsp-${{ matrix.platform }}
+          cp crates/argsh-lsp/target/${{ matrix.target }}/release/argsh-lint dist/argsh-lint-${{ matrix.platform }}
+          chmod +x dist/*
 
       - uses: actions/upload-artifact@v7
         with:
-          name: ${{ matrix.artifact }}
-          path: dist/${{ matrix.artifact }}
+          name: argsh-lsp-${{ matrix.platform }}
+          path: dist/argsh-lsp-${{ matrix.platform }}
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: argsh-lint-${{ matrix.platform }}
+          path: dist/argsh-lint-${{ matrix.platform }}
 
   package-vsix:
     name: Package VSCode extension (${{ matrix.platform }})
@@ -377,15 +400,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        include:
-          - platform: linux-x64
-            lsp-artifact: argsh-lsp-linux-x64
-          - platform: linux-arm64
-            lsp-artifact: argsh-lsp-linux-arm64
-          - platform: darwin-x64
-            lsp-artifact: argsh-lsp-darwin-x64
-          - platform: darwin-arm64
-            lsp-artifact: argsh-lsp-darwin-arm64
+        platform: [linux-x64, linux-arm64, darwin-x64, darwin-arm64]
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -395,13 +410,13 @@ jobs:
       - name: Download LSP binary
         uses: actions/download-artifact@v8
         with:
-          name: ${{ matrix.lsp-artifact }}
+          name: argsh-lsp-${{ matrix.platform }}
           path: vscode-argsh/bin/
 
       - name: Prepare binary
         run: |
           chmod +x vscode-argsh/bin/*
-          mv vscode-argsh/bin/${{ matrix.lsp-artifact }} vscode-argsh/bin/argsh-lsp
+          mv vscode-argsh/bin/argsh-lsp-${{ matrix.platform }} vscode-argsh/bin/argsh-lsp
 
       - name: Install and compile
         run: cd vscode-argsh && npm install && npm run compile
@@ -423,7 +438,7 @@ jobs:
       contents: write
       pull-requests: write
     environment: release
-    needs: [minify, minify-so, build-binaries, docker, package-vsix]
+    needs: [minify, minify-so, build-binaries, build-lsp, docker, package-vsix]
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
       - name: Clone repository
@@ -443,6 +458,12 @@ jobs:
         with:
           pattern: argsh-so-linux-*
           path: artifacts
+      - name: Download all LSP/lint binaries
+        uses: actions/download-artifact@v8
+        with:
+          pattern: argsh-ls{p,int}-*
+          path: artifacts/lsp
+          merge-multiple: true
       - name: Download all VSIX packages
         uses: actions/download-artifact@v8
         with:
@@ -464,6 +485,13 @@ jobs:
             cp "artifacts/binaries-linux-${arch}/shdoc"       "release/shdoc-linux-${arch}"
             cp "artifacts/argsh-so-linux-${arch}/argsh-so" "release/argsh-so-linux-${arch}"
             chmod +x "release/minifier-linux-${arch}" "release/shdoc-linux-${arch}" "release/argsh-so-linux-${arch}"
+          done
+
+          # LSP server and CLI linter — per-platform (linux + darwin, x64 + arm64)
+          for p in linux-x64 linux-arm64 darwin-x64 darwin-arm64; do
+            cp "artifacts/lsp/argsh-lsp-${p}"  "release/argsh-lsp-${p}"
+            cp "artifacts/lsp/argsh-lint-${p}" "release/argsh-lint-${p}"
+            chmod +x "release/argsh-lsp-${p}" "release/argsh-lint-${p}"
           done
 
           # VSCode extension bundles

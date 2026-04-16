@@ -10,6 +10,10 @@ description: 'IDE support for argsh — language server with diagnostics, comple
 
 argsh includes a Language Server Protocol (LSP) implementation and VSCode extension that provides IDE support for argsh-specific syntax. Works alongside shellcheck — argsh handles framework-specific validation, shellcheck handles general bash.
 
+:::tip
+The same diagnostics engine is also available as a standalone CLI binary — `argsh-lint` — for CI pipelines and editor-agnostic integrations. See [How to Lint your scripts](../fundamentals/lint.mdx) for the command-line interface. Both the LSP server and the CLI share a single Rust crate so the set of checks stays in sync.
+:::
+
 ## Features
 
 ### Diagnostics

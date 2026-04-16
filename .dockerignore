@@ -5,6 +5,8 @@
 !minifier
 !builtin
 !shdoc
+!crates
 builtin/target
 minifier/target
 shdoc/target
+crates/*/target
