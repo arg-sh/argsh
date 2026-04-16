@@ -357,6 +357,33 @@ declare -gi ARGSH_BUILTIN="${ARGSH_BUILTIN:-0}"
   rm -rf "${_tmp}"
 }
 
+@test "builtin::download: surfaces verify stderr on failure" {
+  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
+  local _tmp
+  _tmp="$(mktemp -d)"
+  github::latest() { echo "v0.0.0-test"; }
+  curl() {
+    local _out=""
+    while [[ $# -gt 0 ]]; do
+      [[ "${1}" == "-o" ]] && { _out="${2}"; shift 2; continue; }
+      shift
+    done
+    echo "bad" > "${_out}"
+  }
+  # Verify writes a diagnostic to stderr (e.g. wrong arch / missing deps).
+  argsh::builtin::try() { echo "cannot open shared object: wrong ELF class" >&2; return 1; }
+  export -f github::latest curl argsh::builtin::try
+
+  PATH_BIN="${_tmp}" argsh::builtin::download 1 >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -ne 0
+  contains "failed to load as builtin" stderr
+  # The underlying diagnostic must reach the user, not get swallowed.
+  contains "wrong ELF class" stderr
+
+  rm -rf "${_tmp}"
+}
+
 @test "builtin::download: overwriting existing .so does not crash and replaces content" {
   if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
   local _tmp

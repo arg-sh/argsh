@@ -161,7 +161,13 @@ argsh::builtin::download() {
   #   2. SIGSEGV when the destination is the same path as a .so already loaded
   #      into the current bash process — overwriting an mmap'd dynamic
   #      library in place can crash on subsequent dlopen of that path.
-  local _tmp="${_dest}.download.$$"
+  # Use mktemp for a unique, race-safe path (avoids symlink/race attacks if
+  # the install dir is shared and prevents collisions with stale leftovers).
+  local _tmp
+  _tmp="$(mktemp "${_dest}.download.XXXXXX")" || {
+    echo "argsh: failed to create temporary download file in ${_dir}" >&2
+    return 1
+  }
   echo "argsh: downloading ${_asset} (${_tag})..." >&2
   curl -fsSL -o "${_tmp}" \
     "https://github.com/arg-sh/argsh/releases/download/${_tag}/${_asset}" || {
@@ -173,9 +179,13 @@ argsh::builtin::download() {
 
   # Verify the downloaded file loads as a builtin. Run in a subshell so any
   # interaction with the parent process's already-loaded builtins (e.g. via
-  # `enable -f`) cannot affect or crash the parent.
-  (argsh::builtin::try "${_tmp}") 2>/dev/null || {
+  # `enable -f`) cannot affect or crash the parent. Capture stderr so we can
+  # surface the underlying diagnostic (wrong arch, missing deps, etc.) on
+  # failure instead of swallowing it silently.
+  local _verify_err
+  _verify_err="$( (argsh::builtin::try "${_tmp}") 2>&1 1>/dev/null )" || {
     echo "argsh: downloaded file failed to load as builtin" >&2
+    [[ -n "${_verify_err}" ]] && echo "${_verify_err}" >&2
     rm -f "${_tmp}"
     return 1
   }
