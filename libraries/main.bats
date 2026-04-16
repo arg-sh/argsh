@@ -290,8 +290,8 @@ declare -gi ARGSH_BUILTIN="${ARGSH_BUILTIN:-0}"
     }
     echo "fake-so-content" > "${_out}"
   }
-  argsh::builtin::try() { :; }  # always succeeds
-  export -f github::latest curl argsh::builtin::try
+  enable() { :; }  # stub `enable -f` verification
+  export -f github::latest curl enable
 
   PATH_BIN="${_tmp}" argsh::builtin::download 1 >"${stdout}" 2>"${stderr}" || status=$?
 
@@ -341,8 +341,8 @@ declare -gi ARGSH_BUILTIN="${ARGSH_BUILTIN:-0}"
     done
     echo "bad" > "${_out}"
   }
-  argsh::builtin::try() { return 1; }  # simulate failed load
-  export -f github::latest curl argsh::builtin::try
+  enable() { return 1; }  # simulate failed load at `enable -f`
+  export -f github::latest curl enable
 
   PATH_BIN="${_tmp}" argsh::builtin::download 1 >"${stdout}" 2>"${stderr}" || status=$?
 
@@ -357,7 +357,7 @@ declare -gi ARGSH_BUILTIN="${ARGSH_BUILTIN:-0}"
   rm -rf "${_tmp}"
 }
 
-@test "builtin::download: surfaces verify stderr on failure" {
+@test "builtin::download: surfaces enable -f stderr on failure" {
   if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
   local _tmp
   _tmp="$(mktemp -d)"
@@ -370,15 +370,19 @@ declare -gi ARGSH_BUILTIN="${ARGSH_BUILTIN:-0}"
     done
     echo "bad" > "${_out}"
   }
-  # Verify writes a diagnostic to stderr (e.g. wrong arch / missing deps).
-  argsh::builtin::try() { echo "cannot open shared object: wrong ELF class" >&2; return 1; }
-  export -f github::latest curl argsh::builtin::try
+  # Stub `enable` itself — this is the real code path now, so loader
+  # diagnostics must propagate end-to-end without being swallowed.
+  enable() {
+    echo "cannot open shared object: wrong ELF class" >&2
+    return 1
+  }
+  export -f github::latest curl enable
 
   PATH_BIN="${_tmp}" argsh::builtin::download 1 >"${stdout}" 2>"${stderr}" || status=$?
 
   assert "${status}" -ne 0
   contains "failed to load as builtin" stderr
-  # The underlying diagnostic must reach the user, not get swallowed.
+  # The underlying loader diagnostic must reach the user, not get swallowed.
   contains "wrong ELF class" stderr
 
   rm -rf "${_tmp}"
@@ -399,8 +403,8 @@ declare -gi ARGSH_BUILTIN="${ARGSH_BUILTIN:-0}"
     done
     echo "new-content" > "${_out}"
   }
-  argsh::builtin::try() { :; }
-  export -f github::latest curl argsh::builtin::try
+  enable() { :; }
+  export -f github::latest curl enable
 
   PATH_BIN="${_tmp}" argsh::builtin::download 1 >"${stdout}" 2>"${stderr}" || status=$?
 

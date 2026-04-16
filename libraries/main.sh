@@ -177,13 +177,16 @@ argsh::builtin::download() {
     return 1
   }
 
-  # Verify the downloaded file loads as a builtin. Run in a subshell so any
-  # interaction with the parent process's already-loaded builtins (e.g. via
-  # `enable -f`) cannot affect or crash the parent. Capture stderr so we can
-  # surface the underlying diagnostic (wrong arch, missing deps, etc.) on
-  # failure instead of swallowing it silently.
+  # Verify the downloaded file loads as a builtin. Run `enable -f` in a
+  # subshell so any interaction with the parent process's already-loaded
+  # builtins cannot affect or crash the parent. Call `enable -f` directly
+  # (not via argsh::builtin::try, which suppresses stderr with 2>/dev/null)
+  # so loader diagnostics (wrong arch, missing deps, etc.) stay visible.
   local _verify_err
-  _verify_err="$( (argsh::builtin::try "${_tmp}") 2>&1 1>/dev/null )" || {
+  _verify_err="$(
+    # shellcheck disable=SC2229
+    (enable -f "${_tmp}" "${__ARGSH_BUILTINS[@]}") 2>&1 1>/dev/null
+  )" || {
     echo "argsh: downloaded file failed to load as builtin" >&2
     [[ -n "${_verify_err}" ]] && echo "${_verify_err}" >&2
     rm -f "${_tmp}"
