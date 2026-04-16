@@ -154,23 +154,65 @@ argsh::builtin::download() {
   }
 
   local _asset="argsh-linux-${_arch}.so"
+  # Download to a temp file alongside the destination, then atomically move
+  # into place. This avoids two failure modes:
+  #   1. A partially-downloaded .so being left at the destination on network
+  #      failure.
+  #   2. SIGSEGV when the destination is the same path as a .so already loaded
+  #      into the current bash process — overwriting an mmap'd dynamic
+  #      library in place can crash on subsequent dlopen of that path.
+  # Use mktemp for a unique, race-safe path (avoids symlink/race attacks if
+  # the install dir is shared and prevents collisions with stale leftovers).
+  local _tmp
+  _tmp="$(mktemp "${_dest}.download.XXXXXX")" || {
+    echo "argsh: failed to create temporary download file in ${_dir}" >&2
+    return 1
+  }
   echo "argsh: downloading ${_asset} (${_tag})..." >&2
-  curl -fsSL -o "${_dest}" \
+  curl -fsSL -o "${_tmp}" \
     "https://github.com/arg-sh/argsh/releases/download/${_tag}/${_asset}" || {
     echo "argsh: download failed" >&2
     echo "  Asset ${_asset} may not exist for ${_tag}" >&2
-    rm -f "${_dest}"
+    rm -f "${_tmp}"
+    return 1
+  }
+
+  # Verify the downloaded file loads as a builtin. Run `enable -f` in a
+  # subshell so any interaction with the parent process's already-loaded
+  # builtins cannot affect or crash the parent. Call `enable -f` directly
+  # (not via argsh::builtin::try, which suppresses stderr with 2>/dev/null)
+  # so loader diagnostics (wrong arch, missing deps, etc.) stay visible.
+  local _verify_err
+  _verify_err="$(
+    # shellcheck disable=SC2229
+    (enable -f "${_tmp}" "${__ARGSH_BUILTINS[@]}") 2>&1 1>/dev/null
+  )" || {
+    echo "argsh: downloaded file failed to load as builtin" >&2
+    [[ -n "${_verify_err}" ]] && echo "${_verify_err}" >&2
+    rm -f "${_tmp}"
+    return 1
+  }
+
+  # mktemp creates files with mode 0600. Set a sensible mode before the
+  # atomic move so the installed .so isn't unexpectedly restrictive in shared
+  # install locations. If a previous .so exists, preserve its mode (operator
+  # may have customized it); otherwise default to 0644, matching what
+  # `curl -o` (the previous direct-write approach) would produce under a
+  # typical 0022 umask.
+  local _mode="644"
+  if [[ -f "${_dest}" ]]; then
+    _mode="$(stat -c '%a' "${_dest}" 2>/dev/null || echo 644)"
+  fi
+  chmod "${_mode}" "${_tmp}" 2>/dev/null || true
+
+  # Atomically replace the destination. mv on the same filesystem is atomic.
+  mv -f "${_tmp}" "${_dest}" || {
+    echo "argsh: failed to install to ${_dest}" >&2
+    rm -f "${_tmp}"
     return 1
   }
 
   echo "argsh: installed to ${_dest}" >&2
-
-  # Verify it actually loads
-  argsh::builtin::try "${_dest}" || {
-    echo "argsh: downloaded file failed to load as builtin" >&2
-    rm -f "${_dest}"
-    return 1
-  }
   return 0
 }
 
