@@ -501,9 +501,9 @@ declare -gi ARGSH_BUILTIN="${ARGSH_BUILTIN:-0}"
   rm -rf "${_tmp}"
 
   assert "${status}" -eq 0
-  # shellcheck output must NOT appear
+  # Must NOT contain shellcheck stub output (only argsh-lint should run).
   ! grep -q "SHELLCHECK:" "${stdout}"
-  # argsh-lint output MUST appear
+  # MUST contain argsh-lint stub output.
   contains "ARGSH_LINT:" stdout
 }
 
@@ -565,7 +565,7 @@ declare -gi ARGSH_BUILTIN="${ARGSH_BUILTIN:-0}"
 
   shellcheck() { :; }
   export -f shellcheck
-  # shellcheck present, argsh-lint missing.
+  # Simulate shellcheck installed, argsh-lint not present.
   binary::exists() { [[ "${1}" == "shellcheck" ]]; }
 
   (argsh::lint --only-argsh "${_tmp}/a.sh") >"${stdout}" 2>"${stderr}" || status=$?

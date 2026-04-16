@@ -434,6 +434,7 @@ argsh::_docker_forward() {
       -e "BATS_LOAD" \
       -e "ARGSH_SOURCE" \
       -e "PATH_TESTS" \
+      -e "PATH_SCRIPTS" \
       -e "GIT_COMMIT_SHA=$(git rev-parse HEAD 2>/dev/null || :)" \
       -e "GIT_VERSION=$(git describe --tags --dirty 2>/dev/null || :)" \
       "${_docker_env_flags[@]}" \
@@ -928,6 +929,7 @@ argsh::shebang() {
   # Import additional libraries
   local _lib
   for _lib in "${_argsh_imports[@]}"; do
+    # argsh disable=AG013
     import "${_lib}"
   done
 
