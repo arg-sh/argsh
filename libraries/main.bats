@@ -560,6 +560,28 @@ declare -gi ARGSH_BUILTIN="${ARGSH_BUILTIN:-0}"
   contains "ARGSH_LINT:" stdout
 }
 
+@test "argsh::lint: --only-argsh does not require shellcheck locally" {
+  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
+  local _tmp
+  _tmp="$(mktemp -d)"
+  echo '#!/usr/bin/env argsh' >"${_tmp}/a.sh"
+
+  argsh-lint() { echo "ARGSH_LINT: $*"; }
+  export -f argsh-lint
+  # Simulate shellcheck *missing* but argsh-lint available — docker-forward
+  # must NOT be invoked because the user explicitly said --only-argsh.
+  binary::exists() { [[ "${1}" == "argsh-lint" ]]; }
+  argsh::_docker_forward() { echo "DOCKER_FORWARD: $*"; return 0; }
+
+  (argsh::lint --only-argsh "${_tmp}/a.sh") >"${stdout}" 2>"${stderr}" || status=$?
+  rm -rf "${_tmp}"
+
+  assert "${status}" -eq 0
+  contains "ARGSH_LINT:" stdout
+  # Must NOT have fallen back to Docker just because shellcheck is missing.
+  ! command grep -q "DOCKER_FORWARD:" "${stdout}"
+}
+
 @test "argsh::lint: missing argsh-lint with --only-argsh errors" {
   if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
   local _tmp

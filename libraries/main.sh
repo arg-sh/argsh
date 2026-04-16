@@ -525,10 +525,6 @@ argsh::minify() {
 #
 # @arg $@ string Files or directories (optional; auto-discovered via PATH_TESTS)
 argsh::lint() {
-  if ! binary::exists shellcheck 2>/dev/null; then
-    argsh::_docker_forward lint "${@}"
-    return
-  fi
   # obfus ignore variable
   local only_argsh=0
   # obfus ignore variable
@@ -544,6 +540,13 @@ argsh::lint() {
   if (( only_argsh )) && (( only_shellcheck )); then
     echo "argsh lint: --only-argsh and --only-shellcheck are mutually exclusive" >&2
     return 2
+  fi
+  # Require shellcheck only when we actually need it — otherwise a caller
+  # that runs `argsh lint --only-argsh` must not be forced to install it or
+  # fall back to Docker.
+  if (( ! only_argsh )) && ! binary::exists shellcheck 2>/dev/null; then
+    argsh::_docker_forward lint "${@}"
+    return
   fi
   if is::uninitialized files; then
     local -a _found_files=()
