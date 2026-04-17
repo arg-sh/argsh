@@ -233,6 +233,8 @@ coverage::builtin() {
   # glibc compatibility with the kcov/kcov test container (also Debian bookworm).
   # Mount sources at the same absolute path so llvm-cov finds them on the host.
   # Share cargo registry cache to avoid re-downloading dependencies.
+  # Install system lld and override the rust-lld shim — Rust >=1.94 uses
+  # rust-lld by default, which chokes on colon-prefixed export_name symbols.
   echo "Building with coverage instrumentation (via Docker)..."
   mkdir -p "${HOME}/.cargo/registry"
   docker run --rm \
@@ -241,7 +243,9 @@ coverage::builtin() {
     -v "${HOME}/.cargo/registry:/usr/local/cargo/registry" \
     -w "${PATH_BASE}/builtin" \
     rust:1-slim-bookworm \
-    bash -c 'RUSTFLAGS="-C instrument-coverage" \
+    bash -c 'apt-get update -qq && apt-get install -y -qq lld >/dev/null 2>&1 && \
+      ln -sf /usr/bin/ld.lld "$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | awk "/host/{print \$2}")/bin/gcc-ld/ld.lld" && \
+      RUSTFLAGS="-C instrument-coverage -C link-arg=-fuse-ld=lld" \
       CARGO_PROFILE_RELEASE_STRIP=none \
       CARGO_PROFILE_RELEASE_LTO=false \
       CARGO_PROFILE_RELEASE_PANIC=unwind \
