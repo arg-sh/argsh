@@ -138,10 +138,12 @@ jobs:
         with:
           name: binaries-linux-amd64
           path: .ci-bin
-      - name: Install argsh-lint
+      - name: Install tools
         run: |
           chmod +x .ci-bin/argsh-lint
           sudo cp .ci-bin/argsh-lint /usr/local/bin/argsh-lint
+          # Verify shellcheck is available (pre-installed on ubuntu-latest).
+          shellcheck --version
       - name: Lint
         env:
           ARGSH_SOURCE: argsh
@@ -203,10 +205,11 @@ jobs:
           sudo git -C /usr/local/lib/bats-assert checkout --detach f1e9280eaae8f86cbe278a687e6ba755bc802c1a  # v2.2.4
           sudo git clone https://github.com/bats-core/bats-file.git /usr/local/lib/bats-file
           sudo git -C /usr/local/lib/bats-file checkout --detach 13ad5e2ffcc360281432db3d43a306f7b3667d60  # v0.4.0
-          # argsh-lint + .so
+          # argsh-lint + .so + verify shellcheck
           chmod +x .ci-bin/argsh-lint
           sudo cp .ci-bin/argsh-lint /usr/local/bin/argsh-lint
           sudo cp .ci-bin/libargsh.so /usr/local/lib/argsh.so
+          shellcheck --version
       - name: Direnv
         uses: HatsuneMiku3939/direnv-action@v1
       - name: Minify
@@ -373,7 +376,22 @@ jobs:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build and release Docker image
+      # Build amd64 image locally for smoke testing.
+      - name: Build Docker image (amd64, local)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          load: true
+          provenance: false
+          platforms: linux/amd64
+          tags: argsh-test:local
+          cache-from: type=gha,scope=build-amd64
+      # Run the entrypoint tests inside the freshly-built image.
+      - name: Smoke test
+        run: |
+          docker run --rm -v "${{ github.workspace }}:/workspace" argsh-test:local test libraries/ .docker/test/
+      # Multi-platform build + push (tag only). Rust stages are cache hits.
+      - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
