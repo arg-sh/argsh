@@ -237,19 +237,20 @@ coverage::builtin() {
   # rust-lld by default, which chokes on colon-prefixed export_name symbols.
   echo "Building with coverage instrumentation (via Docker)..."
   mkdir -p "${HOME}/.cargo/registry"
+  local _uid; _uid="$(id -u):$(id -g)"
   docker run --rm \
-    --user "$(id -u):$(id -g)" \
     -v "${PATH_BASE}/builtin:${PATH_BASE}/builtin" \
     -v "${HOME}/.cargo/registry:/usr/local/cargo/registry" \
     -w "${PATH_BASE}/builtin" \
     rust:1-slim-bookworm \
-    bash -c 'apt-get update -qq && apt-get install -y -qq lld >/dev/null 2>&1 && \
-      ln -sf /usr/bin/ld.lld "$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | awk "/host/{print \$2}")/bin/gcc-ld/ld.lld" && \
-      RUSTFLAGS="-C instrument-coverage -C link-arg=-fuse-ld=lld" \
+    bash -c "apt-get update -qq && apt-get install -y -qq lld >/dev/null 2>&1 && \
+      ln -sf /usr/bin/ld.lld \"\$(rustc --print sysroot)/lib/rustlib/\$(rustc -vV | awk '/host/{print \$2}')/bin/gcc-ld/ld.lld\" && \
+      RUSTFLAGS='-C instrument-coverage -C link-arg=-fuse-ld=lld' \
       CARGO_PROFILE_RELEASE_STRIP=none \
       CARGO_PROFILE_RELEASE_LTO=false \
       CARGO_PROFILE_RELEASE_PANIC=unwind \
-      cargo build --release'
+      cargo build --release && \
+      chown -R ${_uid} target/"
 
   rm -rf "${cov_dir}"
   mkdir -p "${cov_dir}"
