@@ -1,4 +1,13 @@
 # All the tools required to run the tests, lint and coverage Bash scripts
+#
+# Build modes:
+#   1. Extract Rust binaries:  docker buildx build --target artifacts -o out .
+#   2. Full image (local):     docker buildx build .
+#   3. Full image (CI):        Uses GHA cache from the build job so the Rust
+#                               stages are cache hits — only the final assembly
+#                               layers (tools, COPY argsh.min.sh) run fresh.
+
+# ── Rust build stages ────────────────────────────────────────────────────
 
 # minify — build Rust minifier
 FROM rust:1-slim-bookworm AS minifier-build
@@ -34,7 +43,6 @@ COPY builtin/ .
 RUN cargo build --release
 
 # argsh-lsp / argsh-lint — LSP server + CLI linter (share the same crate).
-# Builds both binaries in one cargo invocation.
 FROM rust:1-slim-bookworm AS lsp-build
 WORKDIR /build
 COPY crates/ crates/
@@ -47,6 +55,8 @@ COPY --from=shdoc-build /build/target/release/shdoc /shdoc
 COPY --from=builtin-build /build/target/release/libargsh.so /libargsh.so
 COPY --from=lsp-build /build/crates/argsh-lsp/target/release/argsh-lsp /argsh-lsp
 COPY --from=lsp-build /build/crates/argsh-lsp/target/release/argsh-lint /argsh-lint
+
+# ── Final image ──────────────────────────────────────────────────────────
 
 # coverage
 FROM kcov/kcov
