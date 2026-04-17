@@ -57,25 +57,32 @@ COPY --from=lsp-build /build/crates/argsh-lsp/target/release/argsh-lint /argsh-l
 
 # ── Final image ──────────────────────────────────────────────────────────
 
-# coverage
-FROM kcov/kcov
+FROM debian:bookworm-slim
+
+# kcov — bash script coverage (binary + runtime deps from the kcov image)
+COPY --from=kcov/kcov /usr/local/bin/kcov /usr/local/bin/kcov
 
 # test — bats-core + standard helper libraries (support, assert, file)
 # Pinned to latest release tags; shallow clones for faster builds.
 RUN set -eux \
-  && apt update \
-  && apt install -y git \
-  && git clone --depth 1 --branch v1.13.0 https://github.com/bats-core/bats-core.git \
-  && cd bats-core && ./install.sh /usr/local && cd .. \
+  && apt-get update \
+  && apt-get install -y --no-install-recommends \
+      git bash ca-certificates curl \
+      # kcov runtime dependencies
+      libcurl4 libdw1 libelf1 zlib1g \
+      # envsubst
+      gettext-base \
+  && git clone --depth 1 --branch v1.13.0 https://github.com/bats-core/bats-core.git /tmp/bats \
+  && /tmp/bats/install.sh /usr/local \
   && git clone --depth 1 --branch v0.3.0 https://github.com/bats-core/bats-support.git /usr/local/lib/bats-support \
   && git clone --depth 1 --branch v2.2.4 https://github.com/bats-core/bats-assert.git /usr/local/lib/bats-assert \
   && git clone --depth 1 --branch v0.4.0 https://github.com/bats-core/bats-file.git /usr/local/lib/bats-file \
-  && rm -rf bats-core \
+  && rm -rf /tmp/bats \
       /usr/local/lib/bats-support/.git \
       /usr/local/lib/bats-assert/.git \
       /usr/local/lib/bats-file/.git \
-  && apt remove -y git \
-  && apt autoremove -y \
+  && apt-get remove -y git \
+  && apt-get autoremove -y \
   && rm -rf /var/lib/apt/lists/*
 
 # lint
@@ -84,10 +91,6 @@ COPY --from=koalaman/shellcheck:stable /bin/shellcheck /usr/local/bin/shellcheck
 # tools
 COPY --from=ghcr.io/jqlang/jq:1.8.1 /jq /usr/local/bin/jq
 COPY --from=mikefarah/yq:4.52.5 /usr/bin/yq /usr/local/bin/yq
-RUN set -eux \
-  && apt update \
-  && apt install -y gettext-base \
-  && rm -rf /var/lib/apt/lists/*
 
 # argsh itself
 COPY --from=minifier-build /build/target/release/minifier /usr/local/bin/minifier
