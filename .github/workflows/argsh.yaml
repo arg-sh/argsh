@@ -142,10 +142,10 @@ jobs:
         run: |
           chmod +x .ci-bin/argsh-lint
           sudo cp .ci-bin/argsh-lint /usr/local/bin/argsh-lint
-      - name: Direnv
-        uses: HatsuneMiku3939/direnv-action@v1
       - name: Lint
-        run: argsh lint libraries
+        env:
+          ARGSH_SOURCE: argsh
+        run: bash argsh.min.sh lint libraries
 
   # ---------------------------------------------------------------------------
   # Coverage — all 4 Rust crates in one job.
