@@ -24,20 +24,17 @@ RUN cargo build --release
 # builtin — build Rust loadable builtins
 # System lld (from apt) is required because export_name attributes contain
 # colons (e.g. ":args_struct") which cause "syntax error in VERSION script"
-# with GNU ld on arm64. Rust >=1.94 ships its own rust-lld shim (via
-# -B<sysroot>/bin/gcc-ld) that takes precedence when -fuse-ld=lld is used,
-# and rust-lld's version script parser also chokes on colon-prefixed symbols.
-# We override the shim with a symlink to the system lld so -fuse-ld=lld
-# resolves to the system lld instead of rust-lld.
+# with both GNU ld and rust-lld. System lld (Debian LLD 14) handles them.
+# -Clinker-features=-lld disables Rust's bundled rust-lld (default since 1.94)
+# so -fuse-ld=lld resolves to the system lld from apt.
+# See: https://github.com/rust-lang/rust/issues/38238
 FROM rust:1-slim-bookworm AS builtin-build
 RUN apt-get update && apt-get install -y --no-install-recommends lld && rm -rf /var/lib/apt/lists/*
-# Override Rust's bundled rust-lld shim so -fuse-ld=lld uses system lld.
-RUN ln -sf /usr/bin/ld.lld "$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | awk '/host/{print $2}')/bin/gcc-ld/ld.lld"
 ARG RUSTFLAGS
 ARG CARGO_PROFILE_RELEASE_STRIP
 ARG CARGO_PROFILE_RELEASE_LTO
 ARG CARGO_PROFILE_RELEASE_PANIC
-ENV RUSTFLAGS="${RUSTFLAGS} -C link-arg=-fuse-ld=lld"
+ENV RUSTFLAGS="${RUSTFLAGS} -Clinker-features=-lld -C link-arg=-fuse-ld=lld"
 WORKDIR /build
 COPY builtin/ .
 RUN cargo build --release
