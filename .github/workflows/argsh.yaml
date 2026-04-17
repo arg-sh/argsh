@@ -386,7 +386,7 @@ jobs:
       # Run the entrypoint tests inside the freshly-built image.
       - name: Smoke test
         run: |
-          docker run --rm -v "${{ github.workspace }}:/workspace" argsh-test:local test libraries/ .docker/test/
+          docker run --rm -v "${{ github.workspace }}:/workspace" -w /workspace argsh-test:local test libraries/ .docker/test/
       # Multi-platform build + push (tag only). Rust stages are cache hits.
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
