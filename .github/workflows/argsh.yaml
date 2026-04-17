@@ -29,10 +29,14 @@ defaults:
 
 permissions: read-all
 
+env:
+  CI_IMAGE: argsh-ci:local
+
 jobs:
   # ═══════════════════════════════════════════════════════════════════════
   # Stage 1: BUILD — compile all Rust crates once per architecture.
-  # Everything else fans out from here.
+  # The amd64 job also builds the Docker image and saves it as an artifact
+  # so fan-out jobs can docker-load it for test/lint/minify.
   # ═══════════════════════════════════════════════════════════════════════
   build:
     name: Build (${{ matrix.arch }})
@@ -74,17 +78,38 @@ jobs:
           if-no-files-found: error
           retention-days: 7
           path: out/
+      # amd64 only: build the full Docker image and save it as an artifact
+      # so fan-out jobs can docker-load it for test/lint/minify (~52MB compressed).
+      - name: Build CI image
+        if: matrix.arch == 'amd64'
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          load: true
+          provenance: false
+          platforms: linux/amd64
+          tags: ${{ env.CI_IMAGE }}
+          cache-from: type=gha,scope=build-amd64
+      - name: Save CI image
+        if: matrix.arch == 'amd64'
+        run: docker save ${{ env.CI_IMAGE }} | gzip > /tmp/ci-image.tar.gz
+      - name: Upload CI image
+        if: matrix.arch == 'amd64'
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-image
+          if-no-files-found: error
+          retention-days: 1
+          path: /tmp/ci-image.tar.gz
 
   # ═══════════════════════════════════════════════════════════════════════
   # Stage 2: FAN OUT — test, lint, coverage, minify run in parallel.
-  # Jobs download build artifacts from Stage 1 or rebuild as needed
-  # (e.g. coverage uses instrumentation-specific builds).
+  # test/lint/minify run inside the freshly-built CI image.
+  # Coverage rebuilds with instrumentation (separate Docker containers).
   # ═══════════════════════════════════════════════════════════════════════
 
   # ---------------------------------------------------------------------------
   # Test — run bats in both modes (pure-bash + native builtins).
-  # Downloads .so from build to test the current branch's builtin, not a stale
-  # published image.
   # ---------------------------------------------------------------------------
   test:
     runs-on: ubuntu-latest
@@ -92,34 +117,25 @@ jobs:
     steps:
       - name: Clone repository
         uses: actions/checkout@v6
-      - name: Download binaries
+      - name: Load CI image
         uses: actions/download-artifact@v8
         with:
-          name: binaries-linux-amd64
-          path: .ci-bin
-      - name: Install tools
-        run: |
-          # bats — shallow fetch of pinned commit SHA for reproducibility
-          git init /tmp/bats
-          git -C /tmp/bats remote add origin https://github.com/bats-core/bats-core.git
-          git -C /tmp/bats fetch --depth 1 origin 3bca150ec86275d6d9d5a4fd7d48ab8b6c6f3d87  # v1.13.0
-          git -C /tmp/bats checkout --detach FETCH_HEAD
-          sudo /tmp/bats/install.sh /usr/local
-          # argsh builtin .so
-          sudo cp .ci-bin/libargsh.so /usr/local/lib/argsh.so
-      - name: Direnv
-        uses: HatsuneMiku3939/direnv-action@v1
+          name: ci-image
+          path: /tmp
+      - name: Import CI image
+        run: docker load < /tmp/ci-image.tar.gz
       - name: Test (pure bash)
-        env:
-          ARGSH_PURE_BASH_TEST: "1"
-          ARGSH_SOURCE: argsh
-        run: bats libraries/
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/workspace" -w /workspace \
+            -e ARGSH_PURE_BASH_TEST=1 \
+            ${{ env.CI_IMAGE }} test libraries/
       - name: Test (native builtins)
-        env:
-          ARGSH_BUILTIN_TEST: "1"
-          ARGSH_BUILTIN_PATH: /usr/local/lib/argsh.so
-          ARGSH_SOURCE: argsh
-        run: bats libraries/
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/workspace" -w /workspace \
+            -e ARGSH_BUILTIN_TEST=1 \
+            ${{ env.CI_IMAGE }} test libraries/
 
   # ---------------------------------------------------------------------------
   # Lint — shellcheck + argsh-lint on the argsh libraries.
@@ -130,21 +146,18 @@ jobs:
     steps:
       - name: Clone repository
         uses: actions/checkout@v6
-      - name: Download binaries
+      - name: Load CI image
         uses: actions/download-artifact@v8
         with:
-          name: binaries-linux-amd64
-          path: .ci-bin
-      - name: Install tools
-        run: |
-          chmod +x .ci-bin/argsh-lint
-          sudo cp .ci-bin/argsh-lint /usr/local/bin/argsh-lint
-          # Verify shellcheck is available (pre-installed on ubuntu-latest).
-          shellcheck --version
+          name: ci-image
+          path: /tmp
+      - name: Import CI image
+        run: docker load < /tmp/ci-image.tar.gz
       - name: Lint
-        env:
-          ARGSH_SOURCE: argsh
-        run: bash argsh.min.sh lint libraries
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/workspace" -w /workspace \
+            ${{ env.CI_IMAGE }} lint libraries/
 
   # ---------------------------------------------------------------------------
   # Coverage — all 4 Rust crates in one job.
@@ -176,6 +189,7 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # Minify — produce argsh.min.sh using the freshly-built minifier.
+  # Uses the CI image for minify, lint, and test — same container, same tools.
   # ---------------------------------------------------------------------------
   minify:
     runs-on: ubuntu-latest
@@ -183,44 +197,32 @@ jobs:
     steps:
       - name: Clone repository
         uses: actions/checkout@v6
-      - name: Download minifier
+      - name: Load CI image
         uses: actions/download-artifact@v8
         with:
-          name: binaries-linux-amd64
-          path: .ci-bin
-      - name: Install tools
-        run: |
-          cp .ci-bin/minifier .bin/minifier
-          chmod +x .bin/minifier
-          # bats — shallow fetch of pinned commit SHA for reproducibility
-          git init /tmp/bats
-          git -C /tmp/bats remote add origin https://github.com/bats-core/bats-core.git
-          git -C /tmp/bats fetch --depth 1 origin 3bca150ec86275d6d9d5a4fd7d48ab8b6c6f3d87  # v1.13.0
-          git -C /tmp/bats checkout --detach FETCH_HEAD
-          sudo /tmp/bats/install.sh /usr/local
-          # argsh-lint + .so + verify shellcheck
-          chmod +x .ci-bin/argsh-lint
-          sudo cp .ci-bin/argsh-lint /usr/local/bin/argsh-lint
-          sudo cp .ci-bin/libargsh.so /usr/local/lib/argsh.so
-          shellcheck --version
-      - name: Direnv
-        uses: HatsuneMiku3939/direnv-action@v1
+          name: ci-image
+          path: /tmp
+      - name: Import CI image
+        run: docker load < /tmp/ci-image.tar.gz
       - name: Minify
-        env:
-          GIT_COMMIT_SHA: ${{ github.sha }}
-          GIT_VERSION: ${{ github.ref_name }}
-        run: argsh minify
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/workspace" -w /workspace \
+            -e GIT_COMMIT_SHA=${{ github.sha }} \
+            -e GIT_VERSION=${{ github.ref_name }} \
+            ${{ env.CI_IMAGE }} minify
       - name: Lint minified
-        env:
-          ARGSH_SOURCE: argsh
-        run: bash argsh.min.sh lint argsh.min.sh
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/workspace" -w /workspace \
+            ${{ env.CI_IMAGE }} lint argsh.min.sh
       - name: Test minified
-        env:
-          BATS_LOAD: argsh.min.sh
-          ARGSH_SOURCE: argsh
-          ARGSH_BUILTIN_TEST: "1"
-          ARGSH_BUILTIN_PATH: /usr/local/lib/argsh.so
-        run: bats libraries/
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/workspace" -w /workspace \
+            -e BATS_LOAD=argsh.min.sh \
+            -e ARGSH_BUILTIN_TEST=1 \
+            ${{ env.CI_IMAGE }} test libraries/
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
@@ -373,21 +375,21 @@ jobs:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      # Build amd64 image locally for smoke testing.
-      - name: Build Docker image (amd64, local)
-        uses: docker/build-push-action@v5
+      # Smoke test: load the CI image and run entrypoint tests inside it.
+      - name: Load CI image
+        uses: actions/download-artifact@v8
         with:
-          context: .
-          load: true
-          provenance: false
-          platforms: linux/amd64
-          tags: argsh-test:local
-          cache-from: type=gha,scope=build-amd64
-      # Run the entrypoint tests inside the freshly-built image.
+          name: ci-image
+          path: /tmp
+      - name: Import CI image
+        run: docker load < /tmp/ci-image.tar.gz
       - name: Smoke test
         run: |
-          docker run --rm -v "${{ github.workspace }}:/workspace" -w /workspace argsh-test:local test libraries/ .docker/test/
-      # Multi-platform build + push (tag only). Rust stages are cache hits.
+          docker run --rm \
+            -v "${{ github.workspace }}:/workspace" -w /workspace \
+            ${{ env.CI_IMAGE }} test libraries/ .docker/test/
+      # Multi-platform build + push with the final argsh.min.sh embedded.
+      # Rust stages are cache hits from the build job.
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
