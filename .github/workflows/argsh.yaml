@@ -583,7 +583,7 @@ jobs:
 
           cp artifacts/argsh.min.sh argsh.min.sh
           git add argsh.min.sh
-          git commit -m "${title}"
+          git diff --cached --quiet || git commit -m "${title}"
           git push --force origin "HEAD:refs/heads/${branch}"
           gh pr create --title "${title}" --body "" --head "${branch}" 2>/dev/null \
             || echo "PR already exists for ${branch}"
