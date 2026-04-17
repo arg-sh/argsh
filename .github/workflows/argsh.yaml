@@ -138,24 +138,14 @@ jobs:
         with:
           name: binaries-linux-amd64
           path: .ci-bin
-      - name: Install tools
+      - name: Install argsh-lint
         run: |
           chmod +x .ci-bin/argsh-lint
           sudo cp .ci-bin/argsh-lint /usr/local/bin/argsh-lint
-          # shellcheck is pre-installed on ubuntu-latest; verify it's available.
-          command -v shellcheck || { echo "shellcheck not found" >&2; exit 1; }
-      - name: Lint (shellcheck)
-        run: |
-          find libraries -name '*.sh' -o -name '*.bats' -o -name '*.bash' | sort | while read -r f; do
-            echo "shellcheck ${f}" >&2
-            shellcheck "${f}" || exit 1
-          done
-      - name: Lint (argsh-lint)
-        run: |
-          find libraries -name '*.sh' -o -name '*.bats' | sort | while read -r f; do
-            echo "argsh-lint ${f}" >&2
-            argsh-lint "${f}" || exit 1
-          done
+      - name: Direnv
+        uses: HatsuneMiku3939/direnv-action@v1
+      - name: Lint
+        run: argsh lint libraries
 
   # ---------------------------------------------------------------------------
   # Coverage — all 4 Rust crates in one job.
