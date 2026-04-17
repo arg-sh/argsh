@@ -99,9 +99,11 @@ jobs:
           path: .ci-bin
       - name: Install tools
         run: |
-          # bats — pinned to immutable commit SHA for reproducibility
-          git clone https://github.com/bats-core/bats-core.git /tmp/bats
-          git -C /tmp/bats checkout --detach 3bca150ec86275d6d9d5a4fd7d48ab8b6c6f3d87  # v1.13.0
+          # bats — shallow fetch of pinned commit SHA for reproducibility
+          git init /tmp/bats
+          git -C /tmp/bats remote add origin https://github.com/bats-core/bats-core.git
+          git -C /tmp/bats fetch --depth 1 origin 3bca150ec86275d6d9d5a4fd7d48ab8b6c6f3d87  # v1.13.0
+          git -C /tmp/bats checkout --detach FETCH_HEAD
           sudo /tmp/bats/install.sh /usr/local
           # argsh builtin .so
           sudo cp .ci-bin/libargsh.so /usr/local/lib/argsh.so
