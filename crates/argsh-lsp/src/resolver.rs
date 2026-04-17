@@ -7,6 +7,7 @@ use argsh_syntax::document::{analyze, DocumentAnalysis, FunctionInfo};
 pub const DEFAULT_MAX_DEPTH: usize = 2;
 
 /// Resolved imports: collected function definitions from imported files.
+#[derive(Default)]
 pub struct ResolvedImports {
     /// All functions found in imported files.
     pub functions: Vec<FunctionInfo>,
@@ -14,16 +15,6 @@ pub struct ResolvedImports {
     pub resolved_files: Vec<(String, PathBuf)>, // (module_name, path)
     /// Whether import resolution actually ran (false when max_depth == 0).
     pub resolution_ran: bool,
-}
-
-impl Default for ResolvedImports {
-    fn default() -> Self {
-        Self {
-            functions: Vec::new(),
-            resolved_files: Vec::new(),
-            resolution_ran: false,
-        }
-    }
 }
 
 /// Parse a `.envrc` file from the given directory and extract variable assignments.
@@ -155,8 +146,10 @@ fn expand_vars(value: &str, vars: &HashMap<String, String>) -> String {
 /// Follows `import` and `source` statements up to `max_depth` levels.
 /// Circular imports are handled via canonicalized path tracking.
 pub fn resolve_imports(analysis: &DocumentAnalysis, base_path: &Path, max_depth: usize) -> ResolvedImports {
-    let mut result = ResolvedImports::default();
-    result.resolution_ran = max_depth > 0;
+    let mut result = ResolvedImports {
+        resolution_ran: max_depth > 0,
+        ..Default::default()
+    };
     if max_depth == 0 {
         return result;
     }
@@ -182,6 +175,7 @@ pub fn resolve_imports(analysis: &DocumentAnalysis, base_path: &Path, max_depth:
     result
 }
 
+#[allow(clippy::too_many_arguments)]
 fn resolve_recursive(
     analysis: &DocumentAnalysis,
     base_dir: &Path,
@@ -205,9 +199,8 @@ fn resolve_recursive(
         // ^foo → relative to PATH_SCRIPTS
         // ~foo → relative to the script itself
         // foo  → relative to ARGSH_SOURCE directory (base_dir)
-        let (clean_module, search_dir) = if module.starts_with('@') {
+        let (clean_module, search_dir) = if let Some(stripped) = module.strip_prefix('@') {
             // @ prefix: prefer PATH_BASE env var, then .envrc fallback, then project root
-            let stripped = &module[1..];
             let resolved_base = std::env::var("PATH_BASE")
                 .ok()
                 .map(PathBuf::from)
@@ -221,16 +214,15 @@ fn resolve_recursive(
                 })
                 .unwrap_or_else(|| project_root.to_path_buf());
             (stripped.to_string(), resolved_base)
-        } else if module.starts_with('^') {
+        } else if let Some(stripped) = module.strip_prefix('^') {
             // ^ prefix: relative to PATH_SCRIPTS — skip if no scripts dir found
             // (matches runtime behavior: fails when PATH_SCRIPTS is unset)
-            let stripped = &module[1..];
             match find_scripts_dir(project_root, envrc_vars) {
                 Some(scripts_dir) => (stripped.to_string(), scripts_dir),
                 None => continue, // unresolvable — AG013 will flag it
             }
-        } else if module.starts_with('~') {
-            (module[1..].to_string(), base_dir.to_path_buf())
+        } else if let Some(stripped) = module.strip_prefix('~') {
+            (stripped.to_string(), base_dir.to_path_buf())
         } else {
             (module.clone(), base_dir.to_path_buf())
         };

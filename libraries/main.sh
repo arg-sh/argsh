@@ -434,6 +434,7 @@ argsh::_docker_forward() {
       -e "BATS_LOAD" \
       -e "ARGSH_SOURCE" \
       -e "PATH_TESTS" \
+      -e "PATH_SCRIPTS" \
       -e "GIT_COMMIT_SHA=$(git rev-parse HEAD 2>/dev/null || :)" \
       -e "GIT_VERSION=$(git describe --tags --dirty 2>/dev/null || :)" \
       "${_docker_env_flags[@]}" \
@@ -516,19 +517,37 @@ argsh::minify() {
   )
 }
 
-# @description Lint Bash files with shellcheck.
+# @description Lint Bash files with shellcheck and argsh-lint.
+#
+# Runs both linters by default. Use --only-argsh to skip shellcheck and
+# --only-shellcheck to skip argsh-lint. Exit code is 1 if any linter
+# reports diagnostics.
+#
 # @arg $@ string Files or directories (optional; auto-discovered via PATH_TESTS)
 argsh::lint() {
-  if ! binary::exists shellcheck 2>/dev/null; then
-    argsh::_docker_forward lint "${@}"
-    return
-  fi
+  # obfus ignore variable
+  local only_argsh=0
+  # obfus ignore variable
+  local only_shellcheck=0
   # shellcheck disable=SC2034
   # obfus ignore variable
   local -a files args=(
-    'files'  "Files to lint, can be a glob pattern"
+    'only-argsh|:+'      "Skip shellcheck, run only argsh-lint"
+    'only-shellcheck|:+' "Skip argsh-lint, run only shellcheck"
+    'files'              "Files to lint, can be a glob pattern"
   )
   :args "Lint Bash files" "${@}"
+  if (( only_argsh )) && (( only_shellcheck )); then
+    echo "argsh lint: --only-argsh and --only-shellcheck are mutually exclusive" >&2
+    return 2
+  fi
+  # Require shellcheck only when we actually need it — otherwise a caller
+  # that runs `argsh lint --only-argsh` must not be forced to install it or
+  # fall back to Docker.
+  if (( ! only_argsh )) && ! binary::exists shellcheck 2>/dev/null; then
+    argsh::_docker_forward lint "${@}"
+    return
+  fi
   if is::uninitialized files; then
     local -a _found_files=()
     argsh::discover_files "*.sh" "*.bash" "*.bats"
@@ -579,8 +598,9 @@ argsh::lint() {
     files=("${_found_files[@]}")
   fi
 
+  # Expand globs/directories into a flat list of files to lint.
   local _file _f
-  local -a _glob
+  local -a _glob _expanded=()
   for _f in "${files[@]}"; do
     if [[ -d "${_f}" ]]; then
       _glob=("${_f}"/*.{sh,bash,bats})
@@ -590,10 +610,33 @@ argsh::lint() {
     fi
     for _file in "${_glob[@]}"; do
       [[ -e "${_file}" ]] || continue
-      echo "Linting ${_file}" >&2
-      shellcheck "${_file}"
+      _expanded+=("${_file}")
     done
   done
+
+  local _rc=0
+  # Run shellcheck (skipped with --only-argsh).
+  if (( ! only_argsh )); then
+    for _file in "${_expanded[@]}"; do
+      echo "Linting ${_file}" >&2
+      shellcheck "${_file}" || _rc=1
+    done
+  fi
+  # argsh-lint — static analysis of argsh-specific constructs (AG001-AG013).
+  # If the binary isn't on PATH we skip silently unless the user explicitly
+  # asked for it, matching the shellcheck auto-install behavior used above.
+  if (( ! only_shellcheck )); then
+    if binary::exists argsh-lint 2>/dev/null; then
+      for _file in "${_expanded[@]}"; do
+        echo "argsh-lint ${_file}" >&2
+        argsh-lint "${_file}" || _rc=1
+      done
+    elif (( only_argsh )); then
+      echo "argsh lint: argsh-lint binary not found on PATH" >&2
+      return 1
+    fi
+  fi
+  return "${_rc}"
 }
 
 # @description Run bats tests.
@@ -889,6 +932,7 @@ argsh::shebang() {
   # Import additional libraries
   local _lib
   for _lib in "${_argsh_imports[@]}"; do
+    # argsh disable=AG013
     import "${_lib}"
   done
 

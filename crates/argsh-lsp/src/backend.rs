@@ -5,14 +5,15 @@ use tower_lsp::{Client, LanguageServer};
 
 use argsh_syntax::document::{analyze, DocumentAnalysis};
 
+use argsh_lsp::diagnostics;
+use argsh_lsp::resolver::{self, ResolvedImports};
+
 use crate::codelens;
 use crate::completion;
-use crate::diagnostics;
 use crate::goto_def;
 use crate::hover;
 use crate::preview;
 use crate::rename;
-use crate::resolver::{self, ResolvedImports};
 use crate::symbols;
 
 /// Client-provided settings from initializationOptions.
@@ -291,7 +292,7 @@ impl LanguageServer for Backend {
                     if let Ok(uri) = serde_json::from_value::<Url>(uri_val.clone()) {
                         if let Some(doc) = self.documents.get(&uri) {
                             let script_name = uri.path_segments()
-                                .and_then(|s| s.last())
+                                .and_then(|mut s| s.next_back())
                                 .unwrap_or("script")
                                 .strip_suffix(".sh")
                                 .unwrap_or("script");
@@ -307,7 +308,7 @@ impl LanguageServer for Backend {
                     if let Ok(uri) = serde_json::from_value::<Url>(uri_val.clone()) {
                         if let Some(doc) = self.documents.get(&uri) {
                             let script_name = uri.path_segments()
-                                .and_then(|s| s.last())
+                                .and_then(|mut s| s.next_back())
                                 .unwrap_or("script")
                                 .strip_suffix(".sh")
                                 .unwrap_or("script");

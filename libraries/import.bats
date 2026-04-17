@@ -2,6 +2,10 @@
 # shellcheck shell=bash disable=SC2154 disable=SC2034 disable=SC2030 disable=SC2031
 # vim: filetype=bash
 # NOTE: do NOT add set -euo pipefail — it breaks bats internals (BATS_TEARDOWN_STARTED unbound)
+# argsh disable-file=AG013
+# (This file's tests deliberately use fake module names with @, ^, and ~
+# prefixes to exercise import::source's error paths. They are not real
+# imports — argsh-lint would flag every one with AG013.)
 
 load ../test/helper
 load_source

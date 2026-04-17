@@ -486,6 +486,171 @@ declare -gi ARGSH_BUILTIN="${ARGSH_BUILTIN:-0}"
   contains "No files to lint" stderr
 }
 
+@test "argsh::lint: --only-argsh skips shellcheck" {
+  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
+  local _tmp
+  _tmp="$(mktemp -d)"
+  echo '#!/usr/bin/env argsh' >"${_tmp}/a.sh"
+
+  shellcheck() { echo "SHELLCHECK: $*"; }
+  argsh-lint() { echo "ARGSH_LINT: $*"; }
+  export -f shellcheck argsh-lint
+  binary::exists() { case "${1}" in shellcheck|argsh-lint) return 0 ;; *) command -v "${1}" &>/dev/null ;; esac; }
+
+  (argsh::lint --only-argsh "${_tmp}/a.sh") >"${stdout}" 2>"${stderr}" || status=$?
+  rm -rf "${_tmp}"
+
+  assert "${status}" -eq 0
+  # Must NOT contain shellcheck stub output (only argsh-lint should run).
+  # Use `command grep` — bats overrides `grep` to print failure diagnostics
+  # on non-zero exit, which would be noise here (we expect no match).
+  ! command grep -q "SHELLCHECK:" "${stdout}"
+  # MUST contain argsh-lint stub output.
+  contains "ARGSH_LINT:" stdout
+}
+
+@test "argsh::lint: --only-shellcheck skips argsh-lint" {
+  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
+  local _tmp
+  _tmp="$(mktemp -d)"
+  echo '#!/usr/bin/env argsh' >"${_tmp}/a.sh"
+
+  shellcheck() { echo "SHELLCHECK: $*"; }
+  argsh-lint() { echo "ARGSH_LINT: $*"; }
+  export -f shellcheck argsh-lint
+  binary::exists() { case "${1}" in shellcheck|argsh-lint) return 0 ;; *) command -v "${1}" &>/dev/null ;; esac; }
+
+  (argsh::lint --only-shellcheck "${_tmp}/a.sh") >"${stdout}" 2>"${stderr}" || status=$?
+  rm -rf "${_tmp}"
+
+  assert "${status}" -eq 0
+  contains "SHELLCHECK:" stdout
+  # Use `command grep` for the negative case to silence bats' helper noise.
+  ! command grep -q "ARGSH_LINT:" "${stdout}"
+}
+
+@test "argsh::lint: both --only-* flags together is a usage error" {
+  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
+  shellcheck() { :; }
+  export -f shellcheck
+  binary::exists() { [[ "${1}" == "shellcheck" ]] || command -v "${1}" &>/dev/null; }
+
+  (argsh::lint --only-argsh --only-shellcheck foo) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 2
+  contains "mutually exclusive" stderr
+}
+
+@test "argsh::lint: default runs both shellcheck and argsh-lint" {
+  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
+  local _tmp
+  _tmp="$(mktemp -d)"
+  echo '#!/usr/bin/env argsh' >"${_tmp}/a.sh"
+
+  shellcheck() { echo "SHELLCHECK: $*"; }
+  argsh-lint() { echo "ARGSH_LINT: $*"; }
+  export -f shellcheck argsh-lint
+  binary::exists() { case "${1}" in shellcheck|argsh-lint) return 0 ;; *) command -v "${1}" &>/dev/null ;; esac; }
+
+  (argsh::lint "${_tmp}/a.sh") >"${stdout}" 2>"${stderr}" || status=$?
+  rm -rf "${_tmp}"
+
+  assert "${status}" -eq 0
+  contains "SHELLCHECK:" stdout
+  contains "ARGSH_LINT:" stdout
+}
+
+@test "argsh::lint: --only-argsh does not require shellcheck locally" {
+  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
+  local _tmp
+  _tmp="$(mktemp -d)"
+  echo '#!/usr/bin/env argsh' >"${_tmp}/a.sh"
+
+  argsh-lint() { echo "ARGSH_LINT: $*"; }
+  export -f argsh-lint
+  # Simulate shellcheck *missing* but argsh-lint available — docker-forward
+  # must NOT be invoked because the user explicitly said --only-argsh.
+  binary::exists() { [[ "${1}" == "argsh-lint" ]]; }
+  argsh::_docker_forward() { echo "DOCKER_FORWARD: $*"; return 0; }
+
+  (argsh::lint --only-argsh "${_tmp}/a.sh") >"${stdout}" 2>"${stderr}" || status=$?
+  rm -rf "${_tmp}"
+
+  assert "${status}" -eq 0
+  contains "ARGSH_LINT:" stdout
+  # Must NOT have fallen back to Docker just because shellcheck is missing.
+  ! command grep -q "DOCKER_FORWARD:" "${stdout}"
+}
+
+@test "argsh::lint: missing argsh-lint with --only-argsh errors" {
+  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
+  local _tmp
+  _tmp="$(mktemp -d)"
+  echo '#!/usr/bin/env argsh' >"${_tmp}/a.sh"
+
+  shellcheck() { :; }
+  export -f shellcheck
+  # Simulate shellcheck installed, argsh-lint not present.
+  binary::exists() { [[ "${1}" == "shellcheck" ]]; }
+
+  (argsh::lint --only-argsh "${_tmp}/a.sh") >"${stdout}" 2>"${stderr}" || status=$?
+  rm -rf "${_tmp}"
+
+  assert "${status}" -ne 0
+  contains "argsh-lint binary not found" stderr
+}
+
+@test "argsh::lint: missing argsh-lint without flags silently skips it" {
+  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
+  local _tmp
+  _tmp="$(mktemp -d)"
+  echo '#!/usr/bin/env argsh' >"${_tmp}/a.sh"
+
+  shellcheck() { echo "SHELLCHECK: $*"; }
+  export -f shellcheck
+  binary::exists() { [[ "${1}" == "shellcheck" ]]; }
+
+  (argsh::lint "${_tmp}/a.sh") >"${stdout}" 2>"${stderr}" || status=$?
+  rm -rf "${_tmp}"
+
+  assert "${status}" -eq 0
+  contains "SHELLCHECK:" stdout
+}
+
+@test "argsh::lint: shellcheck failure propagates non-zero exit" {
+  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
+  local _tmp
+  _tmp="$(mktemp -d)"
+  echo '#!/usr/bin/env argsh' >"${_tmp}/a.sh"
+
+  shellcheck() { return 1; }
+  argsh-lint() { :; }
+  export -f shellcheck argsh-lint
+  binary::exists() { case "${1}" in shellcheck|argsh-lint) return 0 ;; *) command -v "${1}" &>/dev/null ;; esac; }
+
+  (argsh::lint "${_tmp}/a.sh") >"${stdout}" 2>"${stderr}" || status=$?
+  rm -rf "${_tmp}"
+
+  assert "${status}" -eq 1
+}
+
+@test "argsh::lint: argsh-lint failure propagates non-zero exit" {
+  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
+  local _tmp
+  _tmp="$(mktemp -d)"
+  echo '#!/usr/bin/env argsh' >"${_tmp}/a.sh"
+
+  shellcheck() { :; }
+  argsh-lint() { return 1; }
+  export -f shellcheck argsh-lint
+  binary::exists() { case "${1}" in shellcheck|argsh-lint) return 0 ;; *) command -v "${1}" &>/dev/null ;; esac; }
+
+  (argsh::lint "${_tmp}/a.sh") >"${stdout}" 2>"${stderr}" || status=$?
+  rm -rf "${_tmp}"
+
+  assert "${status}" -eq 1
+}
+
 @test "argsh::lint: detects extensionless scripts with #!/usr/bin/env sh shebang" {
   if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
   local _tmp

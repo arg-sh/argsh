@@ -79,6 +79,7 @@ enum SuppressionScope {
 /// - `# argsh disable-file=AG007` — suppress specific codes for entire file
 /// - `# argsh disable-file` — suppress all for entire file
 /// - `some code # argsh disable=AG004` — suppress on this line (inline)
+///
 /// Also supports hyphenated form: `# argsh-ignore=AG001`
 fn collect_suppressions(content: &str) -> Vec<Suppression> {
     let mut suppressions = Vec::new();
@@ -141,11 +142,7 @@ fn collect_suppressions(content: &str) -> Vec<Suppression> {
 fn extract_directive<'a>(text: &'a str, directive: &str) -> Option<&'a str> {
     // Match "# argsh-ignore..." or just "argsh-ignore..."
     let stripped = text.strip_prefix('#').unwrap_or(text).trim();
-    if stripped.starts_with(directive) {
-        Some(&stripped[directive.len()..])
-    } else {
-        None
-    }
+    stripped.strip_prefix(directive)
 }
 
 /// Parse codes from "=AG001,AG004" or "" (empty = all).

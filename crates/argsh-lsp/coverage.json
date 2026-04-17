@@ -1,0 +1,152 @@
+{
+  "files": [
+    {
+      "file": "crates/argsh-lsp/src/util.rs",
+      "percent_covered": "100.00",
+      "covered_lines": "39",
+      "total_lines": "39",
+      "excluded_lines": "0"
+    },
+    {
+      "file": "crates/argsh-lsp/src/main.rs",
+      "percent_covered": "100.00",
+      "covered_lines": "8",
+      "total_lines": "8",
+      "excluded_lines": "0"
+    },
+    {
+      "file": "crates/argsh-lsp/tests/lint_cli.rs",
+      "percent_covered": "99.75",
+      "covered_lines": "400",
+      "total_lines": "401",
+      "excluded_lines": "0"
+    },
+    {
+      "file": "crates/argsh-lsp/src/format.rs",
+      "percent_covered": "97.30",
+      "covered_lines": "180",
+      "total_lines": "185",
+      "excluded_lines": "0"
+    },
+    {
+      "file": "crates/argsh-lsp/tests/integration.rs",
+      "percent_covered": "93.45",
+      "covered_lines": "1213",
+      "total_lines": "1298",
+      "excluded_lines": "0"
+    },
+    {
+      "file": "crates/argsh-lsp/src/codelens.rs",
+      "percent_covered": "92.86",
+      "covered_lines": "104",
+      "total_lines": "112",
+      "excluded_lines": "0"
+    },
+    {
+      "file": "crates/argsh-lsp/src/backend.rs",
+      "percent_covered": "91.01",
+      "covered_lines": "81",
+      "total_lines": "89",
+      "excluded_lines": "0"
+    },
+    {
+      "file": "crates/argsh-lsp/src/resolver.rs",
+      "percent_covered": "89.74",
+      "covered_lines": "551",
+      "total_lines": "614",
+      "excluded_lines": "0"
+    },
+    {
+      "file": "crates/argsh-lsp/src/bin/argsh-lint.rs",
+      "percent_covered": "89.21",
+      "covered_lines": "281",
+      "total_lines": "315",
+      "excluded_lines": "0"
+    },
+    {
+      "file": "crates/argsh-lsp/src/symbols.rs",
+      "percent_covered": "88.43",
+      "covered_lines": "107",
+      "total_lines": "121",
+      "excluded_lines": "0"
+    },
+    {
+      "file": "crates/argsh-syntax/src/document.rs",
+      "percent_covered": "85.93",
+      "covered_lines": "336",
+      "total_lines": "391",
+      "excluded_lines": "0"
+    },
+    {
+      "file": "crates/argsh-lsp/src/diagnostics.rs",
+      "percent_covered": "83.58",
+      "covered_lines": "341",
+      "total_lines": "408",
+      "excluded_lines": "0"
+    },
+    {
+      "file": "crates/argsh-syntax/src/usage.rs",
+      "percent_covered": "77.78",
+      "covered_lines": "35",
+      "total_lines": "45",
+      "excluded_lines": "0"
+    },
+    {
+      "file": "crates/argsh-lsp/src/rename.rs",
+      "percent_covered": "76.63",
+      "covered_lines": "141",
+      "total_lines": "184",
+      "excluded_lines": "0"
+    },
+    {
+      "file": "crates/argsh-lsp/src/goto_def.rs",
+      "percent_covered": "71.32",
+      "covered_lines": "184",
+      "total_lines": "258",
+      "excluded_lines": "0"
+    },
+    {
+      "file": "crates/argsh-syntax/src/field.rs",
+      "percent_covered": "70.00",
+      "covered_lines": "63",
+      "total_lines": "90",
+      "excluded_lines": "0"
+    },
+    {
+      "file": "crates/argsh-lsp/src/completion.rs",
+      "percent_covered": "69.13",
+      "covered_lines": "262",
+      "total_lines": "379",
+      "excluded_lines": "0"
+    },
+    {
+      "file": "crates/argsh-lsp/src/hover.rs",
+      "percent_covered": "63.92",
+      "covered_lines": "457",
+      "total_lines": "715",
+      "excluded_lines": "0"
+    },
+    {
+      "file": "crates/argsh-lsp/src/preview.rs",
+      "percent_covered": "24.81",
+      "covered_lines": "132",
+      "total_lines": "532",
+      "excluded_lines": "0"
+    },
+    {
+      "file": "crates/argsh-syntax/src/scope.rs",
+      "percent_covered": "0.00",
+      "covered_lines": "0",
+      "total_lines": "2",
+      "excluded_lines": "0"
+    }
+  ],
+  "percent_covered": "79.45",
+  "covered_lines": 4915,
+  "total_lines": 6186,
+  "excluded_lines": 0,
+  "percent_low": 25,
+  "percent_high": 75,
+  "command": "cargo-test+llvm-cov",
+  "date": "2026-04-16 21:47:52"
+}

@@ -1,6 +1,9 @@
 #!/usr/bin/env bats
 # shellcheck disable=SC1091 disable=SC2154 disable=SC2317 disable=SC2329 disable=SC2034 disable=SC2030 disable=SC2031 disable=SC2314
 # shellcheck shell=bats
+# argsh disable-file=AG013
+# (The test body contains `enable -f ... import import::clear; then` which the
+# lint resolver mis-parses as `import then`. Real imports live in .sh files.)
 #
 # Shared tests for both pure-bash and native builtin implementations.
 # Set ARGSH_BUILTIN_TEST=1 to test with Rust loadable builtins.

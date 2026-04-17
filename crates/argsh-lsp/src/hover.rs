@@ -3,7 +3,8 @@ use tower_lsp::lsp_types::*;
 use argsh_syntax::document::{ArgsArrayEntry, DocumentAnalysis, FunctionInfo};
 use argsh_syntax::field::FieldDef;
 
-use crate::resolver::ResolvedImports;
+use argsh_lsp::resolver::ResolvedImports;
+
 use crate::util::extract_word_at;
 
 /// Format a type string, appending `[]` when the field backs an array variable.

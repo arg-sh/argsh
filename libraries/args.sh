@@ -22,6 +22,7 @@ import() { declare -A _i; (( ${_i[${1}]:-} )) || { _i[${1}]=1; . "${BASH_SOURCE[
 declare -ga __ARGSH_BUILTINS=(:usage :usage::help :usage::completion :usage::docgen :usage::mcp :args
   is::array is::uninitialized is::set is::tty
   args::field_name to::int to::float to::boolean to::file to::string
+  # argsh disable=AG013
   import import::clear)
 # Library directory for builtin import resolution (plain names like `import string`)
 # obfus ignore variable

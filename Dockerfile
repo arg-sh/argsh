@@ -26,11 +26,20 @@ WORKDIR /build
 COPY builtin/ .
 RUN cargo build --release
 
+# argsh-lsp / argsh-lint — LSP server + CLI linter (share the same crate).
+# Builds both binaries in one cargo invocation.
+FROM rust:1-slim-bookworm AS lsp-build
+WORKDIR /build
+COPY crates/ crates/
+RUN cargo build --release --manifest-path crates/argsh-lsp/Cargo.toml --bins
+
 # artifacts — extract just the Rust binaries (used by CI for multi-arch release)
 FROM scratch AS artifacts
 COPY --from=minifier-build /build/target/release/minifier /minifier
 COPY --from=shdoc-build /build/target/release/shdoc /shdoc
 COPY --from=builtin-build /build/target/release/libargsh.so /libargsh.so
+COPY --from=lsp-build /build/crates/argsh-lsp/target/release/argsh-lsp /argsh-lsp
+COPY --from=lsp-build /build/crates/argsh-lsp/target/release/argsh-lint /argsh-lint
 
 # coverage
 FROM kcov/kcov
@@ -68,6 +77,8 @@ RUN set -eux \
 COPY --from=minifier-build /build/target/release/minifier /usr/local/bin/minifier
 COPY --from=shdoc-build /build/target/release/shdoc /usr/local/bin/shdoc
 COPY --from=builtin-build /build/target/release/libargsh.so /usr/local/lib/argsh.so
+COPY --from=lsp-build /build/crates/argsh-lsp/target/release/argsh-lsp /usr/local/bin/argsh-lsp
+COPY --from=lsp-build /build/crates/argsh-lsp/target/release/argsh-lint /usr/local/bin/argsh-lint
 COPY ./argsh.min.sh /usr/local/bin/argsh
 ENV ARGSH_BUILTIN_PATH=/usr/local/lib/argsh.so
 ENV BATS_LIB_PATH=/usr/local/lib

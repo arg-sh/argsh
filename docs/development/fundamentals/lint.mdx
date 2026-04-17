@@ -4,28 +4,118 @@ description: "How to lint your scripts"
 
 # How to Lint your scripts
 
-In this document, you’ll learn about the best practices for linting your scripts.
+In this document, you'll learn how to lint argsh scripts using the built-in
+linter pipeline, which combines two complementary tools:
 
-## Introduction
+1. **shellcheck** — general-purpose Bash linter (covers quoting, subshells,
+   command substitution, POSIX portability, etc.).
+2. **argsh-lint** — argsh-specific static analysis (AG001–AG010, AG012–AG013;
+   AG011 is reserved) for `:args` / `:usage` declarations, field specs,
+   variable declarations, imports, and more.
 
-Linting is the process of checking your scripts for errors and potential problems. It helps you to ensure that your scripts are consistent, readable, and maintainable.
+Running `argsh lint` invokes **both** by default. Each can be selected
+individually via flags.
 
-There are different tools for linting bash scripts. The most popular is [shellcheck](https://www.shellcheck.net/).
+## Requirements
 
-:::note
-At one point, we plan to extend shellcheck with a custom set of rules that are specific to argsh [styleguide](../../styleguide).
-:::
+- **shellcheck** must be on `PATH`. If missing, `argsh lint` forwards the
+  whole invocation to the argsh Docker image, which ships both linters
+  pre-installed.
+- **argsh-lint** ships as a standalone binary. It is shipped in the argsh
+  Docker image at `/usr/local/bin/argsh-lint` and published per-platform
+  on the [GitHub Releases page](https://github.com/arg-sh/argsh/releases).
+  If the binary is not found on `PATH`, `argsh lint` silently skips the
+  argsh-specific checks (use `--only-argsh` to make that a hard error).
+
+## Usage
+
+```bash
+# Run both linters on auto-discovered files (via PATH_TESTS or project layout)
+argsh lint
+
+# Run on specific files / globs / directories
+argsh lint scripts/*.sh hack/*.sh other-folder
+
+# Run shellcheck only (skip argsh-specific diagnostics)
+argsh lint --only-shellcheck scripts/
+
+# Run argsh-lint only (skip shellcheck)
+argsh lint --only-argsh scripts/
+```
+
+`argsh lint` exits non-zero if **either** linter reports diagnostics.
+
+The two `--only-*` flags are mutually exclusive; passing both is a usage
+error (exit code 2).
+
+## Diagnostic Codes (argsh-lint)
+
+argsh-lint reports diagnostics using stable `AG####` codes, modeled after
+shellcheck's `SC####`. The full list:
+
+| Code  | Meaning                                                        |
+|-------|----------------------------------------------------------------|
+| AG001 | `args` array entry missing description                         |
+| AG002 | `usage` array entry missing description                        |
+| AG003 | Invalid field specification (unknown modifier, parse error)    |
+| AG004 | Array entry has no matching `local <var>` declaration          |
+| AG005 | `args` array declared but `:args` never called                 |
+| AG006 | `usage` array declared but `:usage` never called               |
+| AG007 | `usage` target function cannot be resolved                     |
+| AG008 | Duplicate flag name in the same `args` array                   |
+| AG009 | Duplicate short alias in the same `args` array                 |
+| AG010 | Command resolves to a bare (non-namespaced) function           |
+| AG012 | Local variable shadows a parent scope's args field             |
+| AG013 | `import` could not be resolved                                 |
+
+## Suppressing diagnostics
+
+Add a comment directive, shellcheck-style:
+
+```bash
+# argsh disable=AG001,AG004       # next line only
+# argsh disable-file=AG007        # entire file, one code
+# argsh disable-file               # entire file, all codes
+```
+
+The directive can appear anywhere in the file for file-level scope; for
+line-level scope it must be on the line directly preceding the diagnostic.
+
+## Using argsh-lint standalone
+
+The underlying binary can be invoked directly for CI pipelines or editor
+integrations that don't drive it through `argsh lint`:
+
+```bash
+argsh-lint [OPTIONS] [FILE...]
+```
+
+Common flags (names chosen to match shellcheck):
+
+| Flag                       | Purpose                                             |
+|----------------------------|-----------------------------------------------------|
+| `-f FMT`, `--format=FMT`   | Output: `gcc` (default), `tty`, `json`, `checkstyle`, `quiet` |
+| `-e LIST`, `--exclude=LIST`| Comma-separated codes to skip                       |
+| `-i LIST`, `--include=LIST`| Only enable these codes                             |
+| `-S SEV`, `--severity=SEV` | Minimum severity: `error`, `warning`, `info`, `style` |
+| `-C WHEN`, `--color=WHEN`  | `auto`, `always`, `never`                           |
+| `--no-resolve`             | Skip cross-file import resolution (faster)          |
+
+Reading from stdin:
+
+```bash
+cat script.sh | argsh-lint --format=tty
+```
+
+Exit codes: `0` none, `1` diagnostics, `2` usage error.
 
 ## VSCode Integration
 
-You can integrate shellcheck into VSCode by installing the [shellcheck extension](https://marketplace.visualstudio.com/items?itemName=timonwong.shellcheck).
+Install the [argsh VSCode extension](https://marketplace.visualstudio.com/items?itemName=argsh.argsh)
+to get the same diagnostics inline in your editor — it uses the
+[argsh-lsp](../tools/lsp.mdx) language server, which shares the exact
+analysis code with `argsh-lint`.
 
-## Use shellcheck with argsh
-
-Argsh provides a wrapper for shellcheck that you can use in your projects. If you [installed argsh](../../getting-started#project-based) as executable, you can use it like this:
-
-```bash
-argsh lint scripts/*.sh hack/*.sh other-folder
-```
-
-Use `argsh lint --help` to get more information about the available options.
+For generic shellcheck integration, install the
+[shellcheck extension](https://marketplace.visualstudio.com/items?itemName=timonwong.shellcheck)
+alongside.
