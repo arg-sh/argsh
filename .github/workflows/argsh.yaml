@@ -77,7 +77,8 @@ jobs:
 
   # ═══════════════════════════════════════════════════════════════════════
   # Stage 2: FAN OUT — test, lint, coverage, minify run in parallel.
-  # All download pre-built binaries from the build stage.
+  # Jobs download build artifacts from Stage 1 or rebuild as needed
+  # (e.g. coverage uses instrumentation-specific builds).
   # ═══════════════════════════════════════════════════════════════════════
 
   # ---------------------------------------------------------------------------
@@ -119,7 +120,7 @@ jobs:
         run: bats libraries/
 
   # ---------------------------------------------------------------------------
-  # Lint — shellcheck + argsh-lint on all shell files.
+  # Lint — shellcheck + argsh-lint on the argsh libraries.
   # ---------------------------------------------------------------------------
   lint:
     runs-on: ubuntu-latest
