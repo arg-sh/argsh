@@ -211,6 +211,7 @@ jobs:
         env:
           BATS_LOAD: argsh.min.sh
           ARGSH_SOURCE: argsh
+          ARGSH_BUILTIN_TEST: "1"
           ARGSH_BUILTIN_PATH: /usr/local/lib/argsh.so
         run: bats libraries/
       - name: Upload artifacts
