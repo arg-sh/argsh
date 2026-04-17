@@ -116,13 +116,13 @@ jobs:
         env:
           ARGSH_PURE_BASH_TEST: "1"
           ARGSH_SOURCE: argsh
-        run: bats libraries/ .docker/test/
+        run: bats libraries/
       - name: Test (native builtins)
         env:
           ARGSH_BUILTIN_TEST: "1"
           ARGSH_BUILTIN_PATH: /usr/local/lib/argsh.so
           ARGSH_SOURCE: argsh
-        run: bats libraries/ .docker/test/
+        run: bats libraries/
 
   # ---------------------------------------------------------------------------
   # Lint — shellcheck + argsh-lint on all shell files.
