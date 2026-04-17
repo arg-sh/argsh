@@ -98,16 +98,10 @@ jobs:
           path: .ci-bin
       - name: Install tools
         run: |
-          # bats — pinned to immutable commit SHAs for reproducibility
+          # bats — pinned to immutable commit SHA for reproducibility
           git clone https://github.com/bats-core/bats-core.git /tmp/bats
           git -C /tmp/bats checkout --detach 3bca150ec86275d6d9d5a4fd7d48ab8b6c6f3d87  # v1.13.0
           sudo /tmp/bats/install.sh /usr/local
-          sudo git clone https://github.com/bats-core/bats-support.git /usr/local/lib/bats-support
-          sudo git -C /usr/local/lib/bats-support checkout --detach 24a72e14349690bcbf7c151b9d2d1cdd32d36eb1  # v0.3.0
-          sudo git clone https://github.com/bats-core/bats-assert.git /usr/local/lib/bats-assert
-          sudo git -C /usr/local/lib/bats-assert checkout --detach f1e9280eaae8f86cbe278a687e6ba755bc802c1a  # v2.2.4
-          sudo git clone https://github.com/bats-core/bats-file.git /usr/local/lib/bats-file
-          sudo git -C /usr/local/lib/bats-file checkout --detach 13ad5e2ffcc360281432db3d43a306f7b3667d60  # v0.4.0
           # argsh builtin .so
           sudo cp .ci-bin/libargsh.so /usr/local/lib/argsh.so
       - name: Direnv
@@ -195,16 +189,10 @@ jobs:
         run: |
           cp .ci-bin/minifier .bin/minifier
           chmod +x .bin/minifier
-          # bats (pinned SHAs)
+          # bats (pinned SHA)
           git clone https://github.com/bats-core/bats-core.git /tmp/bats
           git -C /tmp/bats checkout --detach 3bca150ec86275d6d9d5a4fd7d48ab8b6c6f3d87  # v1.13.0
           sudo /tmp/bats/install.sh /usr/local
-          sudo git clone https://github.com/bats-core/bats-support.git /usr/local/lib/bats-support
-          sudo git -C /usr/local/lib/bats-support checkout --detach 24a72e14349690bcbf7c151b9d2d1cdd32d36eb1  # v0.3.0
-          sudo git clone https://github.com/bats-core/bats-assert.git /usr/local/lib/bats-assert
-          sudo git -C /usr/local/lib/bats-assert checkout --detach f1e9280eaae8f86cbe278a687e6ba755bc802c1a  # v2.2.4
-          sudo git clone https://github.com/bats-core/bats-file.git /usr/local/lib/bats-file
-          sudo git -C /usr/local/lib/bats-file checkout --detach 13ad5e2ffcc360281432db3d43a306f7b3667d60  # v0.4.0
           # argsh-lint + .so + verify shellcheck
           chmod +x .ci-bin/argsh-lint
           sudo cp .ci-bin/argsh-lint /usr/local/bin/argsh-lint
