@@ -25,16 +25,18 @@ RUN cargo build --release
 # System lld (from apt) is required because export_name attributes contain
 # colons (e.g. ":args_struct") which cause "syntax error in VERSION script"
 # with both GNU ld and rust-lld. System lld (Debian LLD 14) handles them.
-# -Clinker-features=-lld disables Rust's bundled rust-lld (default since 1.94)
-# so -fuse-ld=lld resolves to the system lld from apt.
+# We symlink system lld over the rust-lld shim in gcc-ld/ so that
+# -fuse-ld=lld resolves to system lld on all architectures.
+# (-Clinker-features=-lld would be cleaner but is only stable on x86_64.)
 # See: https://github.com/rust-lang/rust/issues/38238
 FROM rust:1-slim-bookworm AS builtin-build
 RUN apt-get update && apt-get install -y --no-install-recommends lld && rm -rf /var/lib/apt/lists/*
+RUN ln -sf /usr/bin/ld.lld "$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | awk '/host/{print $2}')/bin/gcc-ld/ld.lld"
 ARG RUSTFLAGS
 ARG CARGO_PROFILE_RELEASE_STRIP
 ARG CARGO_PROFILE_RELEASE_LTO
 ARG CARGO_PROFILE_RELEASE_PANIC
-ENV RUSTFLAGS="${RUSTFLAGS} -Clinker-features=-lld -C link-arg=-fuse-ld=lld"
+ENV RUSTFLAGS="${RUSTFLAGS} -C link-arg=-fuse-ld=lld"
 WORKDIR /build
 COPY builtin/ .
 RUN cargo build --release
