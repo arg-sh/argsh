@@ -123,7 +123,7 @@ jobs:
           name: ci-image
           path: /tmp
       - name: Import CI image
-        run: docker load < /tmp/ci-image.tar.gz
+        run: gunzip -c /tmp/ci-image.tar.gz | docker load
       - name: Test (pure bash)
         run: |
           docker run --rm \
@@ -152,7 +152,7 @@ jobs:
           name: ci-image
           path: /tmp
       - name: Import CI image
-        run: docker load < /tmp/ci-image.tar.gz
+        run: gunzip -c /tmp/ci-image.tar.gz | docker load
       - name: Lint
         run: |
           docker run --rm \
@@ -203,7 +203,7 @@ jobs:
           name: ci-image
           path: /tmp
       - name: Import CI image
-        run: docker load < /tmp/ci-image.tar.gz
+        run: gunzip -c /tmp/ci-image.tar.gz | docker load
       - name: Minify
         run: |
           docker run --rm \
@@ -382,7 +382,7 @@ jobs:
           name: ci-image
           path: /tmp
       - name: Import CI image
-        run: docker load < /tmp/ci-image.tar.gz
+        run: gunzip -c /tmp/ci-image.tar.gz | docker load
       - name: Smoke test
         run: |
           docker run --rm \

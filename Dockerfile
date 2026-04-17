@@ -59,7 +59,8 @@ COPY --from=lsp-build /build/crates/argsh-lsp/target/release/argsh-lint /argsh-l
 
 FROM debian:bookworm-slim
 
-# kcov — bash script coverage (binary + runtime deps from the kcov image)
+# kcov — bash script coverage (binary copied from kcov image; runtime deps
+# installed via apt below to keep them up-to-date with the base image)
 COPY --from=kcov/kcov /usr/local/bin/kcov /usr/local/bin/kcov
 
 # test — bats-core + standard helper libraries (support, assert, file)
