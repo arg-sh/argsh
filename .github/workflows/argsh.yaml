@@ -58,8 +58,15 @@ jobs:
           outputs: type=local,dest=out
           cache-from: type=gha,scope=build-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=build-${{ matrix.arch }}
-      - name: Make executables
-        run: chmod +x out/minifier out/shdoc out/argsh-lsp out/argsh-lint 2>/dev/null || true
+      - name: Validate and make executables
+        run: |
+          for f in out/minifier out/shdoc out/libargsh.so out/argsh-lsp out/argsh-lint; do
+            if [[ ! -f "${f}" ]]; then
+              echo "Missing expected artifact: ${f}" >&2
+              exit 1
+            fi
+          done
+          chmod +x out/minifier out/shdoc out/argsh-lsp out/argsh-lint
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
@@ -91,17 +98,23 @@ jobs:
           path: .ci-bin
       - name: Install tools
         run: |
-          # bats
-          git clone --depth 1 --branch v1.13.0 https://github.com/bats-core/bats-core.git /tmp/bats
+          # bats — pinned to immutable commit SHAs for reproducibility
+          git clone https://github.com/bats-core/bats-core.git /tmp/bats
+          git -C /tmp/bats checkout --detach 3bca150ec86275d6d9d5a4fd7d48ab8b6c6f3d87  # v1.13.0
           sudo /tmp/bats/install.sh /usr/local
-          sudo git clone --depth 1 --branch v0.3.0 https://github.com/bats-core/bats-support.git /usr/local/lib/bats-support
-          sudo git clone --depth 1 --branch v2.2.4 https://github.com/bats-core/bats-assert.git /usr/local/lib/bats-assert
-          sudo git clone --depth 1 --branch v0.4.0 https://github.com/bats-core/bats-file.git /usr/local/lib/bats-file
+          sudo git clone https://github.com/bats-core/bats-support.git /usr/local/lib/bats-support
+          sudo git -C /usr/local/lib/bats-support checkout --detach 24a72e14349690bcbf7c151b9d2d1cdd32d36eb1  # v0.3.0
+          sudo git clone https://github.com/bats-core/bats-assert.git /usr/local/lib/bats-assert
+          sudo git -C /usr/local/lib/bats-assert checkout --detach f1e9280eaae8f86cbe278a687e6ba755bc802c1a  # v2.2.4
+          sudo git clone https://github.com/bats-core/bats-file.git /usr/local/lib/bats-file
+          sudo git -C /usr/local/lib/bats-file checkout --detach 13ad5e2ffcc360281432db3d43a306f7b3667d60  # v0.4.0
           # argsh builtin .so
           sudo cp .ci-bin/libargsh.so /usr/local/lib/argsh.so
       - name: Direnv
         uses: HatsuneMiku3939/direnv-action@v1
       - name: Test (pure bash)
+        env:
+          ARGSH_PURE_BASH_TEST: "1"
         run: argsh test
       - name: Test (native builtins)
         env:
