@@ -210,7 +210,7 @@ jobs:
             -v "${{ github.workspace }}:/workspace" -w /workspace \
             -e GIT_COMMIT_SHA=${{ github.sha }} \
             -e GIT_VERSION=${{ github.ref_name }} \
-            ${{ env.CI_IMAGE }} minify
+            ${{ env.CI_IMAGE }} minify libraries -t argsh.min.tmpl -o argsh.min.sh
       - name: Lint minified
         run: |
           docker run --rm \
