@@ -206,6 +206,9 @@ jobs:
       - name: Direnv
         uses: HatsuneMiku3939/direnv-action@v1
       - name: Minify
+        env:
+          GIT_COMMIT_SHA: ${{ github.sha }}
+          GIT_VERSION: ${{ github.ref_name }}
         run: argsh minify
       - name: Lint minified
         env:
