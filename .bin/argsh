@@ -250,7 +250,7 @@ coverage::builtin() {
       CARGO_PROFILE_RELEASE_LTO=false \
       CARGO_PROFILE_RELEASE_PANIC=unwind \
       cargo build --release && \
-      chown -R ${_uid} target/"
+      chown -R ${_uid} target/ /usr/local/cargo/registry/"
 
   rm -rf "${cov_dir}"
   mkdir -p "${cov_dir}"
