@@ -80,17 +80,37 @@ __ARGSH_DAP_FIFO="__FIFO_PATH__"
 __ARGSH_DAP_STEP=0        # 0=run, 1=stepin, 2=next, 3=stepout
 __ARGSH_DAP_DEPTH=0        # saved depth for next/stepout
 __ARGSH_DAP_STOP_ENTRY=__STOP_ON_ENTRY__
-declare -a __ARGSH_DAP_BPS=()  # breakpoints as "file:line" entries
+__ARGSH_DAP_SUBSHELL_PARENT=0  # track parent FIFO lock state
+declare -a __ARGSH_DAP_BPS=()     # breakpoints: "file:line" entries
+declare -A __ARGSH_DAP_BP_COND=() # conditional breakpoints: "file:line" → condition
+declare -a __ARGSH_DAP_WATCH=()   # watch expressions
 
 __argsh_dap_trap() {
-  # Skip traps in subshells (they share the FIFO and would deadlock)
-  (( BASH_SUBSHELL == 0 )) || return 0
-
   local _line="${BASH_LINENO[0]}"
   local _func="${FUNCNAME[1]:-main}"
   local _file="${BASH_SOURCE[1]:-${0}}"
   local _depth=${#FUNCNAME[@]}
   local _should_stop=0
+
+  # Subshell handling: commands inside $(), pipes, and & run in subshells
+  # where the DEBUG trap is inherited. We can't use the FIFO (the parent
+  # may be blocked on it → deadlock), but we CAN still track execution.
+  # We send a lightweight OUTPUT event for subshell breakpoint hits
+  # instead of blocking with a STOPPED event.
+  if (( BASH_SUBSHELL > 0 )); then
+    # Check breakpoints in subshell (non-blocking)
+    local _bp
+    for _bp in "${__ARGSH_DAP_BPS[@]}"; do
+      if [[ "${_bp}" == "${_file}:${_line}" ]]; then
+        # Non-blocking output event (write will succeed or fail silently)
+        printf 'SUBSHELL\t%s\t%s\t%s\t%s\n' \
+          "${_file}" "${_line}" "${_func}" "${BASH_COMMAND}" \
+          > "${__ARGSH_DAP_FIFO}" 2>/dev/null || true
+        break
+      fi
+    done
+    return 0
+  fi
 
   # Stop on entry (first trap hit)
   if (( __ARGSH_DAP_STOP_ENTRY )); then
@@ -105,12 +125,21 @@ __argsh_dap_trap() {
     3) (( _depth < __ARGSH_DAP_DEPTH )) && _should_stop=1 ;;   # stepout
   esac
 
-  # Check breakpoints
+  # Check breakpoints (with conditional support)
   if (( ! _should_stop )); then
-    local _bp
+    local _bp _key
     for _bp in "${__ARGSH_DAP_BPS[@]}"; do
       if [[ "${_bp}" == "${_file}:${_line}" ]]; then
-        _should_stop=1
+        _key="${_file}:${_line}"
+        if [[ -n "${__ARGSH_DAP_BP_COND[${_key}]+x}" ]]; then
+          # Conditional breakpoint: evaluate the condition
+          local _cond="${__ARGSH_DAP_BP_COND[${_key}]}"
+          if eval "${_cond}" 2>/dev/null; then
+            _should_stop=1
+          fi
+        else
+          _should_stop=1
+        fi
         break
       fi
     done
@@ -123,9 +152,17 @@ __argsh_dap_trap() {
       _stack+="${BASH_SOURCE[_i]:-?}\t${BASH_LINENO[_i-1]}\t${FUNCNAME[_i]:-?}\n"
     done
 
+    # Evaluate watch expressions
+    local _watches=""
+    local _wexpr _wval
+    for _wexpr in "${__ARGSH_DAP_WATCH[@]}"; do
+      _wval="$(eval "echo ${_wexpr}" 2>/dev/null || echo "<error>")"
+      _watches+="WATCH\t${_wexpr}\t${_wval}\n"
+    done
+
     # Write stop event to FIFO (DAP server reads this)
-    printf 'STOPPED\t%s\t%s\t%s\n%b' \
-      "${_file}" "${_line}" "${_func}" "${_stack}" \
+    printf 'STOPPED\t%s\t%s\t%s\n%b%b' \
+      "${_file}" "${_line}" "${_func}" "${_stack}" "${_watches}" \
       > "${__ARGSH_DAP_FIFO}"
 
     # Block until DAP server sends a resume command
@@ -154,16 +191,49 @@ __argsh_dap_trap() {
           # Update breakpoints: "breakpoints:file:1,file:5,file:10"
           local _bpdata="${_cmd#breakpoints:}"
           __ARGSH_DAP_BPS=()
-          IFS=',' read -ra __ARGSH_DAP_BPS <<< "${_bpdata}"
-          # Don't break — wait for actual resume command
+          if [[ -n "${_bpdata}" ]]; then
+            IFS=',' read -ra __ARGSH_DAP_BPS <<< "${_bpdata}"
+          fi
+          ;;
+        condition:*)
+          # Set conditional breakpoint: "condition:file:line:expression"
+          local _cdata="${_cmd#condition:}"
+          local _cfile _cline _cexpr
+          IFS=':' read -r _cfile _cline _cexpr <<< "${_cdata}"
+          __ARGSH_DAP_BP_COND["${_cfile}:${_cline}"]="${_cexpr}"
+          ;;
+        watch:*)
+          # Add watch expression: "watch:expression"
+          local _wdata="${_cmd#watch:}"
+          __ARGSH_DAP_WATCH+=("${_wdata}")
+          ;;
+        unwatch:*)
+          # Remove watch expression: "unwatch:expression"
+          local _uwdata="${_cmd#unwatch:}"
+          local _new_watches=()
+          for _w in "${__ARGSH_DAP_WATCH[@]}"; do
+            [[ "${_w}" != "${_uwdata}" ]] && _new_watches+=("${_w}")
+          done
+          __ARGSH_DAP_WATCH=("${_new_watches[@]}")
+          ;;
+        setvar:*)
+          # Modify variable at runtime: "setvar:name=value"
+          local _svdata="${_cmd#setvar:}"
+          eval "${_svdata}" 2>/dev/null || true
+          ;;
+        eval:*)
+          # Evaluate expression and return result: "eval:expression"
+          local _edata="${_cmd#eval:}"
+          local _eresult
+          _eresult="$(eval "${_edata}" 2>&1)" || true
+          printf 'EVAL\t%s\n' "${_eresult}" > "${__ARGSH_DAP_FIFO}"
           ;;
         vars)
-          # Dump local variables
-          declare -p 2>/dev/null | while IFS= read -r _vline; do
-            printf '%s\n' "${_vline}"
-          done
-          printf 'ENDVARS\n'
-          # Write to the FIFO so DAP server can read
+          # Dump variables to FIFO for inspection
+          {
+            declare -p 2>/dev/null
+            printf 'ENDVARS\n'
+          } > "${__ARGSH_DAP_FIFO}"
           ;;
       esac
     done < "${__ARGSH_DAP_FIFO}.ctl"
@@ -447,10 +517,10 @@ impl DapSession {
         let capabilities = serde_json::json!({
             "supportsConfigurationDoneRequest": true,
             "supportsFunctionBreakpoints": true,   // #92: smart breakpoints by command name
-            "supportsConditionalBreakpoints": false,
+            "supportsConditionalBreakpoints": true, // conditional breakpoints
             "supportsEvaluateForHovers": true,      // #97: variable type tooltips
             "supportsStepBack": false,
-            "supportsSetVariable": false,
+            "supportsSetVariable": true,            // modify variables at runtime
             "supportsRestartFrame": false,
             "supportsGotoTargetsRequest": false,
             "supportsStepInTargetsRequest": false,
@@ -574,27 +644,36 @@ impl DapSession {
             .and_then(|p| p.as_str())
             .map(PathBuf::from);
 
-        let lines: Vec<u32> = args.get("breakpoints")
+        let bp_array = args.get("breakpoints")
             .and_then(|b| b.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|bp| bp.get("line").and_then(|l| l.as_u64()).map(|l| l as u32))
-                    .collect()
-            })
+            .cloned()
             .unwrap_or_default();
 
-        let verified: Vec<Value> = lines.iter().map(|&line| {
-            serde_json::json!({
+        let mut verified = Vec::new();
+        let mut lines_set = HashSet::new();
+        let mut conditions: Vec<(PathBuf, u32, String)> = Vec::new();
+
+        for bp in &bp_array {
+            let line = bp.get("line").and_then(|l| l.as_u64()).unwrap_or(0) as u32;
+            let condition = bp.get("condition").and_then(|c| c.as_str()).unwrap_or("");
+
+            lines_set.insert(line);
+            if let Some(ref path) = source_path {
+                if !condition.is_empty() {
+                    conditions.push((path.clone(), line, condition.to_string()));
+                }
+            }
+
+            verified.push(serde_json::json!({
                 "verified": true,
                 "line": line,
-            })
-        }).collect();
+            }));
+        }
 
         if let Some(ref path) = source_path {
-            let set: HashSet<u32> = lines.into_iter().collect();
-            self.breakpoints.insert(path.clone(), set);
+            self.breakpoints.insert(path.clone(), lines_set);
 
-            // If launched, update breakpoints in the running script via ctl FIFO
+            // If launched, update breakpoints + conditions in the running script
             if self.launched.load(Ordering::SeqCst) {
                 if let Some(ref fifo) = self.fifo_path {
                     let ctl_path = format!("{}.ctl", fifo.display());
@@ -604,8 +683,13 @@ impl DapSession {
                         })
                         .collect::<Vec<_>>()
                         .join(",");
-                    // Write breakpoints update — non-blocking, best-effort
                     let _ = std::fs::write(&ctl_path, format!("breakpoints:{}\n", bp_str));
+
+                    // Send conditions
+                    for (file, line, cond) in &conditions {
+                        let _ = std::fs::write(&ctl_path,
+                            format!("condition:{}:{}:{}\n", file.display(), line, cond));
+                    }
                 }
             }
         }
@@ -715,6 +799,23 @@ impl DapSession {
         self.send_response(req, true, Some(serde_json::json!({
             "variables": variables,
         })), None);
+    }
+
+    /// Handle setVariable — modify a variable at runtime via the FIFO protocol.
+    fn handle_set_variable(&self, req: &DapMessage) {
+        let args = req.arguments.as_ref();
+        let name = args.and_then(|a| a.get("name")).and_then(|n| n.as_str()).unwrap_or("");
+        let value = args.and_then(|a| a.get("value")).and_then(|v| v.as_str()).unwrap_or("");
+
+        if !name.is_empty() {
+            // Send setvar command to the bash process via FIFO
+            self.write_ctl(&format!("setvar:{}={}\n", name, value));
+            self.send_response(req, true, Some(serde_json::json!({
+                "value": value,
+            })), None);
+        } else {
+            self.send_response(req, false, None, Some("Missing variable name".into()));
+        }
     }
 
     /// (#92) Handle function breakpoints — resolve subcommand names to line breakpoints.
@@ -994,6 +1095,7 @@ fn main() {
             Some("stackTrace") => session.handle_stack_trace(&msg),
             Some("scopes") => session.handle_scopes(&msg),
             Some("variables") => session.handle_variables(&msg),
+            Some("setVariable") => session.handle_set_variable(&msg),
             Some("evaluate") => session.handle_evaluate(&msg),
             Some("disconnect") => {
                 session.handle_disconnect(&msg);

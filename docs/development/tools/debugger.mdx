@@ -128,12 +128,47 @@ To generate these, use the Debug Console and evaluate `argsh.generateLaunchConfi
 
 No additional dependencies (`bashdb`, etc.) are needed.
 
+### Conditional breakpoints
+
+Right-click a breakpoint in the gutter and select **Edit Breakpoint** to add a condition. The breakpoint only fires when the condition evaluates to true in bash:
+
+```
+# Stop only when $env equals "production"
+[[ "$env" == "production" ]]
+
+# Stop when count exceeds 10
+(( count > 10 ))
+
+# Stop when a file exists
+[[ -f "/tmp/trigger" ]]
+```
+
+The condition is evaluated via bash `eval` at each hit — use any valid bash expression.
+
+### Watch expressions
+
+Add watch expressions via the **Watch** panel in the debug sidebar. Expressions are evaluated at each breakpoint stop and their values are displayed alongside the stop event.
+
+### Modify variables at runtime
+
+In the Variables panel, double-click a variable value to modify it. The new value is applied immediately in the running bash process via `eval`. This is useful for testing different code paths without restarting the script.
+
+### Subshell debugging
+
+Commands inside `$()`, pipes (`|`), `( ... )`, and `{ ...; } &` run in subshells. The debugger handles subshells as follows:
+
+- **Breakpoint detection**: breakpoints are checked inside subshells
+- **Output events**: when a subshell hits a breakpoint, a non-blocking notification is sent (visible in the Debug Console)
+- **No stepping**: step commands don't apply inside subshells — the subshell runs to completion
+- **No blocking**: the debugger never blocks inside a subshell to avoid deadlocking pipes and parent processes
+
+Most debugging happens in the main shell. Subshell breakpoint notifications help track execution flow without stopping.
+
 ## Limitations
 
-- **Subshells**: Commands inside `$(...)`, pipes (`|`), or process substitution run in subshells where the debug trap is inherited but breakpoints are skipped to avoid deadlocks.
 - **`set -e`**: The debug trap always returns 0 to avoid triggering `set -e` exits.
 - **Performance**: The trap fires on every command. When not at a breakpoint and not stepping, the overhead is minimal (in-memory check only).
-- **Conditional breakpoints**: Not yet supported — planned for a future release.
+- **Reverse debugging**: Step-back is not yet supported. See the [design doc](https://github.com/arg-sh/argsh/blob/main/todos/dap-subshell-and-reverse.md) for the planned approach.
 
 ## Extension settings
 
