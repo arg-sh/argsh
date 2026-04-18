@@ -2829,3 +2829,93 @@ source "${PATH_FIXTURES}/fmt.sh"
   assert "${status}" -eq 0
   contains 'building' stdout
 }
+
+# ── :^ inherited modifier ────────────────────────────────
+
+@test ":^ inherited: non-:^ wins over :^ for same field" {
+  local status=0
+  # Parent defines domain, child marks it :^ — parent's should win
+  parent_func() {
+    local domain=""
+    local -a args=(
+      'domain|' 'Domain'
+    )
+    child_func "${@}"
+  }
+  child_func() {
+    local domain="${domain:-default}"
+    local -a args=(
+      'domain|:^' 'Domain'
+      "${args[@]:-}"
+    )
+    :args "Child" "${@}"
+    echo "domain=${domain}"
+  }
+  parent_func --domain prod >"${stdout}" 2>"${stderr}" || status=$?
+  assert "${status}" -eq 0
+  contains 'domain=prod' stdout
+}
+
+@test ":^ inherited: standalone (no parent) uses local default" {
+  local status=0
+  standalone_func() {
+    local domain="${domain:-fallback}"
+    local -a args=(
+      'domain|:^' 'Domain'
+      "${args[@]:-}"
+    )
+    :args "Standalone" "${@}"
+    echo "domain=${domain}"
+  }
+  standalone_func >"${stdout}" 2>"${stderr}" || status=$?
+  assert "${status}" -eq 0
+  contains 'domain=fallback' stdout
+}
+
+@test ":^ inherited: standalone with flag overrides default" {
+  local status=0
+  standalone_func2() {
+    local domain="${domain:-fallback}"
+    local -a args=(
+      'domain|:^' 'Domain'
+      "${args[@]:-}"
+    )
+    :args "Standalone" "${@}"
+    echo "domain=${domain}"
+  }
+  standalone_func2 --domain staging >"${stdout}" 2>"${stderr}" || status=$?
+  assert "${status}" -eq 0
+  contains 'domain=staging' stdout
+}
+
+@test ":^ inherited: all :^ entries — last one wins" {
+  local status=0
+  all_caret() {
+    local domain=""
+    local -a args=(
+      'domain|:^' 'First domain'
+      'domain|:^' 'Second domain'
+    )
+    :args "Test" "${@}"
+    echo "ok"
+  }
+  all_caret --domain test >"${stdout}" 2>"${stderr}" || status=$?
+  assert "${status}" -eq 0
+  contains 'ok' stdout
+}
+
+@test ":^ inherited: trailing empty strings stripped" {
+  local status=0
+  empty_expand() {
+    local port=""
+    local -a args=(
+      'port|p' 'Port number'
+      "${args[@]:-}"
+    )
+    :args "Test" "${@}"
+    echo "port=${port}"
+  }
+  empty_expand --port 8080 >"${stdout}" 2>"${stderr}" || status=$?
+  assert "${status}" -eq 0
+  contains 'port=8080' stdout
+}
