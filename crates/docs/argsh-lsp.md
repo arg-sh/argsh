@@ -6,7 +6,7 @@ Library and three binaries for argsh tooling: language server, CLI linter, and D
 
 ### `argsh-lsp` — Language Server
 
-Full LSP implementation over stdio using `tower-lsp`. Activates on `shellscript` files containing `source argsh` or `#!/usr/bin/env argsh`.
+Full LSP implementation over stdio using `tower-lsp`. Activates on `shellscript` files containing `source argsh`, `#!/usr/bin/env argsh`, or any function that calls `:args`/`:usage`.
 
 Features:
 
@@ -21,7 +21,7 @@ Features:
 | Preview | `preview.rs` | HTML dashboard with command tree, MCP tools, export links |
 | Rename | `rename.rs` | Rename function across definition, usage entries, and references |
 | Symbols | `symbols.rs` | Document outline with namespace nesting |
-| Cross-file | `resolver.rs` | Follows `import` and `source` across files (configurable depth) |
+| Cross-file | `resolver.rs` | Follows `import` across files plus special-case `source argsh` (configurable depth) |
 
 ### `argsh-lint` — CLI Linter
 
@@ -122,7 +122,7 @@ Suppress per-line with `# argsh-ignore=AG004,AG012` or `# argsh disable=AG004`.
 Search order for imports:
 1. Relative to the importing file's directory
 2. Standard library paths (`libraries/`)
-3. Workspace root
+3. Project root (detected by `.git`, `.envrc`, or `.bin/argsh`)
 
 ## Source Layout
 
@@ -149,8 +149,8 @@ src/
 tests/
 ├── integration.rs     LSP protocol tests
 ├── lint_cli.rs        argsh-lint CLI tests
-├── dap_integration.rs DAP protocol tests (9 tests)
-└── dap_e2e.rs         DAP end-to-end tests (22 tests)
+├── dap_integration.rs DAP protocol tests
+└── dap_e2e.rs         DAP end-to-end tests
 ```
 
 ## Dependencies
