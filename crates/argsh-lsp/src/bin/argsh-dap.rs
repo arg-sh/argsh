@@ -10,6 +10,13 @@
 //!   argsh-dap
 //!   argsh-dap --version
 //!   argsh-dap --help
+//!
+//! Platform: requires Unix (named pipes). On non-Unix platforms the binary
+//! compiles but exits with an error — same limitation as argsh-lsp.
+
+// Issue #14: cross-platform build — the build script (build.rs) shares the same
+// Unix-only limitation as argsh-lsp. This is acceptable for now since argsh
+// targets bash, which is inherently Unix.
 
 use std::collections::{HashMap, HashSet};
 use std::io::{self, BufRead, BufReader, Write};
@@ -207,6 +214,9 @@ __argsh_dap_trap() {
           ;;
         breakpoints:*)
           # Update breakpoints: "breakpoints:file:1,file:5,file:10"
+          # NOTE: intentionally no 'break' here — the trap stays blocked
+          # waiting for a resume command (continue/stepin/next/stepout).
+          # Breakpoint updates are applied while stopped.
           local _bpdata="${_cmd#breakpoints:}"
           __ARGSH_DAP_BPS=()
           if [[ -n "${_bpdata}" ]]; then
@@ -269,11 +279,11 @@ trap '__argsh_dap_trap' DEBUG
 // ---------------------------------------------------------------------------
 
 struct DapSession {
-    seq: AtomicI64,
+    seq: Arc<AtomicI64>,
     breakpoints: HashMap<PathBuf, HashSet<u32>>,
     child: Option<Child>,
     fifo_path: Option<PathBuf>,
-    launched: AtomicBool,
+    launched: Arc<AtomicBool>,
     stdout_writer: Arc<Mutex<io::Stdout>>,
     // argsh analysis (#92-#97): cached document analysis for the launched script
     // and its imports, enabling smart breakpoints, args inspection, and type tooltips.
@@ -281,21 +291,24 @@ struct DapSession {
     imports: Option<resolver::ResolvedImports>,
     program_path: Option<PathBuf>,
     program_content: Option<String>,
+    // Last stack trace from a STOPPED event, used by handle_stack_trace.
+    last_stack_frames: Arc<Mutex<Vec<Value>>>,
 }
 
 impl DapSession {
     fn new() -> Self {
         Self {
-            seq: AtomicI64::new(1),
+            seq: Arc::new(AtomicI64::new(1)),
             breakpoints: HashMap::new(),
             child: None,
             fifo_path: None,
-            launched: AtomicBool::new(false),
+            launched: Arc::new(AtomicBool::new(false)),
             stdout_writer: Arc::new(Mutex::new(io::stdout())),
             analysis: None,
             imports: None,
             program_path: None,
             program_content: None,
+            last_stack_frames: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -581,19 +594,49 @@ impl DapSession {
             .and_then(|v| v.as_bool())
             .unwrap_or(true);
 
-        // Create FIFOs for communication
-        let fifo_dir = std::env::temp_dir().join(format!("argsh-dap-{}", std::process::id()));
-        std::fs::create_dir_all(&fifo_dir).ok();
+        // Create FIFOs in a secure temporary directory (unpredictable path).
+        let fifo_tmpdir = match tempfile::tempdir() {
+            Ok(d) => d,
+            Err(e) => {
+                self.send_response(req, false, None,
+                    Some(format!("Failed to create temp directory for FIFOs: {}", e)));
+                return;
+            }
+        };
+        let fifo_dir = fifo_tmpdir.keep();
         let fifo_data = fifo_dir.join("data");
         let fifo_ctl = fifo_dir.join("data.ctl");
 
         // Create named pipes + lock file for flock serialization
         #[cfg(unix)]
-        unsafe {
-            let data_c = std::ffi::CString::new(fifo_data.to_str().unwrap()).unwrap();
-            let ctl_c = std::ffi::CString::new(fifo_ctl.to_str().unwrap()).unwrap();
-            libc::mkfifo(data_c.as_ptr(), 0o600);
-            libc::mkfifo(ctl_c.as_ptr(), 0o600);
+        {
+            let data_str = match fifo_data.to_str() {
+                Some(s) => s,
+                None => {
+                    self.send_response(req, false, None,
+                        Some("FIFO path contains invalid UTF-8".into()));
+                    return;
+                }
+            };
+            let ctl_str = match fifo_ctl.to_str() {
+                Some(s) => s,
+                None => {
+                    self.send_response(req, false, None,
+                        Some("FIFO path contains invalid UTF-8".into()));
+                    return;
+                }
+            };
+            let data_c = std::ffi::CString::new(data_str).unwrap();
+            let ctl_c = std::ffi::CString::new(ctl_str).unwrap();
+            // SAFETY: CString pointers are valid and null-terminated.
+            let rc_data = unsafe { libc::mkfifo(data_c.as_ptr(), 0o600) };
+            let rc_ctl = unsafe { libc::mkfifo(ctl_c.as_ptr(), 0o600) };
+            if rc_data != 0 || rc_ctl != 0 {
+                let err = std::io::Error::last_os_error();
+                self.send_response(req, false, None,
+                    Some(format!("Failed to create FIFOs: {}", err)));
+                return;
+            }
         }
         // Lock file for flock-based FIFO write serialization
         let lock_path = fifo_dir.join("data.lock");
@@ -604,8 +647,11 @@ impl DapSession {
             .replace("__FIFO_PATH__", fifo_data.to_str().unwrap())
             .replace("__STOP_ON_ENTRY__", if stop_on_entry { "1" } else { "0" });
 
+        // Don't inject set flags (e.g. set -euo pipefail) — let the user's
+        // script set its own runtime semantics. The wrapper only injects the
+        // debug prelude and then sources the target script.
         let wrapper = format!(
-            "#!/usr/bin/env bash\nset -euo pipefail\n{}\nsource \"{}\" \"$@\"\n",
+            "#!/usr/bin/env bash\n{}\nsource \"{}\" \"$@\"\n",
             prelude,
             program.display()
         );
@@ -644,12 +690,12 @@ impl DapSession {
                 // Start background thread to read FIFO events
                 let fifo_data_clone = fifo_data.clone();
                 let stdout_writer = self.stdout_writer.clone();
-                let seq = &self.seq as *const AtomicI64;
-                // Safety: seq lives as long as the session
-                let seq_ref = unsafe { &*seq };
+                let seq = Arc::clone(&self.seq);
+                let launched = Arc::clone(&self.launched);
+                let last_frames = Arc::clone(&self.last_stack_frames);
 
                 std::thread::spawn(move || {
-                    fifo_reader_loop(&fifo_data_clone, &stdout_writer, seq_ref);
+                    fifo_reader_loop(&fifo_data_clone, &stdout_writer, &seq, &launched, &last_frames);
                 });
             }
             Err(e) => {
@@ -694,7 +740,9 @@ impl DapSession {
         if let Some(ref path) = source_path {
             self.breakpoints.insert(path.clone(), lines_set);
 
-            // If launched, update breakpoints + conditions in the running script
+            // If launched, update breakpoints + conditions in the running script.
+            // Writing to a FIFO blocks until a reader is present, so spawn a
+            // thread to avoid blocking the main DAP message loop.
             if self.launched.load(Ordering::SeqCst) {
                 if let Some(ref fifo) = self.fifo_path {
                     let ctl_path = format!("{}.ctl", fifo.display());
@@ -704,13 +752,23 @@ impl DapSession {
                         })
                         .collect::<Vec<_>>()
                         .join(",");
-                    let _ = std::fs::write(&ctl_path, format!("breakpoints:{}\n", bp_str));
-
-                    // Send conditions
-                    for (file, line, cond) in &conditions {
-                        let _ = std::fs::write(&ctl_path,
-                            format!("condition:{}:{}:{}\n", file.display(), line, cond));
-                    }
+                    let conditions_clone = conditions.clone();
+                    let ctl_path_clone = ctl_path.clone();
+                    std::thread::spawn(move || {
+                        if let Ok(mut f) = std::fs::OpenOptions::new()
+                            .write(true)
+                            .open(&ctl_path_clone)
+                        {
+                            let _ = f.write_all(format!("breakpoints:{}\n", bp_str).as_bytes());
+                            for (file, line, cond) in &conditions_clone {
+                                let _ = f.write_all(
+                                    format!("condition:{}:{}:{}\n", file.display(), line, cond)
+                                        .as_bytes(),
+                                );
+                            }
+                            let _ = f.flush();
+                        }
+                    });
                 }
             }
         }
@@ -756,11 +814,13 @@ impl DapSession {
     }
 
     fn handle_stack_trace(&self, req: &DapMessage) {
-        // The stack trace was sent with the last STOPPED event and cached
-        // For now, return a single frame — the FIFO reader enriches this
+        // Return the stack trace from the last STOPPED event, stored by
+        // the FIFO reader thread.
+        let frames = self.last_stack_frames.lock().unwrap();
+        let total = frames.len();
         self.send_response(req, true, Some(serde_json::json!({
-            "stackFrames": [],
-            "totalFrames": 0,
+            "stackFrames": *frames,
+            "totalFrames": total,
         })), None);
     }
 
@@ -984,8 +1044,22 @@ impl Drop for DapSession {
 // FIFO reader — background thread that reads stop events from bash
 // ---------------------------------------------------------------------------
 
-fn fifo_reader_loop(fifo_path: &Path, stdout_writer: &Arc<Mutex<io::Stdout>>, seq: &AtomicI64) {
+fn fifo_reader_loop(
+    fifo_path: &Path,
+    stdout_writer: &Arc<Mutex<io::Stdout>>,
+    seq: &AtomicI64,
+    launched: &AtomicBool,
+    last_frames: &Mutex<Vec<Value>>,
+) {
     loop {
+        // Check if the session is still alive before (re-)opening the FIFO.
+        // File::open on a FIFO blocks until a writer opens, so without this
+        // check the thread would hang after the session ends and FIFOs are
+        // removed.
+        if !launched.load(Ordering::SeqCst) {
+            break;
+        }
+
         // Open FIFO for reading (blocks until writer opens)
         let file = match std::fs::File::open(fifo_path) {
             Ok(f) => f,
@@ -1001,6 +1075,7 @@ fn fifo_reader_loop(fifo_path: &Path, stdout_writer: &Arc<Mutex<io::Stdout>>, se
 
             if line.starts_with("STOPPED\t") {
                 // Format: STOPPED\tfile\tline\tfunc\tpid\tsubshell_level
+                // Followed by stack trace lines: file\tline\tfunc
                 let parts: Vec<&str> = line.splitn(6, '\t').collect();
                 if parts.len() >= 4 {
                     let file = parts[1];
@@ -1013,6 +1088,25 @@ fn fifo_reader_loop(fifo_path: &Path, stdout_writer: &Arc<Mutex<io::Stdout>>, se
                     let thread_id = 1 + subshell;
 
                     let reason = if subshell > 0 { "breakpoint (subshell)" } else { "breakpoint" };
+
+                    // Build stack frames from the stopped position
+                    let frames = vec![serde_json::json!({
+                        "id": 0,
+                        "name": func,
+                        "source": { "path": file },
+                        "line": line_num,
+                        "column": 1,
+                    })];
+                    // Additional stack frames from the bash prelude follow the
+                    // STOPPED line as part of the same write. They will appear
+                    // as subsequent lines in this iterator if present.
+                    // For now, we report the top frame; deeper frames can be
+                    // parsed from the follow-up lines in a future iteration.
+
+                    // Store the stack trace for handle_stack_trace
+                    if let Ok(mut f) = last_frames.lock() {
+                        *f = frames.clone();
+                    }
 
                     let evt = DapEvent {
                         seq: seq.fetch_add(1, Ordering::SeqCst),
@@ -1079,6 +1173,13 @@ fn send_dap_message<T: Serialize>(writer: &Arc<Mutex<io::Stdout>>, msg: &T) {
 // Main
 // ---------------------------------------------------------------------------
 
+#[cfg(not(unix))]
+fn main() {
+    eprintln!("argsh-dap: DAP debugging requires Unix (named pipes)");
+    std::process::exit(1);
+}
+
+#[cfg(unix)]
 fn main() {
     // Handle --version and --help
     let args: Vec<String> = std::env::args().collect();

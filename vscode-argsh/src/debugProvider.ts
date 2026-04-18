@@ -12,7 +12,13 @@ function findDapBinary(context: vscode.ExtensionContext): string {
   const config = vscode.workspace.getConfiguration('argsh');
   const customPath = config.get<string>('dap.path', '');
   if (customPath) {
-    return customPath;
+    if (!fs.existsSync(customPath)) {
+      vscode.window.showWarningMessage(
+        `argsh.dap.path "${customPath}" does not exist — falling back to bundled/PATH`
+      );
+    } else {
+      return customPath;
+    }
   }
 
   const bundled = path.join(context.extensionPath, 'bin', 'argsh-dap');

@@ -274,7 +274,10 @@ fn scopes_includes_argsh_args_scope() {
     let resp = read_dap_message(&mut reader);
     assert_eq!(resp["success"], true, "launch failed: {:?}", resp);
 
-    // Request scopes — should include "argsh Args" because analysis found :args
+    // Request scopes — should include "argsh Args" because analysis found :args.
+    // frameId:0 is used without a prior stackTrace request because this test
+    // only verifies that scopes are returned correctly based on static analysis,
+    // not runtime state.
     send_dap_message(&mut stdin, &json!({
         "seq": 3,
         "type": "request",
