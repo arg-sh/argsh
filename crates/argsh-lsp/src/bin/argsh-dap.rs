@@ -689,35 +689,44 @@ impl DapSession {
         // Don't inject set flags (e.g. set -euo pipefail) — let the user's
         // script set its own runtime semantics. The wrapper only injects the
         // debug prelude and then sources the target script.
+        // Detect if the script needs the argsh runtime by checking its shebang.
+        let needs_argsh = std::fs::read_to_string(&program)
+            .ok()
+            .and_then(|s| s.lines().next().map(String::from))
+            .map(|s| s.contains("argsh"))
+            .unwrap_or(false);
+
+        // Build the wrapper script. If the target uses argsh, source the argsh
+        // runtime first so :args, :usage, import, etc. are available. We try
+        // `argsh.min.sh` (bundled minified runtime) and fall back to `argsh`
+        // on PATH. The debug prelude is injected before the user's script.
+        let argsh_loader = if needs_argsh {
+            // Source argsh runtime: try argsh.min.sh next to the script,
+            // then argsh on PATH, then the system argsh.min.sh.
+            format!(
+                concat!(
+                    "# Load argsh runtime for scripts with #!/usr/bin/env argsh\n",
+                    "_argsh_rt=\"$(dirname \"{script}\")/../argsh.min.sh\"\n",
+                    "[[ -f \"$_argsh_rt\" ]] || _argsh_rt=\"$(command -v argsh 2>/dev/null)\"\n",
+                    "[[ -n \"$_argsh_rt\" ]] || {{ echo \"argsh-dap: argsh runtime not found\" >&2; exit 1; }}\n",
+                    "ARGSH_SOURCE=\"{script}\" source \"$_argsh_rt\"\n",
+                ),
+                script = program.display()
+            )
+        } else {
+            String::new()
+        };
+
         let wrapper = format!(
-            "#!/usr/bin/env bash\n{}\nsource \"{}\" \"$@\"\n",
-            prelude,
-            program.display()
+            "#!/usr/bin/env bash\n{argsh}{prelude}\nsource \"{script}\" \"$@\"\n",
+            argsh = argsh_loader,
+            prelude = prelude,
+            script = program.display()
         );
 
         let wrapper_path = fifo_dir.join("wrapper.sh");
         std::fs::write(&wrapper_path, &wrapper).unwrap();
-
-        // Issue #6: Detect the script's shebang to use the correct interpreter.
-        // If the script uses `#!/usr/bin/env argsh` or `#!/.../argsh`, prefer
-        // `argsh` so the runtime (builtins, etc.) is available. Fall back to
-        // `bash` if argsh is not on PATH (e.g. CI environments).
-        let interpreter = {
-            let shebang_line = std::fs::read_to_string(&program)
-                .ok()
-                .and_then(|s| s.lines().next().map(String::from))
-                .unwrap_or_default();
-            if shebang_line.contains("argsh") {
-                // Check if argsh is actually available
-                if Command::new("argsh").arg("--version").output().is_ok() {
-                    "argsh".to_string()
-                } else {
-                    "bash".to_string() // Fall back to bash
-                }
-            } else {
-                "bash".to_string()
-            }
-        };
+        let interpreter = "bash".to_string();
 
         // Spawn with the detected interpreter
         let mut cmd = Command::new(&interpreter);
