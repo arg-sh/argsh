@@ -208,7 +208,7 @@ fn hover_modifier(
             Some(("`:#` Hidden field", "The field is hidden from help text output but still functional."))
         }
         (Some(':'), '^') | (_, '^') if is_after_colon_in_spec(line, col) => {
-            Some(("`:^` Inherited field", "This field yields to non-`:^` duplicates with the same name. Used for flags that a parent function may also define — the parent's version takes priority when both exist."))
+            Some(("`:^` Inherited field", "This field yields to non-`:^` duplicates with the same name. When combined with `\"${args[@]:-}\"` expansion, the last non-`:^` entry wins."))
         }
         _ => None,
     };

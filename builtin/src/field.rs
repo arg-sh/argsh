@@ -90,7 +90,7 @@ pub fn parse_field(field: &str) -> Result<FieldDef, String> {
     let raw = field.to_string();
     let name = field_name(field, true);
     let display_name = field_name(field, false);
-    let is_hidden = field.starts_with('#');
+    let mut is_hidden = field.starts_with('#');
     let is_positional = !field.contains('|') && field != "-";
 
     // Parse short name
@@ -155,7 +155,8 @@ pub fn parse_field(field: &str) -> Result<FieldDef, String> {
                     chars.next();
                 }
                 '#' => {
-                    // hidden modifier (handled by prefix, but allow here too)
+                    // hidden modifier (also handled by # prefix)
+                    is_hidden = true;
                     chars.next();
                 }
                 ':' => {
@@ -213,9 +214,10 @@ pub fn parse_field(field: &str) -> Result<FieldDef, String> {
 ///
 /// Also strips trailing empty strings (from `"${args[@]:-}"` expansion).
 pub fn dedup_inherited(args: &[String]) -> Vec<String> {
-    // Strip trailing empty strings
+    // Strip trailing empty strings only if they make the count odd
+    // (from "${args[@]:-}" expansion when no parent args exist)
     let mut len = args.len();
-    while len > 0 && args[len - 1].is_empty() {
+    while len > 0 && len % 2 != 0 && args[len - 1].is_empty() {
         len -= 1;
     }
     let args = &args[..len];
@@ -236,7 +238,7 @@ pub fn dedup_inherited(args: &[String]) -> Vec<String> {
         if name.is_empty() {
             continue;
         }
-        let inherited = args[i].contains(":^") || args[i].contains("^");
+        let inherited = parse_field(&args[i]).map(|f| f.is_inherited).unwrap_or(false);
         field_map.entry(name).or_default().push((i, inherited));
     }
 

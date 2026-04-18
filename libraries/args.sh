@@ -398,8 +398,9 @@ if ! (( ARGSH_BUILTIN )); then
 # Modifies the `args` array in the caller's scope.
 # @internal
 :args::_dedup_inherited() {
-  # Strip trailing empty strings (from "${args[@]:-}" expansion)
-  while (( ${#args[@]} )) && [[ -z "${args[-1]}" ]]; do
+  # Strip trailing empty strings only if they make the count odd
+  # (from "${args[@]:-}" expansion when no parent args exist)
+  while (( ${#args[@]} % 2 )) && (( ${#args[@]} )) && [[ -z "${args[-1]}" ]]; do
     unset 'args[-1]'
   done
   (( ${#args[@]} > 2 )) || return 0
@@ -894,6 +895,11 @@ args::field_name() {
     # hidden modifier (via :# syntax, in addition to # prefix)
     if [[ ${mods:0:1} == "#" ]]; then
       attrs[7]=1
+      mods="${mods:1}"
+      continue
+    fi
+    # : separator between chained modifiers (e.g. :^:~int:!)
+    if [[ ${mods:0:1} == ":" ]]; then
       mods="${mods:1}"
       continue
     fi
