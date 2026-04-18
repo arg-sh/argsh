@@ -733,9 +733,12 @@ impl DapSession {
         cmd.arg(wrapper_path.to_str().unwrap());
         cmd.args(&script_args);
         cmd.current_dir(&cwd);
-        cmd.stdin(Stdio::null());
-        cmd.stdout(Stdio::piped());
-        cmd.stderr(Stdio::piped());
+        // Inherit stdio so the debugged script can read stdin and its
+        // stdout/stderr are visible in the debug console. Using Stdio::piped()
+        // would block the script if it writes more than the pipe buffer.
+        cmd.stdin(Stdio::inherit());
+        cmd.stdout(Stdio::inherit());
+        cmd.stderr(Stdio::inherit());
 
         // Forward env vars from launch config
         if let Some(env) = args.get("env").and_then(|v| v.as_object()) {
