@@ -1,7 +1,7 @@
 {
   "name": "argsh",
   "displayName": "argsh",
-  "description": "Language support for argsh — structured Bash scripting framework",
+  "description": "Language support, linting, and debugging for argsh — structured Bash scripting framework",
   "version": "0.2.0",
   "publisher": "arg-sh",
   "repository": {
@@ -12,7 +12,7 @@
     "vscode": "^1.82.0"
   },
   "icon": "icon.png",
-  "categories": ["Programming Languages", "Linters", "Snippets"],
+  "categories": ["Programming Languages", "Linters", "Debuggers", "Snippets"],
   "activationEvents": ["onLanguage:shellscript", "onDebugResolve:argsh"],
   "main": "./out/extension.js",
   "contributes": {
