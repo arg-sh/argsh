@@ -253,7 +253,13 @@ main \"${@}\"
 
 #[test]
 fn e2e_args_inspector_scope() {
-    // Script with :args — the argsh Args scope should show field definitions
+    // Script that calls :args — the argsh Args scope should appear.
+    // Note: the test script uses a function with :args call syntax that
+    // argsh_syntax recognizes, even though the actual :args function
+    // isn't available at runtime (no argsh runtime loaded).
+    // Use bash shebang but include :args call syntax so argsh_syntax
+    // detects calls_args=true. The script won't actually run :args
+    // (no argsh runtime), but the static analysis populates the scope.
     let (_d, s) = write_script("inspector.sh", "\
 #!/usr/bin/env bash
 main() {
@@ -262,7 +268,7 @@ main() {
     'verbose|v:+' 'Enable verbose'
     'name'        'Name to greet'
   )
-  echo \"hello\"
+  :args \"Greeting tool\" \"${@}\" 2>/dev/null || true
 }
 main
 ");
@@ -270,7 +276,7 @@ main
     launch(&mut si, &dap, &s, true, &[]);
     assert!(dap.wait_stopped().is_some(), "no stop");
 
-    // Request scopes — should have argsh Args (variablesReference=2)
+    // Request scopes — should have argsh Args since :args is called
     send(&mut si, &json!({"seq":30,"type":"request","command":"scopes","arguments":{"frameId":0}}));
     let r = dap.recv().expect("scopes resp");
     let scopes = r["body"]["scopes"].as_array().unwrap();
@@ -282,8 +288,25 @@ main
     let r = dap.recv().expect("variables resp");
     assert!(r["success"].as_bool().unwrap());
     let vars = r["body"]["variables"].as_array().unwrap();
-    // Should have entries from the :args definition
     assert!(!vars.is_empty(), "argsh Args scope is empty — expected field definitions");
+
+    cont(&mut si, &dap);
+    quit(&mut si, &dap, &mut ch);
+}
+
+#[test]
+fn e2e_plain_bash_no_args_scope() {
+    // Plain bash script without :args — argsh Args scope should NOT appear
+    let (_d, s) = write_script("plain.sh", "#!/usr/bin/env bash\necho hello\n");
+    let (mut si, dap, mut ch) = init();
+    launch(&mut si, &dap, &s, true, &[]);
+    assert!(dap.wait_stopped().is_some(), "no stop");
+
+    send(&mut si, &json!({"seq":30,"type":"request","command":"scopes","arguments":{"frameId":0}}));
+    let r = dap.recv().expect("scopes resp");
+    let scopes = r["body"]["scopes"].as_array().unwrap();
+    let has_args = scopes.iter().any(|s| s["name"] == "argsh Args");
+    assert!(!has_args, "argsh Args scope should not appear for plain bash: {:?}", scopes);
 
     cont(&mut si, &dap);
     quit(&mut si, &dap, &mut ch);

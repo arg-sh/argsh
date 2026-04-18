@@ -702,11 +702,6 @@ impl DapSession {
             })
             .collect::<Vec<_>>()
             .join(" ");
-        let bp_init = if initial_bps.is_empty() {
-            String::new()
-        } else {
-            format!("\n__ARGSH_DAP_BPS=({})\n", initial_bps)
-        };
 
         // Build the wrapper script with the debug prelude
         let prelude = DEBUG_PRELUDE
@@ -811,6 +806,10 @@ impl DapSession {
                 self.send_response(req, true, None, None);
             }
             Err(e) => {
+                // Reset state — FIFO reader was already started but there's
+                // no bash process to communicate with.
+                self.launched.store(false, Ordering::SeqCst);
+                self.fifo_path = None;
                 self.send_response(req, false, None, Some(format!("Failed to launch: {}", e)));
             }
         }
@@ -968,8 +967,11 @@ impl DapSession {
                 "expensive": false,
             }),
         ];
-        // Add Args Inspector scope if we have analysis data
-        if self.analysis.is_some() {
+        // Add Args Inspector scope only if the script uses :args
+        let has_args = self.analysis.as_ref()
+            .map(|a| a.functions.iter().any(|f| f.calls_args))
+            .unwrap_or(false);
+        if has_args {
             scopes.push(serde_json::json!({
                 "name": "argsh Args",
                 "variablesReference": 2,
@@ -1208,6 +1210,11 @@ impl DapSession {
 
     /// Write a command to the control FIFO. If pid is Some, writes to the
     /// per-PID control FIFO (for subshells); otherwise the main .ctl FIFO.
+    ///
+    /// Note: the open() call here is blocking (standard FIFO semantics). This is
+    /// correct for the stop/resume protocol: when we write a resume command, the
+    /// bash process is always blocked on `read` from the same FIFO, so the open()
+    /// succeeds immediately. Non-blocking O_NONBLOCK is not needed.
     fn write_ctl_for(&self, cmd: &str, pid: Option<u64>) {
         if let Some(ref fifo) = self.fifo_path {
             let ctl_path = match pid {
