@@ -10,30 +10,29 @@ permissions:
 
 jobs:
   build-lsp:
-    name: Build argsh-lsp (${{ matrix.target }})
+    name: Build argsh-lsp/dap (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            artifact: argsh-lsp-linux-x64
+            platform: linux-x64
           - os: ubuntu-latest
             target: aarch64-unknown-linux-gnu
-            artifact: argsh-lsp-linux-arm64
+            platform: linux-arm64
           - os: macos-latest
             target: x86_64-apple-darwin
-            artifact: argsh-lsp-darwin-x64
+            platform: darwin-x64
           - os: macos-latest
             target: aarch64-apple-darwin
-            artifact: argsh-lsp-darwin-arm64
+            platform: darwin-arm64
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
 
-      # Cross-compilation for aarch64-linux
       - name: Install cross-compilation tools
         if: matrix.target == 'aarch64-unknown-linux-gnu'
         run: |
@@ -42,19 +41,25 @@ jobs:
           echo '[target.aarch64-unknown-linux-gnu]' >> ~/.cargo/config.toml
           echo 'linker = "aarch64-linux-gnu-gcc"' >> ~/.cargo/config.toml
 
-      - name: Build
-        run: cargo build --release --manifest-path crates/argsh-lsp/Cargo.toml --target ${{ matrix.target }}
+      - name: Build all binaries
+        run: cargo build --release --manifest-path crates/argsh-lsp/Cargo.toml --bins --target ${{ matrix.target }}
 
       - name: Package
         run: |
           mkdir -p dist
-          cp crates/argsh-lsp/target/${{ matrix.target }}/release/argsh-lsp dist/${{ matrix.artifact }}
-          chmod +x dist/${{ matrix.artifact }}
+          cp crates/argsh-lsp/target/${{ matrix.target }}/release/argsh-lsp  dist/argsh-lsp-${{ matrix.platform }}
+          cp crates/argsh-lsp/target/${{ matrix.target }}/release/argsh-dap  dist/argsh-dap-${{ matrix.platform }}
+          chmod +x dist/*
 
       - uses: actions/upload-artifact@v7
         with:
-          name: ${{ matrix.artifact }}
-          path: dist/${{ matrix.artifact }}
+          name: argsh-lsp-${{ matrix.platform }}
+          path: dist/argsh-lsp-${{ matrix.platform }}
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: argsh-dap-${{ matrix.platform }}
+          path: dist/argsh-dap-${{ matrix.platform }}
 
   package-extension:
     name: Package VSCode extension
@@ -64,13 +69,9 @@ jobs:
       matrix:
         include:
           - platform: linux-x64
-            lsp-artifact: argsh-lsp-linux-x64
           - platform: linux-arm64
-            lsp-artifact: argsh-lsp-linux-arm64
           - platform: darwin-x64
-            lsp-artifact: argsh-lsp-darwin-x64
           - platform: darwin-arm64
-            lsp-artifact: argsh-lsp-darwin-arm64
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -80,14 +81,20 @@ jobs:
       - name: Download LSP binary
         uses: actions/download-artifact@v8
         with:
-          name: ${{ matrix.lsp-artifact }}
+          name: argsh-lsp-${{ matrix.platform }}
           path: vscode-argsh/bin/
 
-      - name: Make binary executable
-        run: chmod +x vscode-argsh/bin/*
+      - name: Download DAP binary
+        uses: actions/download-artifact@v8
+        with:
+          name: argsh-dap-${{ matrix.platform }}
+          path: vscode-argsh/bin/
 
-      - name: Rename binary
-        run: mv vscode-argsh/bin/${{ matrix.lsp-artifact }} vscode-argsh/bin/argsh-lsp
+      - name: Prepare binaries
+        run: |
+          chmod +x vscode-argsh/bin/*
+          mv vscode-argsh/bin/argsh-lsp-${{ matrix.platform }} vscode-argsh/bin/argsh-lsp
+          mv vscode-argsh/bin/argsh-dap-${{ matrix.platform }} vscode-argsh/bin/argsh-dap
 
       - name: Install dependencies
         run: cd vscode-argsh && npm install
@@ -120,7 +127,6 @@ jobs:
       - name: List packages
         run: ls -la *.vsix
 
-      # Publish to VS Code Marketplace
       - name: Publish to Marketplace
         if: env.VSCE_PAT != ''
         env:
@@ -131,7 +137,6 @@ jobs:
             vsce publish --packagePath "$vsix" --pat "$VSCE_PAT"
           done
 
-      # Publish to Open VSX
       - name: Publish to Open VSX
         if: env.OVSX_PAT != ''
         env:
@@ -142,7 +147,6 @@ jobs:
             ovsx publish "$vsix" -p "$OVSX_PAT"
           done
 
-      # Attach to GitHub release
       - name: Upload to GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
