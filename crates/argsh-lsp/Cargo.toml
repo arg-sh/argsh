@@ -19,6 +19,13 @@ path = "src/main.rs"
 name = "argsh-lint"
 path = "src/bin/argsh-lint.rs"
 
+# Debug Adapter Protocol (DAP) server for step-through debugging of argsh
+# scripts. Uses bash's DEBUG trap for breakpoints and stepping — no bashdb
+# dependency required.
+[[bin]]
+name = "argsh-dap"
+path = "src/bin/argsh-dap.rs"
+
 [dependencies]
 argsh-syntax = { path = "../argsh-syntax" }
 tower-lsp = "0.20"
@@ -27,6 +34,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 dashmap = "6"
 regex = "1"
+libc = "0.2"
 
 [dev-dependencies]
 tempfile = "3"

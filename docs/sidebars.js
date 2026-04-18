@@ -629,6 +629,11 @@ module.exports = {
           id: "development/tools/lsp",
           label: "Language Server & IDE",
         },
+        {
+          type: "doc",
+          id: "development/tools/debugger",
+          label: "Debugger",
+        },
       ],
     },
   ],

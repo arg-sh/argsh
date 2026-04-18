@@ -7,6 +7,10 @@ import {
   ServerOptions,
   TransportKind,
 } from 'vscode-languageclient/node';
+import {
+  ArgshDebugAdapterDescriptorFactory,
+  ArgshDebugConfigurationProvider,
+} from './debugProvider';
 
 let client: LanguageClient | undefined;
 
@@ -424,6 +428,21 @@ export function activate(context: vscode.ExtensionContext) {
     }
   });
   context.subscriptions.push(exportJsonCmd);
+
+  // --- Debug Adapter ---
+
+  context.subscriptions.push(
+    vscode.debug.registerDebugAdapterDescriptorFactory(
+      'argsh',
+      new ArgshDebugAdapterDescriptorFactory(context)
+    )
+  );
+  context.subscriptions.push(
+    vscode.debug.registerDebugConfigurationProvider(
+      'argsh',
+      new ArgshDebugConfigurationProvider()
+    )
+  );
 }
 
 export function deactivate(): Thenable<void> | undefined {
