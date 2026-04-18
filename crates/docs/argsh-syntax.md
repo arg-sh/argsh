@@ -13,8 +13,8 @@ The core module. `analyze(content: &str) -> DocumentAnalysis` parses a bash scri
 - **Functions** — name, line range, whether it calls `:args` or `:usage`
 - **Args entries** — field specs (`'name|n:!'`), descriptions, parsed field definitions
 - **Usage entries** — command names, aliases, explicit function mappings (`:-func`), annotations (`@readonly`)
-- **Imports** — `import` and `source` statements with module names
-- **Shebangs** — detects `#!/usr/bin/env argsh` and `source argsh`
+- **Imports** — `import` statements with module names
+- **Argsh detection** — detects `#!/usr/bin/env argsh` shebang and `source argsh` markers
 
 ```rust
 use argsh_syntax::document::analyze;

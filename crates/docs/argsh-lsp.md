@@ -117,7 +117,7 @@ Suppress per-line with `# argsh-ignore=AG004,AG012` or `# argsh disable=AG004`.
 
 ## Resolver
 
-`resolver.rs` follows `import` and `source` statements across files to build a merged `DocumentAnalysis`. Resolution depth is configurable (0+, default 2).
+`resolver.rs` follows `import` statements across files to build a merged `DocumentAnalysis`, and handles the special case `source argsh` by loading `main.sh`/`args.sh`. Resolution depth is configurable (0+, default 2).
 
 Search order for imports:
 1. Relative to the importing file's directory
@@ -158,7 +158,7 @@ tests/
 - `tower-lsp` — LSP server framework
 - `tokio` — async runtime
 - `serde` / `serde_json` — DAP message serialization
-- `argsh-syntax` — parsing library (workspace dependency)
+- `argsh-syntax` — parsing library (path dependency)
 - `dashmap` — concurrent document cache
 - `regex` — pattern matching
 - `tempfile` — temporary file handling

@@ -62,12 +62,15 @@ cd crates/argsh-lsp && cargo build --release
 ## Testing
 
 ```bash
-# All tests (syntax + LSP + lint CLI + DAP integration + DAP E2E)
-cargo test --release
+# argsh-syntax unit tests
+cd crates/argsh-syntax && cargo test --release
 
-# Individual test suites
-cargo test --release --test integration    # LSP protocol tests
-cargo test --release --test lint_cli       # argsh-lint CLI tests
-cargo test --release --test dap_integration # DAP protocol tests
-cargo test --release --test dap_e2e        # DAP end-to-end tests
+# argsh-lsp tests (LSP + lint CLI + DAP integration + DAP E2E)
+cd crates/argsh-lsp && cargo test --release
+
+# Individual argsh-lsp test suites
+cd crates/argsh-lsp && cargo test --release --test integration     # LSP protocol tests
+cd crates/argsh-lsp && cargo test --release --test lint_cli        # argsh-lint CLI tests
+cd crates/argsh-lsp && cargo test --release --test dap_integration # DAP protocol tests
+cd crates/argsh-lsp && cargo test --release --test dap_e2e         # DAP end-to-end tests
 ```
