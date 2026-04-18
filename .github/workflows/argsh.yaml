@@ -64,13 +64,13 @@ jobs:
           cache-to: type=gha,mode=max,scope=build-${{ matrix.arch }}
       - name: Validate and make executables
         run: |
-          for f in out/minifier out/shdoc out/libargsh.so out/argsh-lsp out/argsh-lint; do
+          for f in out/minifier out/shdoc out/libargsh.so out/argsh-lsp out/argsh-lint out/argsh-dap; do
             if [[ ! -f "${f}" ]]; then
               echo "Missing expected artifact: ${f}" >&2
               exit 1
             fi
           done
-          chmod +x out/minifier out/shdoc out/argsh-lsp out/argsh-lint
+          chmod +x out/minifier out/shdoc out/argsh-lsp out/argsh-lint out/argsh-dap
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
@@ -449,6 +449,7 @@ jobs:
           mkdir -p dist
           cp crates/argsh-lsp/target/${{ matrix.target }}/release/argsh-lsp  dist/argsh-lsp-${{ matrix.platform }}
           cp crates/argsh-lsp/target/${{ matrix.target }}/release/argsh-lint dist/argsh-lint-${{ matrix.platform }}
+          cp crates/argsh-lsp/target/${{ matrix.target }}/release/argsh-dap  dist/argsh-dap-${{ matrix.platform }}
           chmod +x dist/*
 
       - uses: actions/upload-artifact@v7
@@ -460,6 +461,11 @@ jobs:
         with:
           name: argsh-lint-${{ matrix.platform }}
           path: dist/argsh-lint-${{ matrix.platform }}
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: argsh-dap-${{ matrix.platform }}
+          path: dist/argsh-dap-${{ matrix.platform }}
 
   package-vsix:
     name: Package VSCode extension (${{ matrix.platform }})
@@ -481,10 +487,17 @@ jobs:
           name: argsh-lsp-${{ matrix.platform }}
           path: vscode-argsh/bin/
 
-      - name: Prepare binary
+      - name: Download DAP binary
+        uses: actions/download-artifact@v8
+        with:
+          name: argsh-dap-${{ matrix.platform }}
+          path: vscode-argsh/bin/
+
+      - name: Prepare binaries
         run: |
           chmod +x vscode-argsh/bin/*
           mv vscode-argsh/bin/argsh-lsp-${{ matrix.platform }} vscode-argsh/bin/argsh-lsp
+          mv vscode-argsh/bin/argsh-dap-${{ matrix.platform }} vscode-argsh/bin/argsh-dap
 
       - name: Install and compile
         run: cd vscode-argsh && npm install && npm run compile
@@ -538,6 +551,12 @@ jobs:
           pattern: argsh-lint-*
           path: artifacts/lsp
           merge-multiple: true
+      - name: Download all argsh-dap binaries
+        uses: actions/download-artifact@v8
+        with:
+          pattern: argsh-dap-*
+          path: artifacts/lsp
+          merge-multiple: true
       - name: Download all VSIX packages
         uses: actions/download-artifact@v8
         with:
@@ -562,7 +581,8 @@ jobs:
           for p in linux-x64 linux-arm64 darwin-x64 darwin-arm64; do
             cp "artifacts/lsp/argsh-lsp-${p}"  "release/argsh-lsp-${p}"
             cp "artifacts/lsp/argsh-lint-${p}" "release/argsh-lint-${p}"
-            chmod +x "release/argsh-lsp-${p}" "release/argsh-lint-${p}"
+            cp "artifacts/lsp/argsh-dap-${p}"  "release/argsh-dap-${p}"
+            chmod +x "release/argsh-lsp-${p}" "release/argsh-lint-${p}" "release/argsh-dap-${p}"
           done
 
           cp artifacts/vsix/*.vsix release/

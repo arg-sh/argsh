@@ -54,6 +54,7 @@ COPY --from=shdoc-build /build/target/release/shdoc /shdoc
 COPY --from=builtin-build /build/target/release/libargsh.so /libargsh.so
 COPY --from=lsp-build /build/crates/argsh-lsp/target/release/argsh-lsp /argsh-lsp
 COPY --from=lsp-build /build/crates/argsh-lsp/target/release/argsh-lint /argsh-lint
+COPY --from=lsp-build /build/crates/argsh-lsp/target/release/argsh-dap /argsh-dap
 
 # ── Final image ──────────────────────────────────────────────────────────
 
@@ -108,6 +109,7 @@ COPY --from=shdoc-build /build/target/release/shdoc /usr/local/bin/shdoc
 COPY --from=builtin-build /build/target/release/libargsh.so /usr/local/lib/argsh.so
 COPY --from=lsp-build /build/crates/argsh-lsp/target/release/argsh-lsp /usr/local/bin/argsh-lsp
 COPY --from=lsp-build /build/crates/argsh-lsp/target/release/argsh-lint /usr/local/bin/argsh-lint
+COPY --from=lsp-build /build/crates/argsh-lsp/target/release/argsh-dap /usr/local/bin/argsh-dap
 COPY ./argsh.min.sh /usr/local/bin/argsh
 ENV ARGSH_BUILTIN_PATH=/usr/local/lib/argsh.so
 ENV BATS_LIB_PATH=/usr/local/lib
