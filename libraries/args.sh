@@ -417,9 +417,9 @@ if ! (( ARGSH_BUILTIN )); then
     [[ -n "${_name}" ]] || continue
     if [[ -z "${_seen[${_name}]:-}" ]]; then
       _seen["${_name}"]=1
-      [[ "${args[_i]}" == *"^"* ]] || _non_inherited["${_name}"]=1
+      [[ "${args[_i]}" == *":^"* ]] || _non_inherited["${_name}"]=1
     else
-      [[ "${args[_i]}" == *"^"* ]] || _non_inherited["${_name}"]=1
+      [[ "${args[_i]}" == *":^"* ]] || _non_inherited["${_name}"]=1
     fi
   done
 
@@ -828,7 +828,7 @@ args::field_name() {
     ""  # 8 display name
   )
 
-  local seps="+~!^"
+  local seps="+~!^:#"
   local mods="${field#*[:]}"
   [ "${mods}" != "${field}" ] || mods=""
   # set name

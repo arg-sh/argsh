@@ -386,14 +386,18 @@ fn check_duplicate_flags(func: &FunctionInfo, diags: &mut Vec<Diagnostic>) {
 }
 
 fn check_duplicate_short_aliases(func: &FunctionInfo, diags: &mut Vec<Diagnostic>) {
-    let mut seen: std::collections::HashMap<String, bool> = std::collections::HashMap::new();
+    // Track (field_name, is_inherited) per short alias to only suppress AG009
+    // when the duplicate short comes from the same field name with :^
+    let mut seen: std::collections::HashMap<String, (String, bool)> = std::collections::HashMap::new();
     for entry in &func.args_entries {
         if entry.spec == "-" { continue; }
         if let Ok(ref field) = entry.parsed {
             if let Some(ref short) = field.short {
-                if let Some(&prev_inherited) = seen.get(short) {
-                    // Suppress AG009 when :^ is involved in either entry
-                    if !field.is_inherited && !prev_inherited {
+                if let Some(&(ref prev_name, prev_inherited)) = seen.get(short) {
+                    // Only suppress AG009 if both entries share the same field name
+                    // and :^ is involved (same-name dedup will resolve it)
+                    let same_field = *prev_name == field.name;
+                    if !(same_field && (field.is_inherited || prev_inherited)) {
                         diags.push(make_diag(
                             line_range(entry.line),
                             DiagnosticSeverity::WARNING,
@@ -402,10 +406,7 @@ fn check_duplicate_short_aliases(func: &FunctionInfo, diags: &mut Vec<Diagnostic
                         ));
                     }
                 }
-                let current = seen.entry(short.clone()).or_insert(field.is_inherited);
-                if !field.is_inherited {
-                    *current = false;
-                }
+                seen.entry(short.clone()).or_insert((field.name.clone(), field.is_inherited));
             }
         }
     }
