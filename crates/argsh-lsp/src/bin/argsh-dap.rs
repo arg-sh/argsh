@@ -80,10 +80,22 @@ __ARGSH_DAP_FIFO="__FIFO_PATH__"
 __ARGSH_DAP_STEP=0        # 0=run, 1=stepin, 2=next, 3=stepout
 __ARGSH_DAP_DEPTH=0        # saved depth for next/stepout
 __ARGSH_DAP_STOP_ENTRY=__STOP_ON_ENTRY__
-__ARGSH_DAP_SUBSHELL_PARENT=0  # track parent FIFO lock state
+__ARGSH_DAP_LOCK=""        # flock file descriptor (set during init)
 declare -a __ARGSH_DAP_BPS=()     # breakpoints: "file:line" entries
 declare -A __ARGSH_DAP_BP_COND=() # conditional breakpoints: "file:line" → condition
 declare -a __ARGSH_DAP_WATCH=()   # watch expressions
+
+# Initialize the lock file for flock-based FIFO serialization.
+# Subshells inherit the fd, so both parent and child can acquire the lock.
+exec {__ARGSH_DAP_LOCK}>"${__ARGSH_DAP_FIFO}.lock"
+
+# Subshell cleanup: each subshell creates a per-PID control FIFO.
+# Clean it up on exit.
+__argsh_dap_cleanup() {
+  local _ctl="${__ARGSH_DAP_FIFO}.ctl.$$"
+  [[ ! -p "${_ctl}" ]] || rm -f "${_ctl}"
+}
+trap '__argsh_dap_cleanup' EXIT
 
 __argsh_dap_trap() {
   local _line="${BASH_LINENO[0]}"
@@ -91,29 +103,27 @@ __argsh_dap_trap() {
   local _file="${BASH_SOURCE[1]:-${0}}"
   local _depth=${#FUNCNAME[@]}
   local _should_stop=0
+  local _is_subshell=0
+  local _ctl_fifo
 
-  # Subshell handling: commands inside $(), pipes, and & run in subshells
-  # where the DEBUG trap is inherited. We can't use the FIFO (the parent
-  # may be blocked on it → deadlock), but we CAN still track execution.
-  # We send a lightweight OUTPUT event for subshell breakpoint hits
-  # instead of blocking with a STOPPED event.
+  # Determine which control FIFO to use:
+  # - Main shell (BASH_SUBSHELL==0): uses the primary .ctl FIFO
+  # - Subshell (BASH_SUBSHELL>0): uses a per-PID .ctl.$$ FIFO
+  #   This avoids deadlock: the parent blocks on its .ctl, the subshell
+  #   blocks on .ctl.$$, and the DAP server writes to the correct one.
   if (( BASH_SUBSHELL > 0 )); then
-    # Check breakpoints in subshell (non-blocking)
-    local _bp
-    for _bp in "${__ARGSH_DAP_BPS[@]}"; do
-      if [[ "${_bp}" == "${_file}:${_line}" ]]; then
-        # Non-blocking output event (write will succeed or fail silently)
-        printf 'SUBSHELL\t%s\t%s\t%s\t%s\n' \
-          "${_file}" "${_line}" "${_func}" "${BASH_COMMAND}" \
-          > "${__ARGSH_DAP_FIFO}" 2>/dev/null || true
-        break
-      fi
-    done
-    return 0
+    _is_subshell=1
+    _ctl_fifo="${__ARGSH_DAP_FIFO}.ctl.$$"
+    # Create per-PID control FIFO on first use in this subshell
+    if [[ ! -p "${_ctl_fifo}" ]]; then
+      mkfifo "${_ctl_fifo}" 2>/dev/null || return 0
+    fi
+  else
+    _ctl_fifo="${__ARGSH_DAP_FIFO}.ctl"
   fi
 
-  # Stop on entry (first trap hit)
-  if (( __ARGSH_DAP_STOP_ENTRY )); then
+  # Stop on entry (first trap hit, main shell only)
+  if (( __ARGSH_DAP_STOP_ENTRY && ! _is_subshell )); then
     __ARGSH_DAP_STOP_ENTRY=0
     _should_stop=1
   fi
@@ -160,12 +170,20 @@ __argsh_dap_trap() {
       _watches+="WATCH\t${_wexpr}\t${_wval}\n"
     done
 
-    # Write stop event to FIFO (DAP server reads this)
-    printf 'STOPPED\t%s\t%s\t%s\n%b%b' \
-      "${_file}" "${_line}" "${_func}" "${_stack}" "${_watches}" \
-      > "${__ARGSH_DAP_FIFO}"
+    # Write stop event to FIFO under flock to prevent interleaving
+    # with other subshells or the parent writing simultaneously.
+    # The event includes the PID so the DAP server knows which
+    # control FIFO to write the resume command to.
+    (
+      flock "${__ARGSH_DAP_LOCK}"
+      printf 'STOPPED\t%s\t%s\t%s\t%d\t%d\n%b%b' \
+        "${_file}" "${_line}" "${_func}" "$$" "${BASH_SUBSHELL}" \
+        "${_stack}" "${_watches}" \
+        > "${__ARGSH_DAP_FIFO}"
+    )
 
-    # Block until DAP server sends a resume command
+    # Block until DAP server sends a resume command on OUR control FIFO.
+    # Main shell reads from .ctl, subshells from .ctl.$$
     local _cmd
     while IFS= read -r _cmd; do
       case "${_cmd}" in
@@ -236,7 +254,7 @@ __argsh_dap_trap() {
           } > "${__ARGSH_DAP_FIFO}"
           ;;
       esac
-    done < "${__ARGSH_DAP_FIFO}.ctl"
+    done < "${_ctl_fifo}"
   fi
 
   return 0
@@ -569,7 +587,7 @@ impl DapSession {
         let fifo_data = fifo_dir.join("data");
         let fifo_ctl = fifo_dir.join("data.ctl");
 
-        // Create named pipes
+        // Create named pipes + lock file for flock serialization
         #[cfg(unix)]
         unsafe {
             let data_c = std::ffi::CString::new(fifo_data.to_str().unwrap()).unwrap();
@@ -577,6 +595,9 @@ impl DapSession {
             libc::mkfifo(data_c.as_ptr(), 0o600);
             libc::mkfifo(ctl_c.as_ptr(), 0o600);
         }
+        // Lock file for flock-based FIFO write serialization
+        let lock_path = fifo_dir.join("data.lock");
+        std::fs::write(&lock_path, "").ok();
 
         // Build the wrapper script with the debug prelude
         let prelude = DEBUG_PRELUDE
@@ -927,14 +948,23 @@ impl DapSession {
         self.handle_disconnect(req);
     }
 
-    fn write_ctl(&self, cmd: &str) {
+    /// Write a command to the control FIFO. If pid is Some, writes to the
+    /// per-PID control FIFO (for subshells); otherwise the main .ctl FIFO.
+    fn write_ctl_for(&self, cmd: &str, pid: Option<u64>) {
         if let Some(ref fifo) = self.fifo_path {
-            let ctl_path = format!("{}.ctl", fifo.display());
+            let ctl_path = match pid {
+                Some(p) => format!("{}.ctl.{}", fifo.display(), p),
+                None => format!("{}.ctl", fifo.display()),
+            };
             if let Ok(mut f) = std::fs::OpenOptions::new().write(true).open(&ctl_path) {
                 let _ = f.write_all(cmd.as_bytes());
                 let _ = f.flush();
             }
         }
+    }
+
+    fn write_ctl(&self, cmd: &str) {
+        self.write_ctl_for(cmd, None);
     }
 }
 
@@ -970,21 +1000,29 @@ fn fifo_reader_loop(fifo_path: &Path, stdout_writer: &Arc<Mutex<io::Stdout>>, se
             };
 
             if line.starts_with("STOPPED\t") {
-                let parts: Vec<&str> = line.splitn(4, '\t').collect();
+                // Format: STOPPED\tfile\tline\tfunc\tpid\tsubshell_level
+                let parts: Vec<&str> = line.splitn(6, '\t').collect();
                 if parts.len() >= 4 {
                     let file = parts[1];
                     let line_num: i64 = parts[2].parse().unwrap_or(0);
-                    let _func = parts[3];
+                    let func = parts[3];
+                    let _pid: u64 = parts.get(4).and_then(|p| p.parse().ok()).unwrap_or(0);
+                    let subshell: i64 = parts.get(5).and_then(|s| s.parse().ok()).unwrap_or(0);
+
+                    // Map subshell level to thread ID: main=1, subshell 1=2, etc.
+                    let thread_id = 1 + subshell;
+
+                    let reason = if subshell > 0 { "breakpoint (subshell)" } else { "breakpoint" };
 
                     let evt = DapEvent {
                         seq: seq.fetch_add(1, Ordering::SeqCst),
                         msg_type: "event",
                         event: "stopped".to_string(),
                         body: Some(serde_json::json!({
-                            "reason": "breakpoint",
-                            "threadId": 1,
-                            "allThreadsStopped": true,
-                            "description": format!("Stopped at {}:{}", file, line_num),
+                            "reason": reason,
+                            "threadId": thread_id,
+                            "allThreadsStopped": subshell == 0,
+                            "description": format!("Stopped at {}:{} in {}", file, line_num, func),
                         })),
                     };
                     send_dap_message(stdout_writer, &evt);

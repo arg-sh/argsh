@@ -155,20 +155,22 @@ In the Variables panel, double-click a variable value to modify it. The new valu
 
 ### Subshell debugging
 
-Commands inside `$()`, pipes (`|`), `( ... )`, and `{ ...; } &` run in subshells. The debugger handles subshells as follows:
+Commands inside `$()`, pipes (`|`), `( ... )`, and `{ ...; } &` run in subshells. The debugger fully supports debugging inside subshells:
 
-- **Breakpoint detection**: breakpoints are checked inside subshells
-- **Output events**: when a subshell hits a breakpoint, a non-blocking notification is sent (visible in the Debug Console)
-- **No stepping**: step commands don't apply inside subshells — the subshell runs to completion
-- **No blocking**: the debugger never blocks inside a subshell to avoid deadlocking pipes and parent processes
+- **Breakpoints work**: breakpoints fire inside subshells just like in the main shell
+- **Stepping works**: step in/over/out work inside subshell code
+- **Separate thread**: each subshell appears as a separate thread in VSCode's call stack panel
+- **No deadlocks**: subshells use per-PID control FIFOs so they don't conflict with the parent process. FIFO writes are serialized via `flock` to prevent interleaving.
+- **Automatic cleanup**: subshell FIFOs are cleaned up via `trap EXIT` when the subshell exits
 
-Most debugging happens in the main shell. Subshell breakpoint notifications help track execution flow without stopping.
+:::note
+Short-lived subshells like `$(echo foo)` may complete before the debugger can stop them. Breakpoints work best in longer-running subshells like background jobs (`{ ...; } &`) or complex pipe segments.
+:::
 
 ## Limitations
 
 - **`set -e`**: The debug trap always returns 0 to avoid triggering `set -e` exits.
 - **Performance**: The trap fires on every command. When not at a breakpoint and not stepping, the overhead is minimal (in-memory check only).
-- **Reverse debugging**: Step-back is not yet supported. See the [design doc](https://github.com/arg-sh/argsh/blob/main/todos/dap-subshell-and-reverse.md) for the planned approach.
 
 ## Extension settings
 
