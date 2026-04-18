@@ -16,6 +16,7 @@ on:
       - 'minifier/**'
       - 'shdoc/**'
       - 'crates/**'
+      - 'Dockerfile'
       - '.envrc'
 
 concurrency:
@@ -28,162 +29,48 @@ defaults:
 
 permissions: read-all
 
+env:
+  CI_IMAGE: argsh-ci:local
+
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Clone repository
-        uses: actions/checkout@v6
-      - name: Direnv
-        uses: HatsuneMiku3939/direnv-action@v1
-      - name: Lint
-        run: argsh lint
-      - name: Test
-        run: argsh test
-      - name: Extract artifacts from Docker
-        run: |
-          mkdir -p builtin/target/release minifier/target/release shdoc/target/release
-          docker run --rm --entrypoint cat ghcr.io/arg-sh/argsh:latest /usr/local/lib/argsh.so > builtin/target/release/libargsh.so
-          docker run --rm --entrypoint cat ghcr.io/arg-sh/argsh:latest /usr/local/bin/minifier > minifier/target/release/minifier
-          docker run --rm --entrypoint cat ghcr.io/arg-sh/argsh:latest /usr/local/bin/shdoc > shdoc/target/release/shdoc
-          chmod +x minifier/target/release/minifier shdoc/target/release/shdoc
-      - name: Upload builtin library
-        uses: actions/upload-artifact@v7
-        with:
-          name: argsh-builtin-so
-          if-no-files-found: error
-          retention-days: 7
-          path: builtin/target/release/libargsh.so
-      - name: Upload minifier binary
-        uses: actions/upload-artifact@v7
-        with:
-          name: minifier-bin
-          if-no-files-found: error
-          retention-days: 7
-          path: minifier/target/release/minifier
-      - name: Upload shdoc binary
-        uses: actions/upload-artifact@v7
-        with:
-          name: shdoc-bin
-          if-no-files-found: error
-          retention-days: 7
-          path: shdoc/target/release/shdoc
-
-  coverage:
-    runs-on: ubuntu-latest
-    needs: [test]
-    steps:
-      - name: Clone repository
-        uses: actions/checkout@v6
-      - name: Direnv
-        uses: HatsuneMiku3939/direnv-action@v1
-      - name: Coverage
-        run: argsh coverage builtin
-      - name: Is insync
-        run: |
-          git diff --exit-code \
-            --ignore-matching-lines '^  "date":' \
-            -- builtin/coverage.json
-
-  minifier-coverage:
-    runs-on: ubuntu-latest
-    needs: [test]
-    steps:
-      - name: Clone repository
-        uses: actions/checkout@v6
-      - name: Direnv
-        uses: HatsuneMiku3939/direnv-action@v1
-      - name: Coverage
-        run: argsh coverage minifier
-      - name: Is insync
-        run: |
-          git diff --exit-code \
-            --ignore-matching-lines '^  "date":' \
-            -- minifier/coverage.json
-
-  shdoc-coverage:
-    runs-on: ubuntu-latest
-    needs: [test]
-    steps:
-      - name: Clone repository
-        uses: actions/checkout@v6
-      - name: Direnv
-        uses: HatsuneMiku3939/direnv-action@v1
-      - name: Coverage
-        run: argsh coverage shdoc
-      - name: Is insync
-        run: |
-          git diff --exit-code \
-            --ignore-matching-lines '^  "date":' \
-            -- shdoc/coverage.json
-
-  lsp-coverage:
-    runs-on: ubuntu-latest
-    needs: [test]
-    steps:
-      - name: Clone repository
-        uses: actions/checkout@v6
-      - name: Direnv
-        uses: HatsuneMiku3939/direnv-action@v1
-      - name: Coverage
-        run: argsh coverage lsp
-      - name: Is insync
-        run: |
-          git diff --exit-code \
-            --ignore-matching-lines '^  "date":' \
-            -- crates/argsh-lsp/coverage.json
-
-  minify:
-    runs-on: ubuntu-latest
-    needs: [test]
-    steps:
-      - name: Clone repository
-        uses: actions/checkout@v6
-      - name: Download minifier binary
-        uses: actions/download-artifact@v8
-        with:
-          name: minifier-bin
-          path: .bin
-      - name: Make minifier executable
-        run: chmod +x .bin/minifier
-      - name: Direnv
-        uses: HatsuneMiku3939/direnv-action@v1
-      - name: Build
-        run: |
-          argsh minify
-      - name: Lint
-        run: |
-          argsh lint -m
-      - name: Test
-        run: |
-          argsh test -m
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v7
-        with:
-          name: argsh
-          if-no-files-found: error
-          retention-days: 7
-          path: |
-            argsh.min.sh
-
-  build-binaries:
-    runs-on: ubuntu-latest
+  # ═══════════════════════════════════════════════════════════════════════
+  # Stage 1: BUILD — compile all Rust crates once per architecture.
+  # The amd64 job also builds the Docker image and saves it as an artifact
+  # so fan-out jobs can docker-load it for test/lint/minify.
+  # ═══════════════════════════════════════════════════════════════════════
+  build:
+    name: Build (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
     strategy:
       matrix:
-        arch: [amd64, arm64]
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
     steps:
       - name: Clone repository
         uses: actions/checkout@v6
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
       - name: Build ${{ matrix.arch }} binaries
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/${{ matrix.arch }}
+          target: artifacts
+          outputs: type=local,dest=out
+          cache-from: type=gha,scope=build-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=build-${{ matrix.arch }}
+      - name: Validate and make executables
         run: |
-          docker buildx build --platform linux/${{ matrix.arch }} \
-            --target artifacts \
-            --output type=local,dest=out .
-          chmod +x out/minifier out/shdoc
+          for f in out/minifier out/shdoc out/libargsh.so out/argsh-lsp out/argsh-lint; do
+            if [[ ! -f "${f}" ]]; then
+              echo "Missing expected artifact: ${f}" >&2
+              exit 1
+            fi
+          done
+          chmod +x out/minifier out/shdoc out/argsh-lsp out/argsh-lint
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
@@ -191,10 +78,169 @@ jobs:
           if-no-files-found: error
           retention-days: 7
           path: out/
+      # amd64 only: build the full Docker image and save it as an artifact
+      # so fan-out jobs can docker-load it for test/lint/minify (~52MB compressed).
+      - name: Build CI image
+        if: matrix.arch == 'amd64'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true
+          provenance: false
+          platforms: linux/amd64
+          tags: ${{ env.CI_IMAGE }}
+          cache-from: type=gha,scope=build-amd64
+      - name: Save CI image
+        if: matrix.arch == 'amd64'
+        run: docker save ${{ env.CI_IMAGE }} | gzip > /tmp/ci-image.tar.gz
+      - name: Upload CI image
+        if: matrix.arch == 'amd64'
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-image
+          if-no-files-found: error
+          retention-days: 1
+          path: /tmp/ci-image.tar.gz
 
+  # ═══════════════════════════════════════════════════════════════════════
+  # Stage 2: FAN OUT — test, lint, coverage, minify run in parallel.
+  # test/lint/minify run inside the freshly-built CI image.
+  # Coverage rebuilds with instrumentation (separate Docker containers).
+  # ═══════════════════════════════════════════════════════════════════════
+
+  # ---------------------------------------------------------------------------
+  # Test — run bats in both modes (pure-bash + native builtins).
+  # ---------------------------------------------------------------------------
+  test:
+    runs-on: ubuntu-latest
+    needs: [build]
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v6
+      - name: Load CI image
+        uses: actions/download-artifact@v8
+        with:
+          name: ci-image
+          path: /tmp
+      - name: Import CI image
+        run: docker load < /tmp/ci-image.tar.gz
+      - name: Test (pure bash)
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/workspace" -w /workspace \
+            -e ARGSH_PURE_BASH_TEST=1 \
+            ${{ env.CI_IMAGE }} test libraries/
+      - name: Test (native builtins)
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/workspace" -w /workspace \
+            -e ARGSH_BUILTIN_TEST=1 \
+            ${{ env.CI_IMAGE }} test libraries/
+
+  # ---------------------------------------------------------------------------
+  # Lint — shellcheck + argsh-lint on the argsh libraries.
+  # ---------------------------------------------------------------------------
+  lint:
+    runs-on: ubuntu-latest
+    needs: [build]
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v6
+      - name: Load CI image
+        uses: actions/download-artifact@v8
+        with:
+          name: ci-image
+          path: /tmp
+      - name: Import CI image
+        run: docker load < /tmp/ci-image.tar.gz
+      - name: Lint
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/workspace" -w /workspace \
+            ${{ env.CI_IMAGE }} lint libraries/
+
+  # ---------------------------------------------------------------------------
+  # Coverage — all 4 Rust crates in one job.
+  # ---------------------------------------------------------------------------
+  coverage:
+    runs-on: ubuntu-latest
+    needs: [build]
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v6
+      - name: Direnv
+        uses: HatsuneMiku3939/direnv-action@v1
+      - name: Builtin coverage
+        run: argsh coverage builtin
+      - name: Minifier coverage
+        run: argsh coverage minifier
+      - name: Shdoc coverage
+        run: argsh coverage shdoc
+      - name: LSP coverage
+        run: argsh coverage lsp
+      - name: Verify coverage files are in sync
+        run: |
+          git diff --exit-code \
+            --ignore-matching-lines '^  "date":' \
+            -- builtin/coverage.json \
+               minifier/coverage.json \
+               shdoc/coverage.json \
+               crates/argsh-lsp/coverage.json
+
+  # ---------------------------------------------------------------------------
+  # Minify — produce argsh.min.sh using the freshly-built minifier.
+  # Uses the CI image for minify, lint, and test — same container, same tools.
+  # ---------------------------------------------------------------------------
+  minify:
+    runs-on: ubuntu-latest
+    needs: [build]
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v6
+      - name: Load CI image
+        uses: actions/download-artifact@v8
+        with:
+          name: ci-image
+          path: /tmp
+      - name: Import CI image
+        run: docker load < /tmp/ci-image.tar.gz
+      - name: Minify
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/workspace" -w /workspace \
+            -e GIT_COMMIT_SHA=${{ github.sha }} \
+            -e GIT_VERSION=${{ github.ref_name }} \
+            ${{ env.CI_IMAGE }} minify libraries -t argsh.min.tmpl -o argsh.min.sh
+      - name: Lint minified
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/workspace" -w /workspace \
+            ${{ env.CI_IMAGE }} lint argsh.min.sh
+      - name: Test minified
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/workspace" -w /workspace \
+            -e BATS_LOAD=argsh.min.sh \
+            -e ARGSH_BUILTIN_TEST=1 \
+            ${{ env.CI_IMAGE }} test libraries/
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: argsh
+          if-no-files-found: error
+          retention-days: 7
+          path: argsh.min.sh
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # Stage 3: FAN IN — assemble final outputs from stage 1+2 artifacts.
+  # ═══════════════════════════════════════════════════════════════════════
+
+  # ---------------------------------------------------------------------------
+  # Minify-so — concatenate argsh.min.sh + .so → self-contained binary.
+  # ---------------------------------------------------------------------------
   minify-so:
     runs-on: ubuntu-latest
-    needs: [minify, build-binaries]
+    needs: [minify]
     strategy:
       matrix:
         arch: [amd64, arm64]
@@ -211,7 +257,6 @@ jobs:
           path: .
       - name: Compose argsh-so
         run: |
-          # Build script portion with appended-binary loader
           {
             head -3 argsh.min.sh
             echo '# ── Appended native builtins ─────────────────────────────────────────'
@@ -254,7 +299,6 @@ jobs:
           EXITEOF
           } > script-part.sh
 
-          # Stabilize byte offset (loop until size converges)
           converged=0
           prev_sz=0
           for i in $(seq 1 10); do
@@ -268,7 +312,6 @@ jobs:
           done
           [ "${converged}" -eq 1 ] || { echo "Failed to stabilize ARGSH_PAYLOAD_OFFSET" >&2; exit 1; }
 
-          # Concatenate script + raw .so binary
           cat script-part.sh binaries/libargsh.so > argsh-so
           chmod +x argsh-so
           rm script-part.sh
@@ -291,9 +334,13 @@ jobs:
           name: argsh-so-linux-${{ matrix.arch }}
           if-no-files-found: error
           retention-days: 7
-          path: |
-            argsh-so
+          path: argsh-so
 
+  # ---------------------------------------------------------------------------
+  # Docker — assemble final image reusing cached Rust layers from the build job.
+  # The Rust build stages are cache hits (populated by the build job via GHA
+  # cache), so only the final assembly layers run fresh.
+  # ---------------------------------------------------------------------------
   docker:
     runs-on: ubuntu-latest
     needs: [minify]
@@ -303,17 +350,15 @@ jobs:
     steps:
       - name: Clone repository
         uses: actions/checkout@v6
-      - name: Download executables
+      - name: Download argsh.min.sh
         uses: actions/download-artifact@v8
         with:
-          pattern: argsh
-          merge-multiple: true
+          name: argsh
           path: .
-      - name: Executable
-        run: |
-          chmod +x argsh.min.sh
+      - name: Prepare
+        run: chmod +x argsh.min.sh
       - name: Docker metadata
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         id: metadata
         with:
           images: ghcr.io/${{ github.repository }}
@@ -321,17 +366,32 @@ jobs:
             && format('type=match,pattern=v(.*),group=1,value={0}', github.ref_name)
             || 'type=sha,format=long' }}
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build and release Docker image
-        uses: docker/build-push-action@v5
+      # Smoke test: load the CI image and run entrypoint tests inside it.
+      - name: Load CI image
+        uses: actions/download-artifact@v8
+        with:
+          name: ci-image
+          path: /tmp
+      - name: Import CI image
+        run: docker load < /tmp/ci-image.tar.gz
+      - name: Smoke test
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/workspace" -w /workspace \
+            ${{ env.CI_IMAGE }} test libraries/ .docker/test/
+      # Multi-platform build + push with the final argsh.min.sh embedded.
+      # Rust stages are cache hits from the build job.
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: ${{ startsWith(github.ref, 'refs/tags/v') }}
@@ -339,6 +399,14 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.metadata.outputs.tags }}
           labels: ${{ steps.metadata.outputs.labels }}
+          cache-from: |
+            type=gha,scope=build-amd64
+            type=gha,scope=build-arm64
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # Stage 4: RELEASE (tag only) — build native LSP/lint binaries for
+  # macOS/Linux, package VSCode extension, publish everything.
+  # ═══════════════════════════════════════════════════════════════════════
 
   build-lsp:
     name: Build argsh-lsp/lint (${{ matrix.target }})
@@ -438,7 +506,7 @@ jobs:
       contents: write
       pull-requests: write
     environment: release
-    needs: [minify, minify-so, build-binaries, build-lsp, docker, package-vsix]
+    needs: [minify, minify-so, build-lsp, docker, package-vsix]
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
       - name: Clone repository
@@ -458,8 +526,6 @@ jobs:
         with:
           pattern: argsh-so-linux-*
           path: artifacts
-      # download-artifact patterns use glob, not brace expansion — download
-      # the two binaries in separate steps, merging into the same dir.
       - name: Download all LSP binaries
         uses: actions/download-artifact@v8
         with:
@@ -482,11 +548,9 @@ jobs:
         run: |
           mkdir -p release
 
-          # argsh (arch-independent shell script)
           cp artifacts/argsh.min.sh release/argsh
           chmod +x release/argsh
 
-          # Per-architecture assets
           for arch in amd64 arm64; do
             cp "artifacts/binaries-linux-${arch}/libargsh.so" "release/argsh-linux-${arch}.so"
             cp "artifacts/binaries-linux-${arch}/minifier"    "release/minifier-linux-${arch}"
@@ -495,14 +559,12 @@ jobs:
             chmod +x "release/minifier-linux-${arch}" "release/shdoc-linux-${arch}" "release/argsh-so-linux-${arch}"
           done
 
-          # LSP server and CLI linter — per-platform (linux + darwin, x64 + arm64)
           for p in linux-x64 linux-arm64 darwin-x64 darwin-arm64; do
             cp "artifacts/lsp/argsh-lsp-${p}"  "release/argsh-lsp-${p}"
             cp "artifacts/lsp/argsh-lint-${p}" "release/argsh-lint-${p}"
             chmod +x "release/argsh-lsp-${p}" "release/argsh-lint-${p}"
           done
 
-          # VSCode extension bundles
           cp artifacts/vsix/*.vsix release/
 
           cd release
@@ -512,7 +574,6 @@ jobs:
           TAG_NAME: ${{ github.ref_name }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Create or update release (idempotent for re-runs)
           gh release create "${TAG_NAME}" --draft --title "argsh ${TAG_NAME}" --generate-notes 2>/dev/null \
             || gh release edit "${TAG_NAME}" --draft --title "argsh ${TAG_NAME}"
           gh release upload "${TAG_NAME}" --clobber release/*
@@ -524,8 +585,7 @@ jobs:
 
           cp artifacts/argsh.min.sh argsh.min.sh
           git add argsh.min.sh
-          git commit -m "${title}"
-          # Force-push branch (handles re-runs where branch already exists)
+          git diff --cached --quiet || git commit -m "${title}"
           git push --force origin "HEAD:refs/heads/${branch}"
           gh pr create --title "${title}" --body "" --head "${branch}" 2>/dev/null \
             || echo "PR already exists for ${branch}"

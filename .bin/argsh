@@ -229,20 +229,18 @@ coverage::builtin() {
     rustup component add llvm-tools
   }
 
-  # Build coverage-instrumented .so inside Docker (rust:1-slim-bookworm) to ensure
-  # glibc compatibility with the kcov/kcov test container (also Debian bookworm).
+  # Build coverage-instrumented .so inside Docker (rust:1-slim-trixie) to ensure
+  # glibc compatibility with the argsh Docker image (also Debian trixie).
   # Mount sources at the same absolute path so llvm-cov finds them on the host.
-  # Share cargo registry cache to avoid re-downloading dependencies.
-  # Install system lld and override the rust-lld shim — Rust >=1.94 uses
-  # rust-lld by default, which chokes on colon-prefixed export_name symbols.
+  # Install system lld and symlink it over rust-lld — both GNU ld and rust-lld
+  # choke on colon-prefixed export_name symbols. System lld handles them.
+  # See: https://github.com/rust-lang/rust/issues/38238
   echo "Building with coverage instrumentation (via Docker)..."
-  mkdir -p "${HOME}/.cargo/registry"
   local _uid; _uid="$(id -u):$(id -g)"
   docker run --rm \
     -v "${PATH_BASE}/builtin:${PATH_BASE}/builtin" \
-    -v "${HOME}/.cargo/registry:/usr/local/cargo/registry" \
     -w "${PATH_BASE}/builtin" \
-    rust:1-slim-bookworm \
+    rust:1-slim-trixie \
     bash -c "apt-get update -qq && apt-get install -y -qq lld >/dev/null 2>&1 && \
       ln -sf /usr/bin/ld.lld \"\$(rustc --print sysroot)/lib/rustlib/\$(rustc -vV | awk '/host/{print \$2}')/bin/gcc-ld/ld.lld\" && \
       RUSTFLAGS='-C instrument-coverage -C link-arg=-fuse-ld=lld' \
