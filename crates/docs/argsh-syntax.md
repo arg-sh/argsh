@@ -2,7 +2,7 @@
 
 Pure Rust parsing library for argsh scripts. Provides static analysis of bash files without executing them — extracts function definitions, `:args`/`:usage` declarations, field specifications, import statements, and variable scopes.
 
-Used by `argsh-lsp`, `argsh-lint`, and `argsh-dap` as the shared analysis foundation.
+Used by the `argsh-lsp` crate (which produces the `argsh-lsp`, `argsh-lint`, and `argsh-dap` binaries) as the shared analysis foundation.
 
 ## Modules
 
@@ -58,7 +58,7 @@ assert_eq!(field.short, Some("p".to_string()));
 assert_eq!(field.type_name, "int");
 assert!(field.required);
 assert!(!field.is_boolean);
-assert!(field.is_flag); // has | separator
+assert!(!field.is_positional); // has | separator → it's a flag
 ```
 
 | Field | Meaning |
@@ -68,8 +68,10 @@ assert!(field.is_flag); // has | separator
 | `type_name` | Type constraint after `:~` (int, float, file, etc.) |
 | `is_boolean` | `:+` modifier — flag takes no value, sets to 1 |
 | `required` | `:!` modifier — must be provided |
-| `is_flag` | Contains `\|` — matched by `--name` / `-n` |
-| `is_hidden` | `#` prefix — excluded from help text |
+| `is_positional` | No `\|` in definition — positional parameter (not a `--flag`) |
+| `hidden` | `#` prefix — excluded from help text |
+| `display_name` | Original name preserving dashes (vs `name` which replaces `-` with `_`) |
+| `raw` | Original spec string, preserved for diagnostics |
 
 ### `usage` — Usage Entry Parser
 

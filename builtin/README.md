@@ -38,14 +38,15 @@ Build profile optimizes for size: LTO, `opt-level = "s"`, stripped symbols, sing
 
 ## Loading
 
-argsh searches for `libargsh.so` in this order:
+Cargo produces `target/release/libargsh.so`. At runtime, argsh searches for `argsh.so` (without the `lib` prefix) in this order:
 
-1. `ARGSH_BUILTIN_PATH` (explicit path)
+1. `ARGSH_BUILTIN_PATH` (explicit path to the `.so` file)
 2. `PATH_LIB/argsh.so`
 3. `PATH_BIN/argsh.so`
-4. `LD_LIBRARY_PATH/argsh.so`
-5. `BASH_LOADABLES_PATH/argsh.so`
-6. `~/.local/lib/bash/argsh.so`
+4. `LD_LIBRARY_PATH` directories
+5. `BASH_LOADABLES_PATH` directories
+
+The default install target is `~/.local/lib/bash/argsh.so` — found via `BASH_LOADABLES_PATH` if configured.
 
 Once found, all 18 builtins are registered via `enable -f <path> <name> ...`.
 

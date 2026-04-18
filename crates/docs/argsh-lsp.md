@@ -36,21 +36,27 @@ argsh-lint lib/*.sh
 
 # Output formats (shellcheck-compatible flags)
 argsh-lint -f gcc script.sh        # default: file:line:col: level: message [CODE]
-argsh-lint -f json script.sh       # JSON array
+argsh-lint -f tty script.sh        # colorized output with ANSI codes
+argsh-lint -f json script.sh       # JSON object per line
 argsh-lint -f checkstyle script.sh # Checkstyle XML
+argsh-lint -f quiet script.sh      # no output, exit code only
 
 # Filter by severity
 argsh-lint -S warning script.sh    # warnings and above
 argsh-lint -S error script.sh      # errors only
 
-# Exclude specific codes
+# Exclude / include specific codes
 argsh-lint -e AG004,AG010 script.sh
+argsh-lint -i AG001,AG003 script.sh  # only these codes
 
-# Cross-file resolution
-argsh-lint --resolve-depth 2 script.sh  # follow imports up to 2 levels
+# Skip cross-file resolution (faster, skips AG013)
+argsh-lint --no-resolve script.sh
+
+# Colorize control
+argsh-lint -C always script.sh     # auto (default), always, never
 ```
 
-Exit codes: `0` = no issues, `1` = issues found.
+Exit codes: `0` = no issues, `1` = issues found, `2` = CLI/IO error.
 
 ### `argsh-dap` — Debug Adapter Protocol
 
@@ -93,17 +99,18 @@ pub mod resolver;     // Cross-file import resolution
 
 | Code | Severity | Description |
 | ---- | -------- | ----------- |
-| AG001 | Warning | `args` entry missing description |
-| AG002 | Warning | `usage` entry missing description |
+| AG001 | Error | `args` entry missing description |
+| AG002 | Error | `usage` entry missing description |
 | AG003 | Error | Invalid field spec (bad modifier) |
 | AG004 | Warning | Missing `local` variable declaration |
-| AG005 | Warning | `args` array declared but `:args` not called |
-| AG006 | Warning | `usage` array declared but `:usage` not called |
-| AG007 | Error | Usage target function not found |
-| AG008 | Error | Duplicate flag name |
-| AG009 | Error | Duplicate short alias |
-| AG010 | Info | Command resolves to bare function (not namespaced) |
-| AG012 | Warning | Local variable shadows parent scope args field |
+| AG005 | Error | `args` array declared but `:args` not called |
+| AG006 | Error | `usage` array declared but `:usage` not called |
+| AG007 | Warning | Usage target function not found |
+| AG008 | Warning | Duplicate flag name |
+| AG009 | Warning | Duplicate short alias |
+| AG010 | Warning | Command resolves to bare function (not namespaced) |
+| ~~AG011~~ | — | *(removed)* Trailing `\|` is valid syntax for long-only flags |
+| AG012 | Hint | Local variable shadows parent scope args field |
 | AG013 | Warning | Import could not be resolved |
 
 Suppress per-line with `# argsh-ignore=AG004,AG012` or `# argsh disable=AG004`.
@@ -152,3 +159,7 @@ tests/
 - `tokio` — async runtime
 - `serde` / `serde_json` — DAP message serialization
 - `argsh-syntax` — parsing library (workspace dependency)
+- `dashmap` — concurrent document cache
+- `regex` — pattern matching
+- `tempfile` — temporary file handling
+- `libc` — platform bindings (unix only)

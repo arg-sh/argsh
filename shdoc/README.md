@@ -1,6 +1,6 @@
 # shdoc
 
-Documentation generator for bash scripts and Rust source files. Extracts `# @annotation` tags from bash and `///` doc comments from Rust, producing Markdown, HTML, or JSON output.
+Documentation generator for bash scripts and Rust source files. Extracts `# @annotation` tags from bash and `//!`/`///` doc comments from Rust, producing Markdown, HTML, or JSON output.
 
 ## Usage
 
@@ -22,6 +22,12 @@ shdoc -f json < file.sh
 # Filter by tags
 shdoc --filter core libraries/*.sh
 shdoc --filter '!deprecated' libraries/*.sh
+
+# Include @internal functions
+shdoc --show-internal -o docs/ libraries/*.sh
+
+# Disable YAML frontmatter
+shdoc --no-frontmatter -o docs/ libraries/*.sh
 ```
 
 ## Annotations
@@ -29,10 +35,11 @@ shdoc --filter '!deprecated' libraries/*.sh
 ### File-level
 
 ```bash
-# @file module-name
+# @file module-name        (alias: @name)
 # @brief Short description
 # @description
 #   Multi-line description text.
+# @section Section Name
 # @tags core, validation
 ```
 
@@ -40,8 +47,10 @@ shdoc --filter '!deprecated' libraries/*.sh
 
 ```bash
 # @description Convert a value to an integer
+# @noargs
 # @arg $1 any value to convert
 # @option -s | --strict Strict mode
+# @stdin Input from pipe (if applicable)
 # @stdout The converted integer
 # @stderr Error message on failure
 # @exitcode 0 Success
