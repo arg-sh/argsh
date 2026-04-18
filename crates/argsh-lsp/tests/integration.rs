@@ -1666,6 +1666,30 @@ fn test_code_lens_shows_parent_link() {
 }
 
 #[test]
+fn test_no_crash_inherited_duplicate() {
+    let mut client = LspTestClient::new();
+    client.initialize();
+
+    // domain|:^ is inherited, domain| is the parent's version — no AG008 should fire
+    let content = "#!/usr/bin/env bash\nsource argsh\nf() {\n  local domain\n  local -a args=(\n    'domain|:^' \"Domain\"\n    'domain|' \"Domain\"\n  )\n  :args \"Test\" \"${@}\"\n}\n";
+    client.open_document("file:///test_inherited.sh", content);
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    client.shutdown();
+}
+
+#[test]
+fn test_no_crash_plain_duplicate() {
+    let mut client = LspTestClient::new();
+    client.initialize();
+
+    // Both non-:^ → AG008 should fire (verify no crash)
+    let content = "#!/usr/bin/env bash\nsource argsh\nf() {\n  local domain\n  local -a args=(\n    'domain|' \"Domain\"\n    'domain|' \"Domain\"\n  )\n  :args \"Test\" \"${@}\"\n}\n";
+    client.open_document("file:///test_dup.sh", content);
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    client.shutdown();
+}
+
+#[test]
 fn test_settings_resolve_depth_passed() {
     let mut client = LspTestClient::new();
     // Initialize with custom resolveDepth

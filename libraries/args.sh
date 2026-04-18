@@ -223,6 +223,7 @@ if ! (( ARGSH_BUILTIN )); then
   local title="${1}"; shift
   declare -p usage &>/dev/null || local -a usage=()
   declare -p args &>/dev/null || local -a args=()
+  :args::_dedup_inherited
   [[ $(( ${#usage[@]} % 2 )) -eq 0 ]] ||
     :args::_error "usage must be an associative array"
 
@@ -391,9 +392,67 @@ if ! (( ARGSH_BUILTIN )); then
 #
 #  echo "arg: ${arg}"
 #  echo "flags: ${flag} ${flag1} ${flag2} ${flag3} ${flag4} ${flag5} ${flag6}"
+
+# @description Dedup args array: strip trailing empty strings and resolve :^ inherited fields.
+# Last non-:^ entry wins for each field name; if all are :^, last one wins.
+# Modifies the `args` array in the caller's scope.
+# @internal
+:args::_dedup_inherited() {
+  # Strip trailing empty strings (from "${args[@]:-}" expansion)
+  while (( ${#args[@]} )) && [[ -z "${args[-1]}" ]]; do
+    unset 'args[-1]'
+  done
+  (( ${#args[@]} > 2 )) || return 0
+
+  local -A _seen=() _non_inherited=()
+  local _name _i
+
+  # First pass: find which field names have non-:^ entries (scan backwards)
+  for (( _i=${#args[@]}-2; _i >= 0; _i-=2 )); do
+    [[ "${args[_i]}" != "-" && -n "${args[_i]}" ]] || continue
+    _name="$(args::field_name "${args[_i]}")"
+    [[ -n "${_name}" ]] || continue
+    if [[ -z "${_seen[${_name}]:-}" ]]; then
+      _seen["${_name}"]=1
+      [[ "${args[_i]}" == *"^"* ]] || _non_inherited["${_name}"]=1
+    else
+      [[ "${args[_i]}" == *"^"* ]] || _non_inherited["${_name}"]=1
+    fi
+  done
+
+  # Second pass: build new array, keeping only the winning entry per field name
+  local -A _kept=()
+  local -a _result=()
+  for (( _i=${#args[@]}-2; _i >= 0; _i-=2 )); do
+    [[ "${args[_i]}" != "-" && -n "${args[_i]}" ]] || {
+      # Keep separators and empty specs as-is (prepend to maintain order)
+      _result=("${args[_i]}" "${args[_i+1]}" "${_result[@]}")
+      continue
+    }
+    _name="$(args::field_name "${args[_i]}")"
+    [[ -n "${_name}" ]] || { _result=("${args[_i]}" "${args[_i+1]}" "${_result[@]}"); continue; }
+
+    # Already kept one for this field name?
+    if [[ -n "${_kept[${_name}]:-}" ]]; then
+      continue # skip duplicate
+    fi
+
+    # If non-:^ entries exist for this name, skip :^ entries
+    if [[ -n "${_non_inherited[${_name}]:-}" && "${args[_i]}" == *"^"* ]]; then
+      continue # :^ yields to non-:^
+    fi
+
+    _kept["${_name}"]=1
+    _result=("${args[_i]}" "${args[_i+1]}" "${_result[@]}")
+  done
+
+  args=("${_result[@]}")
+}
+
 :args() {
   local title="${1}"; shift
   declare -p args &>/dev/null || local -a args=()
+  :args::_dedup_inherited
   [[ $(( ${#args[@]} % 2 )) -eq 0 ]] ||
     :args::_error "args must be an associative array"
 
@@ -766,7 +825,7 @@ args::field_name() {
     ""  # 8 display name
   )
 
-  local seps="+~!"
+  local seps="+~!^"
   local mods="${field#*[:]}"
   [ "${mods}" != "${field}" ] || mods=""
   # set name
@@ -824,6 +883,17 @@ args::field_name() {
         :args::_error "field already flagged as required"
 
       attrs[6]=1
+      mods="${mods:1}"
+      continue
+    fi
+    # inherited (yields to non-:^ duplicates)
+    if [[ ${mods:0:1} == "^" ]]; then
+      mods="${mods:1}"
+      continue
+    fi
+    # hidden modifier (via :# syntax, in addition to # prefix)
+    if [[ ${mods:0:1} == "#" ]]; then
+      attrs[7]=1
       mods="${mods:1}"
       continue
     fi
