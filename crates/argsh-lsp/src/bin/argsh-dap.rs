@@ -84,6 +84,7 @@ const DEBUG_PRELUDE: &str = r#"
 # Communicates with the DAP server via named pipes (FIFOs).
 
 __ARGSH_DAP_FIFO="__FIFO_PATH__"
+__ARGSH_DAP_WRAPPER="__WRAPPER_PATH__"
 __ARGSH_DAP_STEP=0        # 0=run, 1=stepin, 2=next, 3=stepout
 __ARGSH_DAP_DEPTH=0        # saved depth for next/stepout
 __ARGSH_DAP_STOP_ENTRY=__STOP_ON_ENTRY__
@@ -116,13 +117,21 @@ __argsh_dap_cleanup() {
 trap '__argsh_dap_cleanup' EXIT
 
 __argsh_dap_trap() {
+  # In a function-based DEBUG trap, BASH_SOURCE[0] is where the trap
+  # function is defined (the wrapper), not where the triggering command
+  # is. BASH_SOURCE[1] + BASH_LINENO[0] give the correct caller context.
+  local _file="${BASH_SOURCE[1]:-${0}}"
   local _line="${BASH_LINENO[0]}"
   local _func="${FUNCNAME[1]:-main}"
-  local _file="${BASH_SOURCE[1]:-${0}}"
   local _depth=${#FUNCNAME[@]}
   local _should_stop=0
   local _is_subshell=0
   local _ctl_fifo
+
+  # Skip trap events from the wrapper script itself (the prelude and
+  # argsh runtime loader). Only fire for the user's sourced script and
+  # any files it imports/sources.
+  [[ "${_file}" != "${__ARGSH_DAP_WRAPPER}" ]] || return 0
 
   # Determine which control FIFO to use:
   # - Main shell (BASH_SUBSHELL==0): uses the primary .ctl FIFO
@@ -188,14 +197,15 @@ __argsh_dap_trap() {
       _watches+="WATCH\t${_wexpr}\t${_wval}\n"
     done
 
-    # Write stop event to FIFO under flock to prevent interleaving
-    # with other subshells or the parent writing simultaneously.
-    # The event includes the PID so the DAP server knows which
-    # control FIFO to write the resume command to.
+    # Capture subshell level BEFORE the flock subshell — the flock
+    # runs in ( ... ) which increments BASH_SUBSHELL by 1.
+    local _subshell_level="${_is_subshell}"
+
+    # Write stop event to FIFO under flock to prevent interleaving.
     (
       flock "${__ARGSH_DAP_LOCK}"
       printf 'STOPPED\t%s\t%s\t%s\t%d\t%d\n%b%b' \
-        "${_file}" "${_line}" "${_func}" "$$" "${BASH_SUBSHELL}" \
+        "${_file}" "${_line}" "${_func}" "$$" "${_subshell_level}" \
         "${_stack}" "${_watches}" \
         > "${__ARGSH_DAP_FIFO}"
     )
@@ -681,10 +691,30 @@ impl DapSession {
         let lock_path = fifo_dir.join("data.lock");
         std::fs::write(&lock_path, "").ok();
 
+        let wrapper_path = fifo_dir.join("wrapper.sh");
+
+        // Inject any breakpoints that were set before launch into the prelude.
+        // The prelude's __ARGSH_DAP_BPS array is populated at script start so
+        // breakpoints work immediately without a ctl FIFO round-trip.
+        let initial_bps: String = self.breakpoints.iter()
+            .flat_map(|(file, lines)| {
+                lines.iter().map(move |line| format!("\"{}:{}\"", file.display(), line))
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
+        let bp_init = if initial_bps.is_empty() {
+            String::new()
+        } else {
+            format!("\n__ARGSH_DAP_BPS=({})\n", initial_bps)
+        };
+
         // Build the wrapper script with the debug prelude
         let prelude = DEBUG_PRELUDE
             .replace("__FIFO_PATH__", fifo_data.to_str().unwrap())
-            .replace("__STOP_ON_ENTRY__", if stop_on_entry { "1" } else { "0" });
+            .replace("__WRAPPER_PATH__", wrapper_path.to_str().unwrap())
+            .replace("__STOP_ON_ENTRY__", if stop_on_entry { "1" } else { "0" })
+            .replace("declare -a __ARGSH_DAP_BPS=()     # breakpoints: \"file:line\" entries",
+                     &format!("declare -a __ARGSH_DAP_BPS=({})     # breakpoints: \"file:line\" entries", initial_bps));
 
         // Don't inject set flags (e.g. set -euo pipefail) — let the user's
         // script set its own runtime semantics. The wrapper only injects the
@@ -718,13 +748,12 @@ impl DapSession {
         };
 
         let wrapper = format!(
-            "#!/usr/bin/env bash\n{argsh}{prelude}\nsource \"{script}\" \"$@\"\n",
+            "#!/usr/bin/env bash\nset -T\n{argsh}{prelude}\nsource \"{script}\" \"$@\"\n",
             argsh = argsh_loader,
             prelude = prelude,
             script = program.display()
         );
 
-        let wrapper_path = fifo_dir.join("wrapper.sh");
         std::fs::write(&wrapper_path, &wrapper).unwrap();
         let interpreter = "bash".to_string();
 
@@ -752,28 +781,34 @@ impl DapSession {
         // (#92-#97) Analyze the script source for argsh-specific features
         self.analyze_program(&program);
 
+        // Start the FIFO reader BEFORE spawning bash — otherwise bash's
+        // DEBUG trap tries to write to the data FIFO before a reader is
+        // ready, causing a race condition / hang.
+        self.fifo_path = Some(fifo_data.clone());
+        self.launched.store(true, Ordering::SeqCst);
+
+        let fifo_data_clone = fifo_data.clone();
+        let stdout_writer = self.stdout_writer.clone();
+        let seq = Arc::clone(&self.seq);
+        let launched = Arc::clone(&self.launched);
+        let last_frames = Arc::clone(&self.last_stack_frames);
+        let thread_pids = Arc::clone(&self.thread_pids);
+        let active_threads = Arc::clone(&self.active_threads);
+
+        std::thread::spawn(move || {
+            fifo_reader_loop(
+                &fifo_data_clone, &stdout_writer, &seq, &launched,
+                &last_frames, &thread_pids, &active_threads,
+            );
+        });
+
+        // Small delay to let the FIFO reader open the read end
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
         match cmd.spawn() {
             Ok(child) => {
                 self.child = Some(child);
-                self.fifo_path = Some(fifo_data.clone());
-                self.launched.store(true, Ordering::SeqCst);
                 self.send_response(req, true, None, None);
-
-                // Start background thread to read FIFO events
-                let fifo_data_clone = fifo_data.clone();
-                let stdout_writer = self.stdout_writer.clone();
-                let seq = Arc::clone(&self.seq);
-                let launched = Arc::clone(&self.launched);
-                let last_frames = Arc::clone(&self.last_stack_frames);
-                let thread_pids = Arc::clone(&self.thread_pids);
-                let active_threads = Arc::clone(&self.active_threads);
-
-                std::thread::spawn(move || {
-                    fifo_reader_loop(
-                        &fifo_data_clone, &stdout_writer, &seq, &launched,
-                        &last_frames, &thread_pids, &active_threads,
-                    );
-                });
             }
             Err(e) => {
                 self.send_response(req, false, None, Some(format!("Failed to launch: {}", e)));
