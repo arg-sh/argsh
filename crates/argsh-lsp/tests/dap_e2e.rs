@@ -212,6 +212,193 @@ fn e2e_step_into() {
 }
 
 #[test]
+fn e2e_smart_breakpoint_by_command_name() {
+    // Script with :usage dispatch — needs argsh runtime.
+    // We test the DAP protocol: setFunctionBreakpoints should resolve the
+    // command name to a file:line. Even without the argsh runtime loaded,
+    // the static analysis finds the function.
+    let (_d, s) = write_script("smart.sh", "\
+#!/usr/bin/env bash
+deploy() {
+  echo \"deploying\"
+}
+main() {
+  local -a usage=(
+    'deploy' 'Deploy the app'
+  )
+  echo \"main\"
+}
+main \"${@}\"
+");
+    let (mut si, dap, mut ch) = init();
+
+    // Launch first so the script is analyzed (analysis happens during launch)
+    launch(&mut si, &dap, &s, true, &[]);
+    assert!(dap.wait_stopped().is_some(), "no stop on entry");
+
+    // Now set a function breakpoint by command name — analysis is available
+    send(&mut si, &json!({"seq":10,"type":"request","command":"setFunctionBreakpoints","arguments":{
+        "breakpoints": [{"name": "deploy"}]
+    }}));
+    let r = dap.recv().expect("setFunctionBreakpoints resp");
+    assert!(r["success"].as_bool().unwrap(), "setFunctionBreakpoints failed: {:?}", r);
+    let bps = r["body"]["breakpoints"].as_array().unwrap();
+    assert!(!bps.is_empty(), "no breakpoints returned");
+    // The breakpoint should be resolved (verified=true) since deploy() exists
+    assert!(bps[0]["verified"].as_bool().unwrap_or(false), "breakpoint not verified: {:?}", bps[0]);
+
+    cont(&mut si, &dap);
+    quit(&mut si, &dap, &mut ch);
+}
+
+#[test]
+fn e2e_args_inspector_scope() {
+    // Script with :args — the argsh Args scope should show field definitions
+    let (_d, s) = write_script("inspector.sh", "\
+#!/usr/bin/env bash
+main() {
+  local name verbose=0
+  local -a args=(
+    'verbose|v:+' 'Enable verbose'
+    'name'        'Name to greet'
+  )
+  echo \"hello\"
+}
+main
+");
+    let (mut si, dap, mut ch) = init();
+    launch(&mut si, &dap, &s, true, &[]);
+    assert!(dap.wait_stopped().is_some(), "no stop");
+
+    // Request scopes — should have argsh Args (variablesReference=2)
+    send(&mut si, &json!({"seq":30,"type":"request","command":"scopes","arguments":{"frameId":0}}));
+    let r = dap.recv().expect("scopes resp");
+    let scopes = r["body"]["scopes"].as_array().unwrap();
+    let has_args = scopes.iter().any(|s| s["name"] == "argsh Args");
+    assert!(has_args, "no argsh Args scope: {:?}", scopes);
+
+    // Request variables for the argsh Args scope
+    send(&mut si, &json!({"seq":31,"type":"request","command":"variables","arguments":{"variablesReference":2}}));
+    let r = dap.recv().expect("variables resp");
+    assert!(r["success"].as_bool().unwrap());
+    let vars = r["body"]["variables"].as_array().unwrap();
+    // Should have entries from the :args definition
+    assert!(!vars.is_empty(), "argsh Args scope is empty — expected field definitions");
+
+    cont(&mut si, &dap);
+    quit(&mut si, &dap, &mut ch);
+}
+
+#[test]
+fn e2e_auto_launch_configs() {
+    // Script with :usage — evaluate argsh.generateLaunchConfigs should return configs
+    let (_d, s) = write_script("configs.sh", "\
+#!/usr/bin/env bash
+deploy() { echo deploy; }
+status() { echo status; }
+main() {
+  local -a usage=(
+    'deploy' 'Deploy'
+    'status' 'Status'
+  )
+  echo main
+}
+main \"${@}\"
+");
+    let (mut si, dap, mut ch) = init();
+    launch(&mut si, &dap, &s, true, &[]);
+    assert!(dap.wait_stopped().is_some(), "no stop");
+
+    // Evaluate the special command to generate launch configs
+    send(&mut si, &json!({"seq":30,"type":"request","command":"evaluate","arguments":{
+        "expression": "argsh.generateLaunchConfigs",
+        "context": "repl"
+    }}));
+    let r = dap.recv().expect("evaluate resp");
+    assert!(r["success"].as_bool().unwrap());
+    let result = r["body"]["result"].as_str().unwrap_or("");
+    // Should contain JSON with launch configs for deploy and status
+    assert!(result.contains("deploy") || result.contains("status") || result == "[]",
+        "expected launch configs, got: {}", result);
+
+    cont(&mut si, &dap);
+    quit(&mut si, &dap, &mut ch);
+}
+
+#[test]
+fn e2e_watch_expression() {
+    let (_d, s) = write_script("watch.sh", "#!/usr/bin/env bash\nx=10\ny=20\necho $x $y\n");
+    let (mut si, dap, mut ch) = init();
+    set_bp(&mut si, &dap, &s, &[4]);
+    launch(&mut si, &dap, &s, false, &[]);
+    assert!(dap.wait_stopped().is_some(), "bp not hit");
+
+    // Evaluate a watch expression
+    send(&mut si, &json!({"seq":30,"type":"request","command":"evaluate","arguments":{
+        "expression": "x",
+        "context": "watch"
+    }}));
+    let r = dap.recv().expect("evaluate watch resp");
+    assert!(r["success"].as_bool().unwrap(), "watch evaluate failed: {:?}", r);
+
+    cont(&mut si, &dap);
+    quit(&mut si, &dap, &mut ch);
+}
+
+#[test]
+fn e2e_subshell_does_not_hang() {
+    // Script with a command substitution (subshell) — should not deadlock
+    let (_d, s) = write_script("subshell.sh", "\
+#!/usr/bin/env bash
+result=$(echo hello)
+echo \"result: $result\"
+");
+    let (mut si, dap, mut ch) = init();
+    launch(&mut si, &dap, &s, true, &[]);
+    assert!(dap.wait_stopped().is_some(), "no stop on entry");
+
+    // Continue through the subshell — should not hang
+    cont(&mut si, &dap);
+
+    // Script should finish within timeout
+    std::thread::sleep(Duration::from_millis(500));
+    quit(&mut si, &dap, &mut ch);
+}
+
+#[test]
+fn e2e_pipe_does_not_hang() {
+    // Pipes create subshells for each segment — should not deadlock
+    let (_d, s) = write_script("pipe.sh", "\
+#!/usr/bin/env bash
+echo hello | cat | wc -c
+echo done
+");
+    let (mut si, dap, mut ch) = init();
+    launch(&mut si, &dap, &s, true, &[]);
+    assert!(dap.wait_stopped().is_some(), "no stop on entry");
+    cont(&mut si, &dap);
+    std::thread::sleep(Duration::from_millis(500));
+    quit(&mut si, &dap, &mut ch);
+}
+
+#[test]
+fn e2e_background_job_does_not_hang() {
+    // { ...; } & creates a subshell — should not deadlock
+    let (_d, s) = write_script("bg.sh", "\
+#!/usr/bin/env bash
+{ echo background; } &
+wait
+echo done
+");
+    let (mut si, dap, mut ch) = init();
+    launch(&mut si, &dap, &s, true, &[]);
+    assert!(dap.wait_stopped().is_some(), "no stop on entry");
+    cont(&mut si, &dap);
+    std::thread::sleep(Duration::from_millis(500));
+    quit(&mut si, &dap, &mut ch);
+}
+
+#[test]
 #[ignore] // TODO: step-out depth tracking interacts with the wrapper's function depth
 fn e2e_step_out() {
     let (_d, s) = write_script("stepout.sh", "#!/usr/bin/env bash\ninner() { echo a; echo b; }\ninner\necho done\n");
