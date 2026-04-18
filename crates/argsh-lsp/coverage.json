@@ -29,6 +29,13 @@
       "excluded_lines": "0"
     },
     {
+      "file": "crates/argsh-lsp/tests/dap_e2e.rs",
+      "percent_covered": "99.30",
+      "covered_lines": "426",
+      "total_lines": "429",
+      "excluded_lines": "0"
+    },
+    {
       "file": "crates/argsh-lsp/src/format.rs",
       "percent_covered": "97.30",
       "covered_lines": "180",
@@ -92,6 +99,13 @@
       "excluded_lines": "0"
     },
     {
+      "file": "crates/argsh-lsp/src/bin/argsh-dap.rs",
+      "percent_covered": "78.35",
+      "covered_lines": "666",
+      "total_lines": "850",
+      "excluded_lines": "0"
+    },
+    {
       "file": "crates/argsh-syntax/src/usage.rs",
       "percent_covered": "77.78",
       "covered_lines": "35",
@@ -134,13 +148,6 @@
       "excluded_lines": "0"
     },
     {
-      "file": "crates/argsh-lsp/src/bin/argsh-dap.rs",
-      "percent_covered": "50.06",
-      "covered_lines": "415",
-      "total_lines": "829",
-      "excluded_lines": "0"
-    },
-    {
       "file": "crates/argsh-lsp/src/preview.rs",
       "percent_covered": "24.81",
       "covered_lines": "132",
@@ -155,12 +162,12 @@
       "excluded_lines": "0"
     }
   ],
-  "percent_covered": "76.90",
-  "covered_lines": 5616,
-  "total_lines": 7303,
+  "percent_covered": "81.17",
+  "covered_lines": 6293,
+  "total_lines": 7753,
   "excluded_lines": 0,
   "percent_low": 25,
   "percent_high": 75,
   "command": "cargo-test+llvm-cov",
-  "date": "2026-04-18 14:25:07"
+  "date": "2026-04-18 17:54:10"
 }

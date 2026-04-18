@@ -696,9 +696,11 @@ impl DapSession {
         // Inject any breakpoints that were set before launch into the prelude.
         // The prelude's __ARGSH_DAP_BPS array is populated at script start so
         // breakpoints work immediately without a ctl FIFO round-trip.
+        // Shell-escape file paths in breakpoint entries to handle spaces/quotes.
         let initial_bps: String = self.breakpoints.iter()
             .flat_map(|(file, lines)| {
-                lines.iter().map(move |line| format!("\"{}:{}\"", file.display(), line))
+                let escaped = file.display().to_string().replace('\'', "'\\''");
+                lines.iter().map(move |line| format!("'{}:{}'", escaped, line))
             })
             .collect::<Vec<_>>()
             .join(" ");
