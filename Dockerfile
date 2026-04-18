@@ -10,13 +10,13 @@
 # ── Rust build stages ────────────────────────────────────────────────────
 
 # minify — build Rust minifier
-FROM rust:1-slim-bookworm AS minifier-build
+FROM rust:1-slim-trixie AS minifier-build
 WORKDIR /build
 COPY minifier/ .
 RUN cargo build --release
 
 # shdoc — build Rust documentation generator
-FROM rust:1-slim-bookworm AS shdoc-build
+FROM rust:1-slim-trixie AS shdoc-build
 WORKDIR /build
 COPY shdoc/ .
 RUN cargo build --release
@@ -29,7 +29,7 @@ RUN cargo build --release
 # -fuse-ld=lld resolves to system lld on all architectures.
 # (-Clinker-features=-lld would be cleaner but is only stable on x86_64.)
 # See: https://github.com/rust-lang/rust/issues/38238
-FROM rust:1-slim-bookworm AS builtin-build
+FROM rust:1-slim-trixie AS builtin-build
 RUN apt-get update && apt-get install -y --no-install-recommends lld && rm -rf /var/lib/apt/lists/*
 RUN ln -sf /usr/bin/ld.lld "$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | awk '/host/{print $2}')/bin/gcc-ld/ld.lld"
 ARG RUSTFLAGS
@@ -42,7 +42,7 @@ COPY builtin/ .
 RUN cargo build --release
 
 # argsh-lsp / argsh-lint — LSP server + CLI linter (share the same crate).
-FROM rust:1-slim-bookworm AS lsp-build
+FROM rust:1-slim-trixie AS lsp-build
 WORKDIR /build
 COPY crates/ crates/
 RUN cargo build --release --manifest-path crates/argsh-lsp/Cargo.toml --bins
@@ -57,7 +57,7 @@ COPY --from=lsp-build /build/crates/argsh-lsp/target/release/argsh-lint /argsh-l
 
 # ── Final image ──────────────────────────────────────────────────────────
 
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 
 # kcov — bash script coverage (binary copied from kcov image; runtime deps
 # installed via apt below to keep them up-to-date with the base image)
@@ -91,7 +91,7 @@ COPY --from=koalaman/shellcheck:stable /bin/shellcheck /usr/local/bin/shellcheck
 
 # tools
 COPY --from=ghcr.io/jqlang/jq:1.8.1 /jq /usr/local/bin/jq
-COPY --from=mikefarah/yq:4.52.5 /usr/bin/yq /usr/local/bin/yq
+COPY --from=mikefarah/yq:4.53.2 /usr/bin/yq /usr/local/bin/yq
 
 # argsh itself
 COPY --from=minifier-build /build/target/release/minifier /usr/local/bin/minifier
