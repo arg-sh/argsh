@@ -1,6 +1,6 @@
 # shdoc
 
-Documentation generator for bash scripts and Rust source files. Extracts `# @annotation` tags from bash and `//!`/`///` doc comments from Rust, producing Markdown, HTML, or JSON output.
+Documentation generator for bash scripts and Rust source files. Extracts `# @` tags from bash and `//!`/`///` doc comments from Rust, producing Markdown, HTML, or JSON output.
 
 ## Usage
 
@@ -117,7 +117,7 @@ src/
 ├── toc.rs             Table-of-contents and anchor generation
 ├── parser/
 │   ├── mod.rs         Parser dispatch by file extension
-│   ├── bash.rs        State machine for # @annotation tags
+│   ├── bash.rs        State machine for # @file/# @description/etc. directives
 │   ├── rust.rs        Doc comment parser for .rs files
 │   └── merge.rs       Cross-language merge by canonical function name
 └── render/

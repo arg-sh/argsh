@@ -117,7 +117,7 @@ Suppress per-line with `# argsh-ignore=AG004,AG012` or `# argsh disable=AG004`.
 
 ## Resolver
 
-`resolver.rs` follows `import` and `source` statements across files to build a merged `DocumentAnalysis`. Resolution depth is configurable (0–5, default 2).
+`resolver.rs` follows `import` and `source` statements across files to build a merged `DocumentAnalysis`. Resolution depth is configurable (0+, default 2).
 
 Search order for imports:
 1. Relative to the importing file's directory
