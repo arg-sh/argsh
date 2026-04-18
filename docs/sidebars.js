@@ -286,6 +286,15 @@ module.exports = {
       className: "homepage-sidebar-item",
     },
     {
+      type: "doc",
+      id: "development/tools/debugger",
+      label: "Debugger",
+      customProps: {
+        sidebar_icon: "bug",
+      },
+      className: "homepage-sidebar-item",
+    },
+    {
       type: "html",
       value: "Reference",
       customProps: {
