@@ -14,7 +14,7 @@ pub fn code_lenses(analysis: &DocumentAnalysis, uri: &Url) -> Vec<CodeLens> {
         .collect();
 
     for func in &analysis.functions {
-        let has_args = func.calls_args && !func.args_entries.is_empty();
+        let has_args = func.calls_args;
         let has_usage = func.calls_usage && !func.usage_entries.is_empty();
 
         if !has_args && !has_usage {

@@ -1666,6 +1666,45 @@ fn test_code_lens_shows_parent_link() {
 }
 
 #[test]
+fn test_code_lens_no_args_leaf() {
+    let mut client = LspTestClient::new();
+    client.initialize();
+
+    // A function that calls :args but has no args=() array (no flags/params, just a title)
+    let content = "#!/usr/bin/env bash\nsource argsh\nlist() {\n  :args \"List secrets\" \"${@}\"\n  echo \"listing...\"\n}\n";
+    client.open_document("file:///test_noargs.sh", content);
+
+    let resp = client.send_request(
+        "textDocument/codeLens",
+        json!({
+            "textDocument": { "uri": "file:///test_noargs.sh" }
+        }),
+    );
+    assert!(
+        resp.get("error").is_none(),
+        "CodeLens error: {:?}",
+        resp["error"]
+    );
+    let result = &resp["result"];
+    assert!(result.is_array(), "CodeLens should return array");
+    let lenses = result.as_array().unwrap();
+    assert!(
+        !lenses.is_empty(),
+        "Expected a code lens for list() even without args=() array"
+    );
+
+    // Should show as a leaf (terminal icon)
+    let title = lenses[0]["command"]["title"].as_str().unwrap();
+    assert!(
+        title.contains("$(terminal)"),
+        "No-args leaf should show terminal icon, got: {}",
+        title
+    );
+
+    client.shutdown();
+}
+
+#[test]
 fn test_settings_resolve_depth_passed() {
     let mut client = LspTestClient::new();
     // Initialize with custom resolveDepth
