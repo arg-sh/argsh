@@ -403,6 +403,8 @@ if ! (( ARGSH_BUILTIN )); then
   while (( ${#args[@]} % 2 )) && (( ${#args[@]} )) && [[ -z "${args[-1]}" ]]; do
     unset 'args[-1]'
   done
+  # Leave malformed odd-length arrays untouched for the existing validation/error path
+  (( ${#args[@]} % 2 == 0 )) || return 0
   (( ${#args[@]} > 2 )) || return 0
 
   local -A _seen=() _non_inherited=()
