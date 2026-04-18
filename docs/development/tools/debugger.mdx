@@ -83,11 +83,10 @@ The call stack panel shows the current function call chain with file names and l
 
 ### Variable inspection
 
-Hover over variables or use the Variables panel to inspect values at any breakpoint. The debugger shows local variables in the current scope.
+The Variables panel shows two scopes when stopped at a breakpoint:
 
-:::note
-The **Locals** scope shows variables only when the script is stopped at a breakpoint or step. Under the hood, the debugger sends a `declare -p` command to the bash process via FIFO, which requires a round-trip. The scope may appear empty briefly until the response arrives.
-:::
+- **Locals** — runtime variable values from the bash process (planned — not yet implemented in the MVP; will use `declare -p` via FIFO round-trip)
+- **argsh Args** — static view of the `:args` field definitions with types (available now)
 
 ### argsh Args inspector
 
@@ -101,13 +100,17 @@ This gives you immediate visibility into what arguments the current function exp
 
 ### Variable type tooltips
 
-Hover over a variable name while debugging to see its argsh type annotation alongside its runtime value. For example, hovering over `port` in a function with `'port|p:~int'` shows:
+Hover over a variable name while debugging to see its argsh type annotation. For example, hovering over `port` in a function with `'port|p:~int'` shows:
 
 ```
 argsh: port|p:~int
 ```
 
 This works for all variables that appear in `:args` definitions — flags, positionals, and typed fields.
+
+:::note
+Runtime values in hover tooltips are planned for a future release. Currently only the argsh field definition is shown.
+:::
 
 ### Auto-generated launch configurations
 
@@ -155,7 +158,7 @@ Add watch expressions via the **Watch** panel in the debug sidebar. Expressions 
 
 ### Modify variables at runtime
 
-In the Variables panel, double-click a variable value to modify it. The new value is applied immediately in the running bash process via `eval`. This is useful for testing different code paths without restarting the script.
+In the Variables panel, double-click a variable value to modify it. The new value is applied immediately in the running bash process via `printf -v` (safe assignment, no eval). This is useful for testing different code paths without restarting the script.
 
 ### Subshell debugging
 
