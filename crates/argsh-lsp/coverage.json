@@ -100,9 +100,9 @@
     },
     {
       "file": "crates/argsh-lsp/src/bin/argsh-dap.rs",
-      "percent_covered": "78.35",
-      "covered_lines": "666",
-      "total_lines": "850",
+      "percent_covered": "78.38",
+      "covered_lines": "667",
+      "total_lines": "851",
       "excluded_lines": "0"
     },
     {
@@ -163,11 +163,11 @@
     }
   ],
   "percent_covered": "81.17",
-  "covered_lines": 6293,
-  "total_lines": 7753,
+  "covered_lines": 6294,
+  "total_lines": 7754,
   "excluded_lines": 0,
   "percent_low": 25,
   "percent_high": 75,
   "command": "cargo-test+llvm-cov",
-  "date": "2026-04-18 17:54:10"
+  "date": "2026-04-18 18:03:55"
 }
