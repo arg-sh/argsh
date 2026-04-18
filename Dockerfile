@@ -59,12 +59,12 @@ COPY --from=lsp-build /build/crates/argsh-lsp/target/release/argsh-lint /argsh-l
 
 FROM debian:trixie-slim
 
-# kcov — bash script coverage (binary copied from kcov image; runtime deps
-# installed via apt below to keep them up-to-date with the base image)
-COPY --from=kcov/kcov /usr/local/bin/kcov /usr/local/bin/kcov
+# kcov — bash script coverage (binary copied from pinned kcov image;
+# runtime deps installed via apt below to keep them up-to-date with the base)
+COPY --from=kcov/kcov@sha256:5c61bd03d2b7f4fa74131b18e4e80356a92a7517872b5b9a505022c38cd6d123 /usr/local/bin/kcov /usr/local/bin/kcov
 
 # test — bats-core + standard helper libraries (support, assert, file)
-# Pinned to latest release tags; shallow clones for faster builds.
+# Pinned to immutable commit SHAs for reproducibility.
 RUN set -eux \
   && apt-get update \
   && apt-get install -y --no-install-recommends \
@@ -73,11 +73,15 @@ RUN set -eux \
       libcurl4 libdw1 libelf1 zlib1g \
       # envsubst
       gettext-base \
-  && git clone --depth 1 --branch v1.13.0 https://github.com/bats-core/bats-core.git /tmp/bats \
+  && git clone https://github.com/bats-core/bats-core.git /tmp/bats \
+  && git -C /tmp/bats checkout --detach 3bca150ec86275d6d9d5a4fd7d48ab8b6c6f3d87 \
   && /tmp/bats/install.sh /usr/local \
-  && git clone --depth 1 --branch v0.3.0 https://github.com/bats-core/bats-support.git /usr/local/lib/bats-support \
-  && git clone --depth 1 --branch v2.2.4 https://github.com/bats-core/bats-assert.git /usr/local/lib/bats-assert \
-  && git clone --depth 1 --branch v0.4.0 https://github.com/bats-core/bats-file.git /usr/local/lib/bats-file \
+  && git clone https://github.com/bats-core/bats-support.git /usr/local/lib/bats-support \
+  && git -C /usr/local/lib/bats-support checkout --detach 24a72e14349690bcbf7c151b9d2d1cdd32d36eb1 \
+  && git clone https://github.com/bats-core/bats-assert.git /usr/local/lib/bats-assert \
+  && git -C /usr/local/lib/bats-assert checkout --detach f1e9280eaae8f86cbe278a687e6ba755bc802c1a \
+  && git clone https://github.com/bats-core/bats-file.git /usr/local/lib/bats-file \
+  && git -C /usr/local/lib/bats-file checkout --detach 13ad5e2ffcc360281432db3d43a306f7b3667d60 \
   && rm -rf /tmp/bats \
       /usr/local/lib/bats-support/.git \
       /usr/local/lib/bats-assert/.git \
