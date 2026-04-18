@@ -24,7 +24,7 @@ RUN cargo build --release
 # builtin — build Rust loadable builtins
 # System lld (from apt) is required because export_name attributes contain
 # colons (e.g. ":args_struct") which cause "syntax error in VERSION script"
-# with both GNU ld and rust-lld. System lld (Debian LLD 14) handles them.
+# with both GNU ld and rust-lld. The system lld (from apt) handles them.
 # We symlink system lld over the rust-lld shim in gcc-ld/ so that
 # -fuse-ld=lld resolves to system lld on all architectures.
 # (-Clinker-features=-lld would be cleaner but is only stable on x86_64.)
@@ -73,15 +73,20 @@ RUN set -eux \
       libcurl4 libdw1 libelf1 zlib1g \
       # envsubst
       gettext-base \
-  && git clone https://github.com/bats-core/bats-core.git /tmp/bats \
-  && git -C /tmp/bats checkout --detach 3bca150ec86275d6d9d5a4fd7d48ab8b6c6f3d87 \
+  && git init /tmp/bats \
+  && git -C /tmp/bats remote add origin https://github.com/bats-core/bats-core.git \
+  && git -C /tmp/bats fetch --depth 1 origin 3bca150ec86275d6d9d5a4fd7d48ab8b6c6f3d87 \
+  && git -C /tmp/bats checkout FETCH_HEAD \
   && /tmp/bats/install.sh /usr/local \
-  && git clone https://github.com/bats-core/bats-support.git /usr/local/lib/bats-support \
-  && git -C /usr/local/lib/bats-support checkout --detach 24a72e14349690bcbf7c151b9d2d1cdd32d36eb1 \
-  && git clone https://github.com/bats-core/bats-assert.git /usr/local/lib/bats-assert \
-  && git -C /usr/local/lib/bats-assert checkout --detach f1e9280eaae8f86cbe278a687e6ba755bc802c1a \
-  && git clone https://github.com/bats-core/bats-file.git /usr/local/lib/bats-file \
-  && git -C /usr/local/lib/bats-file checkout --detach 13ad5e2ffcc360281432db3d43a306f7b3667d60 \
+  && git clone --depth 1 https://github.com/bats-core/bats-support.git /usr/local/lib/bats-support \
+  && git -C /usr/local/lib/bats-support fetch --depth 1 origin 24a72e14349690bcbf7c151b9d2d1cdd32d36eb1 \
+  && git -C /usr/local/lib/bats-support checkout FETCH_HEAD \
+  && git clone --depth 1 https://github.com/bats-core/bats-assert.git /usr/local/lib/bats-assert \
+  && git -C /usr/local/lib/bats-assert fetch --depth 1 origin f1e9280eaae8f86cbe278a687e6ba755bc802c1a \
+  && git -C /usr/local/lib/bats-assert checkout FETCH_HEAD \
+  && git clone --depth 1 https://github.com/bats-core/bats-file.git /usr/local/lib/bats-file \
+  && git -C /usr/local/lib/bats-file fetch --depth 1 origin 13ad5e2ffcc360281432db3d43a306f7b3667d60 \
+  && git -C /usr/local/lib/bats-file checkout FETCH_HEAD \
   && rm -rf /tmp/bats \
       /usr/local/lib/bats-support/.git \
       /usr/local/lib/bats-assert/.git \
