@@ -399,19 +399,28 @@ echo done
 }
 
 #[test]
-#[ignore] // TODO: step-out depth tracking interacts with the wrapper's function depth
 fn e2e_step_out() {
-    let (_d, s) = write_script("stepout.sh", "#!/usr/bin/env bash\ninner() { echo a; echo b; }\ninner\necho done\n");
+    // Multi-line function with breakpoint on first body line (line 3)
+    let (_d, s) = write_script("stepout.sh", "\
+#!/usr/bin/env bash
+inner() {
+  echo a
+  echo b
+}
+inner
+echo done
+");
     let (mut si, dap, mut ch) = init();
-    set_bp(&mut si, &dap, &s, &[2]); // inside inner, first line
+    set_bp(&mut si, &dap, &s, &[3]); // inside inner(), first echo
     launch(&mut si, &dap, &s, false, &[]);
-    // The bp is on the function def line, so step into first
     let st = dap.wait_stopped();
-    if st.is_some() {
-        step(&mut si, &dap, "stepOut");
-        // Should stop back in caller or at next line
-        let _ = dap.wait_stopped(); // may or may not fire depending on depth
-    }
+    assert!(st.is_some(), "breakpoint inside inner() not hit");
+
+    // Step out — should return to caller (line 6: inner call, or line 7: echo done)
+    step(&mut si, &dap, "stepOut");
+    let st2 = dap.wait_stopped();
+    assert!(st2.is_some(), "no stop after step out");
+
     cont(&mut si, &dap);
     quit(&mut si, &dap, &mut ch);
 }
