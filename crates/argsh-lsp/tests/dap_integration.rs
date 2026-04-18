@@ -302,3 +302,80 @@ fn scopes_includes_argsh_args_scope() {
     }
     let _ = child.wait();
 }
+
+/// Issue #12: Test that setFunctionBreakpoints resolves a :usage command name
+/// to a file:line breakpoint.
+#[test]
+fn set_function_breakpoints_resolves_command() {
+    let (mut stdin, mut reader, mut child) = start_session();
+
+    // Create a temp script with :usage dispatch
+    let dir = tempfile::tempdir().unwrap();
+    let script = dir.path().join("cli.sh");
+    std::fs::write(&script, r#"#!/usr/bin/env argsh
+main() {
+  local -a usage=(
+    'deploy' "Deploy the app"
+  )
+  :usage "${@}"
+}
+main::deploy() {
+  echo "deploying"
+}
+main "${@}"
+"#).unwrap();
+
+    send_dap_message(&mut stdin, &json!({
+        "seq": 1,
+        "type": "request",
+        "command": "initialize",
+        "arguments": {}
+    }));
+    let _ = read_dap_message(&mut reader); // response
+    let _ = read_dap_message(&mut reader); // initialized event
+
+    send_dap_message(&mut stdin, &json!({
+        "seq": 2,
+        "type": "request",
+        "command": "launch",
+        "arguments": {
+            "program": script.to_str().unwrap(),
+            "args": ["deploy"],
+            "stopOnEntry": true,
+        }
+    }));
+    let resp = read_dap_message(&mut reader);
+    assert_eq!(resp["success"], true, "launch failed: {:?}", resp);
+
+    // Set a function breakpoint by command name "deploy"
+    send_dap_message(&mut stdin, &json!({
+        "seq": 3,
+        "type": "request",
+        "command": "setFunctionBreakpoints",
+        "arguments": {
+            "breakpoints": [
+                { "name": "deploy" }
+            ]
+        }
+    }));
+    let resp = read_dap_message(&mut reader);
+    assert_eq!(resp["command"], "setFunctionBreakpoints");
+    assert_eq!(resp["success"], true);
+    let bps = resp["body"]["breakpoints"].as_array().unwrap();
+    assert_eq!(bps.len(), 1);
+    assert!(bps[0]["verified"].as_bool().unwrap(),
+        "function breakpoint should be verified: {:?}", bps[0]);
+    assert!(bps[0]["line"].as_i64().unwrap() > 0,
+        "function breakpoint should have a line number: {:?}", bps[0]);
+
+    send_dap_message(&mut stdin, &json!({
+        "seq": 4,
+        "type": "request",
+        "command": "disconnect",
+    }));
+    loop {
+        let msg = read_dap_message(&mut reader);
+        if msg["command"] == "disconnect" { break; }
+    }
+    let _ = child.wait();
+}

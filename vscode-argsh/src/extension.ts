@@ -134,6 +134,22 @@ class ArgshCommandTreeProvider implements vscode.TreeDataProvider<CommandTreeIte
 export function activate(context: vscode.ExtensionContext) {
   const config = vscode.workspace.getConfiguration('argsh');
 
+  // Issue #8: Register the debug adapter BEFORE checking lsp.enabled so that
+  // debugging works even when the LSP is disabled. The debug adapter is a
+  // separate binary (argsh-dap) and does not depend on the language server.
+  context.subscriptions.push(
+    vscode.debug.registerDebugAdapterDescriptorFactory(
+      'argsh',
+      new ArgshDebugAdapterDescriptorFactory(context)
+    )
+  );
+  context.subscriptions.push(
+    vscode.debug.registerDebugConfigurationProvider(
+      'argsh',
+      new ArgshDebugConfigurationProvider()
+    )
+  );
+
   if (!config.get<boolean>('lsp.enabled', true)) {
     return;
   }
@@ -429,20 +445,6 @@ export function activate(context: vscode.ExtensionContext) {
   });
   context.subscriptions.push(exportJsonCmd);
 
-  // --- Debug Adapter ---
-
-  context.subscriptions.push(
-    vscode.debug.registerDebugAdapterDescriptorFactory(
-      'argsh',
-      new ArgshDebugAdapterDescriptorFactory(context)
-    )
-  );
-  context.subscriptions.push(
-    vscode.debug.registerDebugConfigurationProvider(
-      'argsh',
-      new ArgshDebugConfigurationProvider()
-    )
-  );
 }
 
 export function deactivate(): Thenable<void> | undefined {

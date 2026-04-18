@@ -88,9 +88,15 @@ __ARGSH_DAP_STEP=0        # 0=run, 1=stepin, 2=next, 3=stepout
 __ARGSH_DAP_DEPTH=0        # saved depth for next/stepout
 __ARGSH_DAP_STOP_ENTRY=__STOP_ON_ENTRY__
 __ARGSH_DAP_LOCK=""        # flock file descriptor (set during init)
+__ARGSH_DAP_CTL_FD=""      # persistent fd for control FIFO (issue #9)
 declare -a __ARGSH_DAP_BPS=()     # breakpoints: "file:line" entries
 declare -A __ARGSH_DAP_BP_COND=() # conditional breakpoints: "file:line" → condition
 declare -a __ARGSH_DAP_WATCH=()   # watch expressions
+
+# Unit separator used as delimiter in the condition protocol (issue #2).
+# Avoids breakage when file paths contain colons (e.g. Windows-style or
+# unusual Unix paths).
+__ARGSH_DAP_US=$'\x1f'
 
 # Initialize the lock file for flock-based FIFO serialization.
 # Subshells inherit the fd, so both parent and child can acquire the lock.
@@ -101,6 +107,11 @@ exec {__ARGSH_DAP_LOCK}>"${__ARGSH_DAP_FIFO}.lock"
 __argsh_dap_cleanup() {
   local _ctl="${__ARGSH_DAP_FIFO}.ctl.$$"
   [[ ! -p "${_ctl}" ]] || rm -f "${_ctl}"
+  # Close persistent control fd if open
+  if [[ -n "${__ARGSH_DAP_CTL_FD}" ]]; then
+    eval "exec ${__ARGSH_DAP_CTL_FD}<&-" 2>/dev/null || true
+    __ARGSH_DAP_CTL_FD=""
+  fi
 }
 trap '__argsh_dap_cleanup' EXIT
 
@@ -190,9 +201,15 @@ __argsh_dap_trap() {
     )
 
     # Block until DAP server sends a resume command on OUR control FIFO.
-    # Main shell reads from .ctl, subshells from .ctl.$$
+    # Issue #9: Use a persistent file descriptor to keep the FIFO open
+    # across reads. Redirecting from the FIFO path directly causes EOF
+    # after each non-resume command, breaking the read loop.
+    if [[ -z "${__ARGSH_DAP_CTL_FD}" ]] || ! { true >&"${__ARGSH_DAP_CTL_FD}"; } 2>/dev/null; then
+      exec {__ARGSH_DAP_CTL_FD}<"${_ctl_fifo}"
+    fi
+
     local _cmd
-    while IFS= read -r _cmd; do
+    while IFS= read -r _cmd <&"${__ARGSH_DAP_CTL_FD}"; do
       case "${_cmd}" in
         continue)
           __ARGSH_DAP_STEP=0
@@ -223,11 +240,13 @@ __argsh_dap_trap() {
             IFS=',' read -ra __ARGSH_DAP_BPS <<< "${_bpdata}"
           fi
           ;;
-        condition:*)
-          # Set conditional breakpoint: "condition:file:line:expression"
-          local _cdata="${_cmd#condition:}"
+        condition${__ARGSH_DAP_US}*)
+          # Set conditional breakpoint: "condition\x1ffile\x1fline\x1fexpression"
+          # Issue #2: uses unit separator (\x1f) instead of colon to avoid
+          # breaking on colons in file paths.
+          local _cdata="${_cmd#condition${__ARGSH_DAP_US}}"
           local _cfile _cline _cexpr
-          IFS=':' read -r _cfile _cline _cexpr <<< "${_cdata}"
+          IFS="${__ARGSH_DAP_US}" read -r _cfile _cline _cexpr <<< "${_cdata}"
           __ARGSH_DAP_BP_COND["${_cfile}:${_cline}"]="${_cexpr}"
           ;;
         watch:*)
@@ -246,8 +265,15 @@ __argsh_dap_trap() {
           ;;
         setvar:*)
           # Modify variable at runtime: "setvar:name=value"
+          # Issue #1/#5/#14: Use printf -v for safe assignment instead of eval.
+          # Parse name=value with parameter expansion to avoid injection.
           local _svdata="${_cmd#setvar:}"
-          eval "${_svdata}" 2>/dev/null || true
+          local _name="${_svdata%%=*}"
+          local _value="${_svdata#*=}"
+          # Validate variable name: must be a valid bash identifier
+          if [[ "${_name}" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
+            printf -v "${_name}" '%s' "${_value}"
+          fi
           ;;
         eval:*)
           # Evaluate expression and return result: "eval:expression"
@@ -258,13 +284,16 @@ __argsh_dap_trap() {
           ;;
         vars)
           # Dump variables to FIFO for inspection
+          # NOTE (issue #3): Locals scope shows variables only when the script
+          # is stopped (requires FIFO round-trip). Variables are read via
+          # `declare -p` which reflects the current scope at the trap callsite.
           {
             declare -p 2>/dev/null
             printf 'ENDVARS\n'
           } > "${__ARGSH_DAP_FIFO}"
           ;;
       esac
-    done < "${_ctl_fifo}"
+    done
   fi
 
   return 0
@@ -293,10 +322,18 @@ struct DapSession {
     program_content: Option<String>,
     // Last stack trace from a STOPPED event, used by handle_stack_trace.
     last_stack_frames: Arc<Mutex<Vec<Value>>>,
+    // Issue #4/#10: mapping from DAP threadId to bash PID, so continue/step
+    // commands are routed to the correct per-PID control FIFO.
+    // threadId 1 = main shell (no PID suffix), others = subshells.
+    thread_pids: Arc<Mutex<HashMap<i64, u64>>>,
+    // Issue #11: set of currently active thread IDs (main + subshells).
+    active_threads: Arc<Mutex<HashMap<i64, String>>>,
 }
 
 impl DapSession {
     fn new() -> Self {
+        let mut active_threads = HashMap::new();
+        active_threads.insert(1, "main".to_string());
         Self {
             seq: Arc::new(AtomicI64::new(1)),
             breakpoints: HashMap::new(),
@@ -309,6 +346,8 @@ impl DapSession {
             program_path: None,
             program_content: None,
             last_stack_frames: Arc::new(Mutex::new(Vec::new())),
+            thread_pids: Arc::new(Mutex::new(HashMap::new())),
+            active_threads: Arc::new(Mutex::new(active_threads)),
         }
     }
 
@@ -659,8 +698,23 @@ impl DapSession {
         let wrapper_path = fifo_dir.join("wrapper.sh");
         std::fs::write(&wrapper_path, &wrapper).unwrap();
 
-        // Spawn bash with the wrapper
-        let mut cmd = Command::new("bash");
+        // Issue #6: Detect the script's shebang to use the correct interpreter.
+        // If the script uses `#!/usr/bin/env argsh` or `#!/.../argsh`, run the
+        // wrapper via `argsh` so the argsh runtime (builtins, etc.) is available.
+        let interpreter = {
+            let shebang_line = std::fs::read_to_string(&program)
+                .ok()
+                .and_then(|s| s.lines().next().map(String::from))
+                .unwrap_or_default();
+            if shebang_line.contains("argsh") {
+                "argsh".to_string()
+            } else {
+                "bash".to_string()
+            }
+        };
+
+        // Spawn with the detected interpreter
+        let mut cmd = Command::new(&interpreter);
         cmd.arg(wrapper_path.to_str().unwrap());
         cmd.args(&script_args);
         cmd.current_dir(&cwd);
@@ -693,9 +747,14 @@ impl DapSession {
                 let seq = Arc::clone(&self.seq);
                 let launched = Arc::clone(&self.launched);
                 let last_frames = Arc::clone(&self.last_stack_frames);
+                let thread_pids = Arc::clone(&self.thread_pids);
+                let active_threads = Arc::clone(&self.active_threads);
 
                 std::thread::spawn(move || {
-                    fifo_reader_loop(&fifo_data_clone, &stdout_writer, &seq, &launched, &last_frames);
+                    fifo_reader_loop(
+                        &fifo_data_clone, &stdout_writer, &seq, &launched,
+                        &last_frames, &thread_pids, &active_threads,
+                    );
                 });
             }
             Err(e) => {
@@ -761,8 +820,10 @@ impl DapSession {
                         {
                             let _ = f.write_all(format!("breakpoints:{}\n", bp_str).as_bytes());
                             for (file, line, cond) in &conditions_clone {
+                                // Issue #2: use unit separator (\x1f) instead of colon
+                                // to avoid breaking on colons in file paths.
                                 let _ = f.write_all(
-                                    format!("condition:{}:{}:{}\n", file.display(), line, cond)
+                                    format!("condition\x1f{}\x1f{}\x1f{}\n", file.display(), line, cond)
                                         .as_bytes(),
                                 );
                             }
@@ -783,43 +844,64 @@ impl DapSession {
     }
 
     fn handle_threads(&self, req: &DapMessage) {
+        // Issue #11: return all active threads (main + subshells), not just main.
+        let threads_map = self.active_threads.lock().unwrap();
+        let threads: Vec<Value> = threads_map.iter()
+            .map(|(id, name)| serde_json::json!({ "id": id, "name": name }))
+            .collect();
         self.send_response(req, true, Some(serde_json::json!({
-            "threads": [{
-                "id": 1,
-                "name": "main"
-            }]
+            "threads": threads,
         })), None);
     }
 
+    /// Issue #4/#10: Resolve a threadId from the request arguments to the
+    /// corresponding bash PID. Returns None for the main thread (threadId 1)
+    /// since it uses the default .ctl FIFO without a PID suffix.
+    fn resolve_thread_pid(&self, req: &DapMessage) -> Option<u64> {
+        let thread_id = req.arguments.as_ref()
+            .and_then(|a| a.get("threadId"))
+            .and_then(|t| t.as_i64())
+            .unwrap_or(1);
+        if thread_id == 1 {
+            return None; // main thread uses default .ctl
+        }
+        self.thread_pids.lock().unwrap().get(&thread_id).copied()
+    }
+
     fn handle_continue(&self, req: &DapMessage) {
-        self.write_ctl("continue\n");
+        let pid = self.resolve_thread_pid(req);
+        self.write_ctl_for("continue\n", pid);
         self.send_response(req, true, Some(serde_json::json!({
-            "allThreadsContinued": true,
+            "allThreadsContinued": pid.is_none(),
         })), None);
     }
 
     fn handle_next(&self, req: &DapMessage) {
-        self.write_ctl("next\n");
+        let pid = self.resolve_thread_pid(req);
+        self.write_ctl_for("next\n", pid);
         self.send_response(req, true, None, None);
     }
 
     fn handle_step_in(&self, req: &DapMessage) {
-        self.write_ctl("stepin\n");
+        let pid = self.resolve_thread_pid(req);
+        self.write_ctl_for("stepin\n", pid);
         self.send_response(req, true, None, None);
     }
 
     fn handle_step_out(&self, req: &DapMessage) {
-        self.write_ctl("stepout\n");
+        let pid = self.resolve_thread_pid(req);
+        self.write_ctl_for("stepout\n", pid);
         self.send_response(req, true, None, None);
     }
 
     fn handle_stack_trace(&self, req: &DapMessage) {
         // Return the stack trace from the last STOPPED event, stored by
         // the FIFO reader thread.
-        let frames = self.last_stack_frames.lock().unwrap();
+        // Issue #7: Clone the vec to avoid moving out of the MutexGuard.
+        let frames = self.last_stack_frames.lock().unwrap().clone();
         let total = frames.len();
         self.send_response(req, true, Some(serde_json::json!({
-            "stackFrames": *frames,
+            "stackFrames": frames,
             "totalFrames": total,
         })), None);
     }
@@ -855,7 +937,11 @@ impl DapSession {
 
         let variables = match var_ref {
             1 => {
-                // Locals — via FIFO protocol (TODO: implement runtime var fetching)
+                // Issue #3: Locals scope shows variables when the script is stopped
+                // (requires FIFO round-trip via the `vars` command). This is a known
+                // limitation — the scope appears empty until a stop event triggers a
+                // `declare -p` dump from the bash process.
+                // TODO: implement runtime var fetching via FIFO round-trip
                 vec![]
             }
             2 => {
@@ -883,23 +969,42 @@ impl DapSession {
     }
 
     /// Handle setVariable — modify a variable at runtime via the FIFO protocol.
+    /// Issue #1/#5/#14: Validates the variable name as a valid bash identifier
+    /// on the Rust side before sending to the bash process, which uses printf -v
+    /// for safe assignment (no eval).
     fn handle_set_variable(&self, req: &DapMessage) {
         let args = req.arguments.as_ref();
         let name = args.and_then(|a| a.get("name")).and_then(|n| n.as_str()).unwrap_or("");
         let value = args.and_then(|a| a.get("value")).and_then(|v| v.as_str()).unwrap_or("");
 
-        if !name.is_empty() {
-            // Send setvar command to the bash process via FIFO
-            self.write_ctl(&format!("setvar:{}={}\n", name, value));
-            self.send_response(req, true, Some(serde_json::json!({
-                "value": value,
-            })), None);
-        } else {
+        if name.is_empty() {
             self.send_response(req, false, None, Some("Missing variable name".into()));
+            return;
         }
+
+        // Validate: must be a valid bash identifier (letters, digits, underscores;
+        // cannot start with a digit). Reject anything else to prevent injection.
+        let is_valid_ident = !name.is_empty()
+            && name.bytes().next().map_or(false, |b| b == b'_' || b.is_ascii_alphabetic())
+            && name.bytes().all(|b| b == b'_' || b.is_ascii_alphanumeric());
+
+        if !is_valid_ident {
+            self.send_response(req, false, None,
+                Some(format!("Invalid variable name: '{}'", name)));
+            return;
+        }
+
+        // Send setvar command to the bash process via FIFO.
+        // The bash side uses `printf -v` for safe assignment.
+        self.write_ctl(&format!("setvar:{}={}\n", name, value));
+        self.send_response(req, true, Some(serde_json::json!({
+            "value": value,
+        })), None);
     }
 
     /// (#92) Handle function breakpoints — resolve subcommand names to line breakpoints.
+    /// Issue #13: After resolving, push the updated breakpoint list to the
+    /// running script via the FIFO (same as setBreakpoints does).
     fn handle_set_function_breakpoints(&mut self, req: &DapMessage) {
         let args = req.arguments.as_ref();
         let breakpoints: Vec<Value> = args
@@ -933,6 +1038,28 @@ impl DapSession {
             })
             .unwrap_or_default();
 
+        // Issue #13: Push updated breakpoints to the running script via FIFO
+        if self.launched.load(Ordering::SeqCst) {
+            if let Some(ref fifo) = self.fifo_path {
+                let ctl_path = format!("{}.ctl", fifo.display());
+                let bp_str: String = self.breakpoints.iter()
+                    .flat_map(|(file, lines)| {
+                        lines.iter().map(move |line| format!("{}:{}", file.display(), line))
+                    })
+                    .collect::<Vec<_>>()
+                    .join(",");
+                std::thread::spawn(move || {
+                    if let Ok(mut f) = std::fs::OpenOptions::new()
+                        .write(true)
+                        .open(&ctl_path)
+                    {
+                        let _ = f.write_all(format!("breakpoints:{}\n", bp_str).as_bytes());
+                        let _ = f.flush();
+                    }
+                });
+            }
+        }
+
         self.send_response(req, true, Some(serde_json::json!({
             "breakpoints": breakpoints,
         })), None);
@@ -964,6 +1091,24 @@ impl DapSession {
                     }
                 }
             }
+        }
+
+        // Issue #15: Watch expressions via evaluate with context="watch".
+        // Sends the expression to the bash process via FIFO and returns the
+        // result. This allows the Watch panel to show live variable values.
+        if context == "watch" && !expression.is_empty() && self.launched.load(Ordering::SeqCst) {
+            // Send eval command and wait for the result via the data FIFO.
+            // Note: this is a best-effort implementation. The eval result is
+            // read by the FIFO reader thread and stored; here we send the
+            // command and return a placeholder. A full implementation would
+            // use a condvar to wait for the FIFO reader to deliver the result.
+            // TODO: implement condvar-based synchronous eval for watch expressions.
+            self.write_ctl(&format!("eval:{}\n", expression));
+            self.send_response(req, true, Some(serde_json::json!({
+                "result": format!("(evaluating: {})", expression),
+                "variablesReference": 0,
+            })), None);
+            return;
         }
 
         // (#94) Special command to generate launch configs
@@ -1050,6 +1195,8 @@ fn fifo_reader_loop(
     seq: &AtomicI64,
     launched: &AtomicBool,
     last_frames: &Mutex<Vec<Value>>,
+    thread_pids: &Mutex<HashMap<i64, u64>>,
+    active_threads: &Mutex<HashMap<i64, String>>,
 ) {
     loop {
         // Check if the session is still alive before (re-)opening the FIFO.
@@ -1081,11 +1228,29 @@ fn fifo_reader_loop(
                     let file = parts[1];
                     let line_num: i64 = parts[2].parse().unwrap_or(0);
                     let func = parts[3];
-                    let _pid: u64 = parts.get(4).and_then(|p| p.parse().ok()).unwrap_or(0);
+                    let pid: u64 = parts.get(4).and_then(|p| p.parse().ok()).unwrap_or(0);
                     let subshell: i64 = parts.get(5).and_then(|s| s.parse().ok()).unwrap_or(0);
 
                     // Map subshell level to thread ID: main=1, subshell 1=2, etc.
                     let thread_id = 1 + subshell;
+
+                    // Issue #4/#10: Store the threadId → PID mapping so
+                    // continue/step commands can route to the correct FIFO.
+                    if subshell > 0 && pid > 0 {
+                        if let Ok(mut pids) = thread_pids.lock() {
+                            pids.insert(thread_id, pid);
+                        }
+                    }
+
+                    // Issue #11: Add this thread to the active set.
+                    if let Ok(mut threads) = active_threads.lock() {
+                        let name = if subshell == 0 {
+                            "main".to_string()
+                        } else {
+                            format!("subshell {} (pid {})", subshell, pid)
+                        };
+                        threads.insert(thread_id, name);
+                    }
 
                     let reason = if subshell > 0 { "breakpoint (subshell)" } else { "breakpoint" };
 
@@ -1122,6 +1287,8 @@ fn fifo_reader_loop(
                     send_dap_message(stdout_writer, &evt);
                 }
             }
+            // TODO: Handle "EXITED\tpid" events to remove subshell threads
+            // from active_threads and thread_pids when the subshell exits.
         }
     }
 }

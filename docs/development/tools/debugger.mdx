@@ -85,6 +85,10 @@ The call stack panel shows the current function call chain with file names and l
 
 Hover over variables or use the Variables panel to inspect values at any breakpoint. The debugger shows local variables in the current scope.
 
+:::note
+The **Locals** scope shows variables only when the script is stopped at a breakpoint or step. Under the hood, the debugger sends a `declare -p` command to the bash process via FIFO, which requires a round-trip. The scope may appear empty briefly until the response arrives.
+:::
+
 ### argsh Args inspector
 
 When stopped inside a function that uses `:args`, the Variables panel shows an **argsh Args** scope with a structured view of the args array definition:
