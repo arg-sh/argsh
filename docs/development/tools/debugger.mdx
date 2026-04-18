@@ -60,6 +60,14 @@ Create a `.vscode/launch.json` in your project:
 
 Click in the gutter to set breakpoints. Breakpoints work in the main script and in any file loaded via `source` or `import`.
 
+### Smart breakpoints (by subcommand name)
+
+Set a breakpoint on a `:usage` subcommand by name instead of a specific line number. The debugger resolves the name through the namespace chain (`main::deploy`, `deploy::run`, `argsh::deploy`, `deploy`) to find the target function.
+
+Use **Run → New Breakpoint → Function Breakpoint** and enter the subcommand name (e.g., `deploy`). The debugger resolves it to the actual function's file and line, following the same resolution rules as `:usage`.
+
+This also works across files — if the target function is in an imported module, the resolver follows the `import` chain to find it.
+
 ### Stepping
 
 | Action | Shortcut | Description |
@@ -76,6 +84,42 @@ The call stack panel shows the current function call chain with file names and l
 ### Variable inspection
 
 Hover over variables or use the Variables panel to inspect values at any breakpoint. The debugger shows local variables in the current scope.
+
+### argsh Args inspector
+
+When stopped inside a function that uses `:args`, the Variables panel shows an **argsh Args** scope with a structured view of the args array definition:
+
+- Each entry shows the field spec, description, and type
+- Flags are annotated with their modifiers (`:+` boolean, `:~int` typed, `:!` required)
+- Positional arguments are distinguished from flags
+
+This gives you immediate visibility into what arguments the current function expects without reading the source.
+
+### Variable type tooltips
+
+Hover over a variable name while debugging to see its argsh type annotation alongside its runtime value. For example, hovering over `port` in a function with `'port|p:~int'` shows:
+
+```
+argsh: port|p:~int
+```
+
+This works for all variables that appear in `:args` definitions — flags, positionals, and typed fields.
+
+### Auto-generated launch configurations
+
+The debugger can generate launch configurations for every subcommand path in your script's `:usage` tree. Each subcommand becomes a separate debug target with the correct args pre-filled.
+
+For a script with subcommands `deploy`, `deploy staging`, and `status`, the debugger generates:
+
+```json
+[
+  { "name": "Debug: deploy", "args": ["deploy"] },
+  { "name": "Debug: deploy staging", "args": ["deploy", "staging"] },
+  { "name": "Debug: status", "args": ["status"] }
+]
+```
+
+To generate these, use the Debug Console and evaluate `argsh.generateLaunchConfigs`.
 
 ## Requirements
 
