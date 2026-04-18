@@ -699,15 +699,21 @@ impl DapSession {
         std::fs::write(&wrapper_path, &wrapper).unwrap();
 
         // Issue #6: Detect the script's shebang to use the correct interpreter.
-        // If the script uses `#!/usr/bin/env argsh` or `#!/.../argsh`, run the
-        // wrapper via `argsh` so the argsh runtime (builtins, etc.) is available.
+        // If the script uses `#!/usr/bin/env argsh` or `#!/.../argsh`, prefer
+        // `argsh` so the runtime (builtins, etc.) is available. Fall back to
+        // `bash` if argsh is not on PATH (e.g. CI environments).
         let interpreter = {
             let shebang_line = std::fs::read_to_string(&program)
                 .ok()
                 .and_then(|s| s.lines().next().map(String::from))
                 .unwrap_or_default();
             if shebang_line.contains("argsh") {
-                "argsh".to_string()
+                // Check if argsh is actually available
+                if Command::new("argsh").arg("--version").output().is_ok() {
+                    "argsh".to_string()
+                } else {
+                    "bash".to_string() // Fall back to bash
+                }
             } else {
                 "bash".to_string()
             }
