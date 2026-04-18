@@ -185,7 +185,7 @@ Runtime
 | Command | What it does | Backed by |
 |---|---|---|
 | [`argsh test`](https://arg.sh/development/fundamentals/test) | Run `.bats` tests; auto-discovers tests via `PATH_TESTS` | [bats-core](https://github.com/bats-core/bats-core) |
-| [`argsh lint`](https://arg.sh/development/fundamentals/lint) | Lint all shell files in your project | [shellcheck](https://www.shellcheck.net/) |
+| [`argsh lint`](https://arg.sh/development/fundamentals/lint) | Lint all shell files (shellcheck + argsh-lint) | [shellcheck](https://www.shellcheck.net/) + [argsh-lint](https://arg.sh/development/fundamentals/lint) |
 | [`argsh coverage`](https://arg.sh/development/fundamentals/coverage) | Generate a coverage report with a minimum threshold | [kcov](https://github.com/SimonKagstrom/kcov) |
 | [`argsh docs`](https://arg.sh/development/fundamentals/docs) | Generate Markdown docs from `@description` comments | [shdoc](https://github.com/reconquest/shdoc) |
 | [`argsh minify`](https://arg.sh/development/fundamentals/minify) | Bundle + minify + obfuscate a multi-file project into a single script | native Rust minifier |
@@ -286,9 +286,9 @@ Run `bash bench/usage-depth.sh` to reproduce.
 
 ### 🧩 IDE Support
 
-argsh includes a **Language Server** and **VSCode/Windsurf extension** for rich IDE support:
+argsh includes a **Language Server**, **CLI linter**, **debugger**, and **VSCode/Windsurf extension** for a complete development experience:
 
-- **Diagnostics** — 10 checks (AG001–AG010) with shellcheck-style suppression (`# argsh disable=AG004`)
+- **Diagnostics** — 12 checks (AG001–AG013) with shellcheck-style suppression (`# argsh disable=AG004`)
 - **Completions** — modifiers, types (built-in + custom), annotations, library functions (`is::`, `to::`, `string::`, ...)
 - **Help preview** — hover over functions to see generated `--help` output
 - **Go to definition** — Ctrl+Click on usage entries, `:-` mappings, `:~custom` types, imports
@@ -301,25 +301,35 @@ argsh includes a **Language Server** and **VSCode/Windsurf extension** for rich 
 
 Works alongside shellcheck — argsh handles framework-specific validation, shellcheck handles general bash.
 
+**CLI Linter** (`argsh-lint`) — standalone binary with shellcheck-compatible flags for CI pipelines:
+
+```bash
+argsh-lint script.sh                        # gcc-style output
+argsh-lint --format=json --severity=warning  # JSON for CI
+argsh lint                                   # runs both shellcheck + argsh-lint
+argsh lint --only-argsh                      # argsh-lint only
+```
+
+See the [Lint docs](https://arg.sh/development/fundamentals/lint) for the full flag reference.
+
+**Debugger** (`argsh-dap`) — step-through debugging via VSCode with no external dependencies:
+
+- **Breakpoints** — file:line, conditional (`(( i == 3 ))`), and by subcommand name
+- **Stepping** — step in (F11), step over (F10), step out (Shift+F11)
+- **Call stack** — full `FUNCNAME`/`BASH_SOURCE` trace with argsh namespace resolution
+- **Variable inspection** — argsh Args inspector shows `:args` field definitions with types
+- **Watch expressions** and **set variable at runtime**
+- **Subshell support** — `$()`, pipes, `{ ...; } &` don't deadlock
+
+Uses bash's built-in `DEBUG` trap — no `bashdb` required. See the [Debugger docs](https://arg.sh/development/tools/debugger).
+
 ```bash
 # Build from source
-cd crates/argsh-lsp && cargo build --release
+cd crates/argsh-lsp && cargo build --release  # builds argsh-lsp, argsh-lint, argsh-dap
 cd vscode-argsh && npm install && npm run compile
 ```
 
 See the [LSP docs](https://arg.sh/development/tools/lsp) for configuration and full feature reference.
-
-&nbsp;
-
-### 🚧 State of this Project
-
-> This project is in a very early stage.
-
-That being said, most of it is quite rough. But it's a start. The best time that you join the conversation and try to refine the concept.
-
-#### Short term goals
-
-- [ ] Bash debugger integration (e.g. with `bashdb`)
 
 &nbsp;
 

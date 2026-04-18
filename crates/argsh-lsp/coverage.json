@@ -22,6 +22,20 @@
       "excluded_lines": "0"
     },
     {
+      "file": "crates/argsh-lsp/tests/dap_integration.rs",
+      "percent_covered": "99.31",
+      "covered_lines": "286",
+      "total_lines": "288",
+      "excluded_lines": "0"
+    },
+    {
+      "file": "crates/argsh-lsp/tests/dap_e2e.rs",
+      "percent_covered": "99.30",
+      "covered_lines": "426",
+      "total_lines": "429",
+      "excluded_lines": "0"
+    },
+    {
       "file": "crates/argsh-lsp/src/format.rs",
       "percent_covered": "97.30",
       "covered_lines": "180",
@@ -85,6 +99,13 @@
       "excluded_lines": "0"
     },
     {
+      "file": "crates/argsh-lsp/src/bin/argsh-dap.rs",
+      "percent_covered": "78.38",
+      "covered_lines": "667",
+      "total_lines": "851",
+      "excluded_lines": "0"
+    },
+    {
       "file": "crates/argsh-syntax/src/usage.rs",
       "percent_covered": "77.78",
       "covered_lines": "35",
@@ -141,12 +162,12 @@
       "excluded_lines": "0"
     }
   ],
-  "percent_covered": "79.45",
-  "covered_lines": 4915,
-  "total_lines": 6186,
+  "percent_covered": "81.17",
+  "covered_lines": 6294,
+  "total_lines": 7754,
   "excluded_lines": 0,
   "percent_low": 25,
   "percent_high": 75,
   "command": "cargo-test+llvm-cov",
-  "date": "2026-04-16 21:47:52"
+  "date": "2026-04-18 18:03:55"
 }

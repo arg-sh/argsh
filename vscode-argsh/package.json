@@ -13,7 +13,7 @@
   },
   "icon": "icon.png",
   "categories": ["Programming Languages", "Linters", "Snippets"],
-  "activationEvents": ["onLanguage:shellscript"],
+  "activationEvents": ["onLanguage:shellscript", "onDebugResolve:argsh"],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
@@ -107,6 +107,72 @@
         }
       ]
     },
+    "debuggers": [
+      {
+        "type": "argsh",
+        "label": "argsh Debug",
+        "languages": ["shellscript"],
+        "configurationAttributes": {
+          "launch": {
+            "required": ["program"],
+            "properties": {
+              "program": {
+                "type": "string",
+                "description": "Path to the argsh/bash script to debug"
+              },
+              "args": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Arguments to pass to the script",
+                "default": []
+              },
+              "cwd": {
+                "type": "string",
+                "description": "Working directory for the script",
+                "default": "${workspaceFolder}"
+              },
+              "env": {
+                "type": "object",
+                "additionalProperties": { "type": "string" },
+                "description": "Environment variables",
+                "default": {}
+              },
+              "stopOnEntry": {
+                "type": "boolean",
+                "description": "Stop on the first executable line",
+                "default": true
+              }
+            }
+          }
+        },
+        "configurationSnippets": [
+          {
+            "label": "argsh: Debug Script",
+            "description": "Debug an argsh/bash script with breakpoints and stepping",
+            "body": {
+              "type": "argsh",
+              "request": "launch",
+              "name": "Debug ${1:script}",
+              "program": "${file}",
+              "args": [],
+              "stopOnEntry": true
+            }
+          }
+        ],
+        "initialConfigurations": [
+          {
+            "type": "argsh",
+            "request": "launch",
+            "name": "Debug Current File",
+            "program": "${file}",
+            "stopOnEntry": true
+          }
+        ]
+      }
+    ],
+    "breakpoints": [
+      { "language": "shellscript" }
+    ],
     "configuration": {
       "title": "argsh",
       "properties": {
@@ -135,6 +201,11 @@
           "default": true,
           "description": "Automatically format argsh arrays on save"
         },
+        "argsh.dap.path": {
+          "type": "string",
+          "default": "",
+          "description": "Path to argsh-dap binary (auto-detected if empty)"
+        },
         "argsh.resolveDepth": {
           "type": "integer",
           "default": 2,
@@ -150,7 +221,7 @@
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "build": "npm run build:lsp && npm run build:ext",
-    "build:lsp": "cargo build --release --manifest-path ../crates/argsh-lsp/Cargo.toml && mkdir -p bin && cp ../crates/argsh-lsp/target/release/argsh-lsp bin/",
+    "build:lsp": "cargo build --release --manifest-path ../crates/argsh-lsp/Cargo.toml && mkdir -p bin && cp ../crates/argsh-lsp/target/release/argsh-lsp bin/ && cp ../crates/argsh-lsp/target/release/argsh-dap bin/",
     "build:ext": "npm install && npm run compile",
     "package": "npm run build && vsce package --target linux-x64",
     "package:all": "npm run build && vsce package --target linux-x64 -o argsh-linux-x64.vsix && vsce package --target linux-arm64 -o argsh-linux-arm64.vsix && vsce package --target darwin-x64 -o argsh-darwin-x64.vsix && vsce package --target darwin-arm64 -o argsh-darwin-arm64.vsix",
