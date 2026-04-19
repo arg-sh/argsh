@@ -105,11 +105,17 @@ impl Backend {
                     } else {
                         base.join(directive)
                     };
-                    if !resolved.exists() {
-                        // Find the line number of the directive
+                    let msg = if !resolved.exists() {
+                        Some(format!("'# argsh source={}' path does not exist", directive))
+                    } else if !resolved.is_dir() {
+                        Some(format!("'# argsh source={}' is not a directory", directive))
+                    } else {
+                        None
+                    };
+                    if let Some(message) = msg {
                         let line = doc.content.lines().enumerate()
                             .take(20)
-                            .find(|(_, l)| l.trim().starts_with("# argsh source="))
+                            .find(|(_, l)| l.starts_with("# argsh source="))
                             .map(|(i, _)| i)
                             .unwrap_or(0);
                         diags.push(Diagnostic {
@@ -120,7 +126,7 @@ impl Backend {
                             severity: Some(DiagnosticSeverity::WARNING),
                             code: Some(NumberOrString::String(diagnostics::codes::AG015.to_string())),
                             source: Some("argsh".to_string()),
-                            message: format!("'# argsh source={}' path does not exist", directive),
+                            message,
                             ..Default::default()
                         });
                     }
