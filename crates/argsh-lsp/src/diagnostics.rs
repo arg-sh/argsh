@@ -589,11 +589,11 @@ fn check_inherited_without_default(func: &FunctionInfo, diags: &mut Vec<Diagnost
 
             // Find the local declaration for this field
             if let Some(local_var) = func.local_vars.iter().find(|v| v.name == field.name) {
-                // Check if the default value contains ${name:- pattern
+                // Check if the default value uses ${name:-...} pattern.
+                // Bare ${name} is not accepted — it fails under set -u when standalone.
                 let has_inherit_default = local_var.default_value.as_ref().map(|v| {
-                    let pattern = format!("${{{}", field.name);
-                    let pattern_dash = format!("${{{}:-", field.name);
-                    v.contains(&pattern_dash) || v.contains(&pattern)
+                    let pattern = format!("${{{}:-", field.name);
+                    v.contains(&pattern)
                 }).unwrap_or(false);
 
                 if !has_inherit_default {

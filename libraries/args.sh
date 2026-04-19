@@ -410,17 +410,13 @@ if ! (( ARGSH_BUILTIN )); then
   local -A _seen=() _non_inherited=()
   local _name _i
 
-  # First pass: find which field names have non-:^ entries (scan backwards)
-  for (( _i=${#args[@]}-2; _i >= 0; _i-=2 )); do
+  # First pass: find which field names have non-:^ entries
+  for (( _i=0; _i < ${#args[@]}; _i+=2 )); do
     [[ "${args[_i]}" != "-" && -n "${args[_i]}" ]] || continue
     _name="$(args::field_name "${args[_i]}")"
     [[ -n "${_name}" ]] || continue
-    if [[ -z "${_seen[${_name}]:-}" ]]; then
-      _seen["${_name}"]=1
-      [[ "${args[_i]}" == *":^"* ]] || _non_inherited["${_name}"]=1
-    else
-      [[ "${args[_i]}" == *":^"* ]] || _non_inherited["${_name}"]=1
-    fi
+    _seen["${_name}"]=1
+    [[ "${args[_i]}" == *":^"* ]] || _non_inherited["${_name}"]=1
   done
 
   # Second pass (reverse): append kept entries, then reverse for O(n)
