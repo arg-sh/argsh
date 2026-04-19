@@ -448,8 +448,8 @@ pub fn print_flags_section<W: Write>(out: &mut W, args_arr: &[String], _fw: usiz
         let entry = &args_with_help[i];
         let desc = args_with_help.get(i + 1).map(|s| s.as_str()).unwrap_or("");
 
-        // Hidden
-        if entry.starts_with('#') {
+        // Hidden (# prefix or :# modifier)
+        if entry.starts_with('#') || field::parse_field(entry).map(|f| f.is_hidden).unwrap_or(false) {
             continue;
         }
 

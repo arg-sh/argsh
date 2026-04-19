@@ -561,7 +561,7 @@ if ! (( ARGSH_BUILTIN )); then
   [[ "${args[${flags[0]}]}" == "-" ]] ||
     echo -e "\nOptions:"
   for i in "${flags[@]}"; do
-    [[ "${args[i]:0:1}" != "#" ]] || continue
+    [[ "${args[i]:0:1}" != "#" && "${args[i]}" != *":#"* ]] || continue
     [[ "${args[i]}" != "-" ]] || {
       echo
       echo "${args[i+1]}"

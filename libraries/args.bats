@@ -2117,6 +2117,22 @@ source "${PATH_FIXTURES}/fmt.sh"
   contains "visible" stdout
 }
 
+@test "attrs: hidden flag via :# modifier not shown in help" {
+  (
+    local visible secret
+    local -a args=(
+      'visible|v' "A visible flag"
+      'secret|s:#' "A secret flag"
+    )
+    :args "Hidden modifier test" --help
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains "visible" stdout
+  ! grep -q "secret" "${stdout}" || { echo "FAIL: 'secret' should be hidden from help"; return 1; }
+}
+
 # -----------------------------------------------------------------------------
 # Additional coverage: :usage text with hidden command (args.sh line 217)
 
