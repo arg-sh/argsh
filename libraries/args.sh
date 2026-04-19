@@ -423,32 +423,32 @@ if ! (( ARGSH_BUILTIN )); then
     fi
   done
 
-  # Second pass: build new array, keeping only the winning entry per field name
+  # Second pass (reverse): append kept entries, then reverse for O(n)
   local -A _kept=()
-  local -a _result=()
+  local -a _rev=()
   for (( _i=${#args[@]}-2; _i >= 0; _i-=2 )); do
     [[ "${args[_i]}" != "-" && -n "${args[_i]}" ]] || {
-      # Keep separators and empty specs as-is (prepend to maintain order)
-      _result=("${args[_i]}" "${args[_i+1]}" "${_result[@]}")
+      _rev+=("${args[_i+1]}" "${args[_i]}")
       continue
     }
     _name="$(args::field_name "${args[_i]}")"
-    [[ -n "${_name}" ]] || { _result=("${args[_i]}" "${args[_i+1]}" "${_result[@]}"); continue; }
+    [[ -n "${_name}" ]] || { _rev+=("${args[_i+1]}" "${args[_i]}"); continue; }
 
     # Already kept one for this field name?
-    if [[ -n "${_kept[${_name}]:-}" ]]; then
-      continue # skip duplicate
-    fi
+    [[ -z "${_kept[${_name}]:-}" ]] || continue
 
     # If non-:^ entries exist for this name, skip :^ entries
-    if [[ -n "${_non_inherited[${_name}]:-}" && "${args[_i]}" == *":^"* ]]; then
-      continue # :^ yields to non-:^
-    fi
+    [[ -z "${_non_inherited[${_name}]:-}" || "${args[_i]}" != *":^"* ]] || continue
 
     _kept["${_name}"]=1
-    _result=("${args[_i]}" "${args[_i+1]}" "${_result[@]}")
+    _rev+=("${args[_i+1]}" "${args[_i]}")
   done
 
+  # Reverse pairs back to original order
+  local -a _result=()
+  for (( _i=${#_rev[@]}-1; _i >= 0; _i-=2 )); do
+    _result+=("${_rev[_i]}" "${_rev[_i-1]}")
+  done
   args=("${_result[@]}")
 }
 
