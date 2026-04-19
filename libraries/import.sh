@@ -2,14 +2,10 @@
 # @file import
 # @brief Import libraries
 # @description
-#   This file contains functions for importing libraries
-set -euo pipefail
-
-declare -gA import_cache=()
-# Library directory for builtin import resolution (plain names like `import string`)
-# obfus ignore variable
-: "${__ARGSH_LIB_DIR:=${BASH_SOURCE[0]%/*}}"
-
+#   Provides a caching import mechanism for bash libraries.
+#   Each module is sourced at most once per session (unless cache is cleared).
+#
+#   The import function resolves module paths based on prefix:
 # @description
 #   Import a library, relative to the current script
 #   If '@' is prepended to the library name, it will be imported from the base path (PATH_BASE)
@@ -20,6 +16,9 @@ declare -gA import_cache=()
 #   import fmt
 #   import @libs/helper
 #   import ^utils/verbose
+# @internal
+declare -gA import_cache=()
+
  import() {
   local src="${1}"
   (( ${import_cache["${src}"]:-} )) || {
@@ -37,7 +36,7 @@ declare -gA import_cache=()
       fi
       src="${_base}/${src:1}"
     elif [[ ${src:0:1} == "^" ]]; then
-      # ^ prefix: # argsh source= directive → PATH_SCRIPTS → walk up → error
+      # ^ prefix: PATH_SCRIPTS → # argsh source= directive → walk up → error
       local _scripts="" _mod="${src:1}"
       _scripts="$(import::_resolve_scripts)"
       if [[ -n "${_scripts}" ]]; then
@@ -45,7 +44,8 @@ declare -gA import_cache=()
       else
         # Walk up from script dir looking for the module
         local _s="${ARGSH_SOURCE:-${BASH_SOURCE[-1]}}"
-        local _dir="${_s%/*}"
+        local _dir
+        [[ "${_s}" == */* ]] && _dir="${_s%/*}" || _dir="."
         src="$(import::_walk_up "${_dir}" "${_mod}")" || {
           echo "import: cannot resolve ^${_mod} — set PATH_SCRIPTS or add '# argsh source=<path>'" >&2
           exit 1
@@ -63,22 +63,24 @@ declare -gA import_cache=()
 }
 
 # @description Resolve the scripts directory for ^ imports.
-# Priority: # argsh source= directive → PATH_SCRIPTS env var
+# Priority: PATH_SCRIPTS env var → # argsh source= directive in calling script
 # @stdout The resolved scripts directory path, or empty
 # @internal
 import::_resolve_scripts() {
-  # Check PATH_SCRIPTS first
+  # Check PATH_SCRIPTS first (env var always wins)
   if [[ -n "${PATH_SCRIPTS:-}" ]]; then
     echo "${PATH_SCRIPTS}"
     return
   fi
-  # Look for # argsh source= directive in the calling script
+  # Look for # argsh source= directive in the calling script (first 20 lines)
   local _s="${ARGSH_SOURCE:-${BASH_SOURCE[-1]}}"
   [[ -f "${_s}" ]] || return 0
-  local _dir="${_s%/*}" _line
-  _line="$(grep -m1 '^# argsh source=' "${_s}" 2>/dev/null)" || return 0
-  local _path="${_line#*=}"
-  _path="${_path## }"  # trim leading space
+  local _dir _line
+  [[ "${_s}" == */* ]] && _dir="${_s%/*}" || _dir="."
+  _line="$(head -20 "${_s}" | grep -m1 '^# argsh source=' 2>/dev/null)" || return 0
+  local _path="${_path## }"
+  _path="${_line#*=}"
+  _path="${_path## }"
   # Resolve relative to script directory
   if [[ "${_path:0:1}" != "/" ]]; then
     _path="${_dir}/${_path}"
@@ -96,9 +98,12 @@ import::_resolve_scripts() {
 # @exitcode 1 If not found
 # @internal
 import::_walk_up() {
-  local _dir="${1}" _mod="${2}" _root
+  local _dir _mod="${2}" _root _ext _abs
+  # Resolve to absolute path to prevent infinite loop on relative dirs
+  _abs="$(cd "${1}" 2>/dev/null && pwd)" || return 1
+  _dir="${_abs}"
   _root="$(git rev-parse --show-toplevel 2>/dev/null)" || _root="/"
-  while [[ "${_dir}" != "/" ]]; do
+  while [[ -n "${_dir}" && "${_dir}" != "/" ]]; do
     for _ext in "" ".sh" ".bash"; do
       [[ -f "${_dir}/${_mod}${_ext}" ]] && {
         echo "${_dir}/${_mod}"
@@ -108,7 +113,6 @@ import::_walk_up() {
     # Stop at git root
     [[ "${_dir}" != "${_root}" ]] || break
     _dir="${_dir%/*}"
-    [[ -n "${_dir}" ]] || _dir="/"
   done
   return 1
 }

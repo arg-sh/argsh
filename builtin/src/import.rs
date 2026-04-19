@@ -241,7 +241,7 @@ fn get_argsh_source_path() -> Option<String> {
 /// Resolve module path following import.sh semantics.
 /// Prefixes:
 ///   @ → PATH_BASE → git root
-///   ^ → # argsh source= directive → PATH_SCRIPTS → walk up
+///   ^ → PATH_SCRIPTS → # argsh source= directive → walk up
 ///   ~ → ARGSH_SOURCE/BASH_SOURCE[-1]
 ///   plain → ARGSH_SOURCE/__ARGSH_LIB_DIR/BASH_SOURCE[0]
 /// Extension fallback: "", ".sh", ".bash"
@@ -313,13 +313,13 @@ fn git_toplevel() -> Option<String> {
 }
 
 /// Resolve scripts directory for ^ imports.
-/// Priority: PATH_SCRIPTS → # argsh source= directive in calling script
+/// Priority: PATH_SCRIPTS env var → # argsh source= directive in calling script
 fn resolve_scripts_dir() -> Option<String> {
-    // PATH_SCRIPTS env var
+    // PATH_SCRIPTS env var (always wins)
     if let Some(ps) = shell::get_scalar("PATH_SCRIPTS") {
         return Some(ps);
     }
-    // Parse # argsh source= from the calling script
+    // Parse # argsh source= from the calling script (first 20 lines)
     let src = get_argsh_source_path()
         .or_else(shell::get_bash_source_last)?;
     let content = std::fs::read_to_string(&src).ok()?;
@@ -340,21 +340,26 @@ fn resolve_scripts_dir() -> Option<String> {
 
 /// Walk up from a directory looking for a module file.
 /// Stops at git root or filesystem root.
+/// Returns the path without extension — `import::source` handles extension probing.
 fn walk_up(start_dir: &str, module: &str) -> Option<String> {
     let root = git_toplevel().unwrap_or_else(|| "/".to_string());
-    let mut dir = std::path::PathBuf::from(start_dir);
+    // Resolve to absolute path to prevent infinite loop on relative dirs
+    let abs_dir = std::path::Path::new(start_dir).canonicalize().ok()?;
+    let mut dir = abs_dir;
     loop {
         for ext in &["", ".sh", ".bash"] {
             let candidate = dir.join(format!("{}{}", module, ext));
             if candidate.is_file() {
-                // Return without extension (import::source adds it)
                 return Some(dir.join(module).to_string_lossy().to_string());
             }
         }
-        if dir.to_string_lossy() == root || dir.parent().is_none() {
+        if dir.to_string_lossy() == root {
             break;
         }
-        dir = dir.parent().unwrap().to_path_buf();
+        match dir.parent() {
+            Some(p) if !p.as_os_str().is_empty() => dir = p.to_path_buf(),
+            _ => break,
+        }
     }
     None
 }
