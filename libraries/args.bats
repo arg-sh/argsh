@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
-# shellcheck disable=SC1091 disable=SC2154 disable=SC2317 disable=SC2329 disable=SC2034 disable=SC2030 disable=SC2031 disable=SC2314
+# shellcheck disable=SC1091 disable=SC2154 disable=SC2317 disable=SC2329 disable=SC2034 disable=SC2030 disable=SC2031 disable=SC2314 disable=SC2119 disable=SC2120
 # shellcheck shell=bats
-# argsh disable-file=AG013
+# argsh disable-file=AG013,AG005
 # (The test body contains `enable -f ... import import::clear; then` which the
 # lint resolver mis-parses as `import then`. Real imports live in .sh files.)
 #
