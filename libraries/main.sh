@@ -177,6 +177,27 @@ argsh::builtin::download() {
     return 1
   }
 
+  # Verify SHA256 checksum against the release's sha256sum.txt
+  local _expected_sha _actual_sha
+  _expected_sha="$(
+    curl -fsSL "https://github.com/arg-sh/argsh/releases/download/${_tag}/sha256sum.txt" \
+      | grep "${_asset}" | cut -d' ' -f1
+  )" || true
+  if [[ -n "${_expected_sha}" ]]; then
+    _actual_sha="$(sha256sum "${_tmp}" 2>/dev/null || shasum -a 256 "${_tmp}" 2>/dev/null)"
+    _actual_sha="${_actual_sha%% *}"
+    if [[ "${_actual_sha}" != "${_expected_sha}" ]]; then
+      echo "argsh: SHA256 checksum mismatch for ${_asset}" >&2
+      echo "  expected: ${_expected_sha}" >&2
+      echo "  actual:   ${_actual_sha}" >&2
+      rm -f "${_tmp}"
+      return 1
+    fi
+    [[ "${ARGSH_DEBUG:-}" != "1" ]] || echo "argsh:debug: SHA256 verified: ${_actual_sha}" >&2
+  else
+    echo "argsh: warning: could not fetch sha256sum.txt — skipping checksum verification" >&2
+  fi
+
   # Verify the downloaded file loads as a builtin. Run `enable -f` in a
   # subshell so any interaction with the parent process's already-loaded
   # builtins cannot affect or crash the parent. Call `enable -f` directly
@@ -323,6 +344,10 @@ argsh::status() {
   fi
   echo "Builtin (.so):"
   echo "  status:       ${_so_status}"
+  if (( ${ARGSH_BUILTIN:-0} )); then
+    echo "  version:      ${__ARGSH_BUILTIN_VERSION:-unknown}"
+    echo "  commit:       ${__ARGSH_BUILTIN_COMMIT:-unknown}"
+  fi
   echo "  path:         ${_loc}"
   echo "  architecture: $(uname -s | tr '[:upper:]' '[:lower:]')/${_arch}"
   echo ""
