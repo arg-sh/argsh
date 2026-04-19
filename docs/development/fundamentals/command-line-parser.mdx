@@ -413,6 +413,47 @@ local -a args=(
 )
 ```
 
+### Inherited fields (`:^`)
+
+The `:^` modifier marks a field as "inheritable" — it yields to non-`:^` duplicates with the same field name. This enables parent/child function patterns where a parent defines a flag and children inherit it via `"${args[@]}"` expansion.
+
+```bash
+main::secrets() {
+  local domain="${domain:-${DOMAIN_NAME:-}}"
+  local -a args=(
+    'domain|:^' 'Domain to use'
+    "${args[@]:-}"
+  )
+  local -a usage=(
+    'init'    'Initialize encryption'
+    'encrypt' 'Encrypt secrets'
+  )
+  :usage "Manage secrets" "${@}"
+  "${usage[@]}"
+}
+
+secrets::init() {
+  local ssh_key="${LOK8S_SSH_KEY}"
+  local domain="${domain:-}"
+  local -a args=(
+    'ssh-key|k' 'Path to SSH key'
+    'domain|:^' 'Domain to use'
+    "${args[@]:-}"
+  )
+  :args "Initialize encryption" "${@}"
+}
+```
+
+**Priority rules:**
+- Last non-`:^` entry wins for each field name
+- If all entries for a name are `:^`, last one wins
+- Trailing empty strings from `"${args[@]:-}"` are stripped automatically
+
+**How it works:**
+- When called from a parent (e.g. `lo secrets init --domain prod`): the parent's `args` array flows in via `"${args[@]:-}"`, the parent's `domain|` entry (non-`:^`) wins over the local `domain|:^`, and the parent's already-parsed `domain` value is inherited via bash dynamic scope
+- When called standalone (`secrets init --domain prod`): no parent `args` exist, `"${args[@]:-}"` expands to nothing, the local `:^` entry is used as a normal field
+- `local domain="${domain:-${DOMAIN_NAME:-}}"` inherits the parent's value if set, falls back to env var, then empty
+
 ## Custom help
 
 When `:usage` or `:args` encounters `--help`, it doesn't exit immediately. The actual help is displayed when you call `"${usage[@]}"`. This gives you two ways to customize help output.

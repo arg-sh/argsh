@@ -6,7 +6,7 @@ Bash loadable builtins implemented in Rust. Provides native-speed implementation
 
 | Builtin | Description |
 | ------- | ----------- |
-| `:args` | Argument parsing with type checking and flag validation |
+| `:args` | Argument parsing with type checking, flag validation, and `:^` inherited dedup |
 | `args::field_name` | Extract variable name from field spec (`'flag\|f:~int!'` → `flag`) |
 | `:usage` | Subcommand dispatch from usage array |
 | `:usage::help` | Format and display help text |

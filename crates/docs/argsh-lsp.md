@@ -106,8 +106,8 @@ pub mod resolver;     // Cross-file import resolution
 | AG005 | Error | `args` array declared but `:args` not called |
 | AG006 | Error | `usage` array declared but `:usage` not called |
 | AG007 | Warning | Usage target function not found |
-| AG008 | Warning | Duplicate flag name |
-| AG009 | Warning | Duplicate short alias |
+| AG008 | Warning | Duplicate flag name (suppressed when `:^` involved) |
+| AG009 | Warning | Duplicate short alias (suppressed when `:^` on same field name) |
 | AG010 | Warning | Command resolves to bare function (not namespaced) |
 | ~~AG011~~ | — | *(removed)* Trailing `\|` is valid syntax for long-only flags |
 | AG012 | Hint | Local variable shadows parent scope args field |
