@@ -210,6 +210,8 @@ argsh::builtin::download() {
     else
       [[ "${ARGSH_DEBUG:-}" != "1" ]] || echo "argsh:debug: SHA256 verified: ${_actual_sha}" >&2
     fi
+  else
+    [[ "${ARGSH_DEBUG:-}" != "1" ]] || echo "argsh:debug: SHA256 verification skipped (no checksum available)" >&2
   fi
 
   # Verify the downloaded file loads as a builtin. Run `enable -f` in a
