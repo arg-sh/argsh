@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
-# shellcheck disable=SC1091 disable=SC2154 disable=SC2317 disable=SC2329 disable=SC2034 disable=SC2030 disable=SC2031 disable=SC2314
+# shellcheck disable=SC1091 disable=SC2154 disable=SC2317 disable=SC2329 disable=SC2034 disable=SC2030 disable=SC2031 disable=SC2314 disable=SC2119 disable=SC2120
 # shellcheck shell=bats
-# argsh disable-file=AG013
+# argsh disable-file=AG013,AG005,AG014
 # (The test body contains `enable -f ... import import::clear; then` which the
 # lint resolver mis-parses as `import then`. Real imports live in .sh files.)
 #
@@ -2117,6 +2117,22 @@ source "${PATH_FIXTURES}/fmt.sh"
   contains "visible" stdout
 }
 
+@test "attrs: hidden flag via :# modifier not shown in help" {
+  (
+    local visible secret
+    local -a args=(
+      'visible|v' "A visible flag"
+      'secret|s:#' "A secret flag"
+    )
+    :args "Hidden modifier test" --help
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains "visible" stdout
+  ! grep -q "secret" "${stdout}" || { echo "FAIL: 'secret' should be hidden from help"; return 1; }
+}
+
 # -----------------------------------------------------------------------------
 # Additional coverage: :usage text with hidden command (args.sh line 217)
 
@@ -2828,4 +2844,94 @@ source "${PATH_FIXTURES}/fmt.sh"
 
   assert "${status}" -eq 0
   contains 'building' stdout
+}
+
+# ── :^ inherited modifier ────────────────────────────────
+
+@test ":^ inherited: non-:^ wins over :^ for same field" {
+  local status=0
+  # Parent defines domain, child marks it :^ — parent's should win
+  parent_func() {
+    local domain=""
+    local -a args=(
+      'domain|' 'Domain'
+    )
+    child_func "${@}"
+  }
+  child_func() {
+    local domain="${domain:-default}"
+    local -a args=(
+      'domain|:^' 'Domain'
+      "${args[@]:-}"
+    )
+    :args "Child" "${@}"
+    echo "domain=${domain}"
+  }
+  parent_func --domain prod >"${stdout}" 2>"${stderr}" || status=$?
+  assert "${status}" -eq 0
+  contains 'domain=prod' stdout
+}
+
+@test ":^ inherited: standalone (no parent) uses local default" {
+  local status=0
+  standalone_func() {
+    local domain="${domain:-fallback}"
+    local -a args=(
+      'domain|:^' 'Domain'
+      "${args[@]:-}"
+    )
+    :args "Standalone" "${@}"
+    echo "domain=${domain}"
+  }
+  standalone_func >"${stdout}" 2>"${stderr}" || status=$?
+  assert "${status}" -eq 0
+  contains 'domain=fallback' stdout
+}
+
+@test ":^ inherited: standalone with flag overrides default" {
+  local status=0
+  standalone_func2() {
+    local domain="${domain:-fallback}"
+    local -a args=(
+      'domain|:^' 'Domain'
+      "${args[@]:-}"
+    )
+    :args "Standalone" "${@}"
+    echo "domain=${domain}"
+  }
+  standalone_func2 --domain staging >"${stdout}" 2>"${stderr}" || status=$?
+  assert "${status}" -eq 0
+  contains 'domain=staging' stdout
+}
+
+@test ":^ inherited: all :^ entries — last one wins" {
+  local status=0
+  all_caret() {
+    local domain=""
+    local -a args=(
+      'domain|:^' 'First domain'
+      'domain|:^' 'Second domain'
+    )
+    :args "Test" "${@}"
+    echo "ok"
+  }
+  all_caret --domain test >"${stdout}" 2>"${stderr}" || status=$?
+  assert "${status}" -eq 0
+  contains 'ok' stdout
+}
+
+@test ":^ inherited: trailing empty strings stripped" {
+  local status=0
+  empty_expand() {
+    local port=""
+    local -a args=(
+      'port|p' 'Port number'
+      "${args[@]:-}"
+    )
+    :args "Test" "${@}"
+    echo "port=${port}"
+  }
+  empty_expand --port 8080 >"${stdout}" 2>"${stderr}" || status=$?
+  assert "${status}" -eq 0
+  contains 'port=8080' stdout
 }

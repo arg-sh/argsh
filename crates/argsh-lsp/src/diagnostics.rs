@@ -22,6 +22,7 @@ pub mod codes {
     // AG011 removed: trailing | is valid — marks a long-only flag (no short alias)
     pub const AG012: &str = "AG012"; // local variable shadows parent scope args field
     pub const AG013: &str = "AG013"; // import could not be resolved
+    pub const AG014: &str = "AG014"; // :^ field without ${var:-...} default pattern
 }
 
 /// Generate LSP diagnostics from a document analysis.
@@ -45,6 +46,7 @@ pub fn generate_diagnostics(
         check_duplicate_short_aliases(func, &mut diags);
         check_bare_function_resolution(func, analysis, imports, &mut diags);
         check_scope_shadow(func, analysis, content, &mut diags);
+        check_inherited_without_default(func, &mut diags);
     }
 
     // Check unresolved imports (only when resolution actually ran — skip if resolveDepth=0)
@@ -360,37 +362,53 @@ fn check_usage_function_targets(
 }
 
 fn check_duplicate_flags(func: &FunctionInfo, diags: &mut Vec<Diagnostic>) {
-    let mut seen: HashSet<String> = HashSet::new();
+    let mut seen: std::collections::HashMap<String, bool> = std::collections::HashMap::new();
     for entry in &func.args_entries {
         if entry.spec == "-" { continue; }
         if let Ok(ref field) = entry.parsed {
             if field.is_positional { continue; }
-            if !seen.insert(field.display_name.clone()) {
-                diags.push(make_diag(
-                    line_range(entry.line),
-                    DiagnosticSeverity::WARNING,
-                    codes::AG008,
-                    format!("duplicate flag '--{}' in '{}'", field.display_name, func.name),
-                ));
+            if let Some(&prev_inherited) = seen.get(&field.display_name) {
+                // Suppress AG008 when :^ is involved in either entry
+                if !field.is_inherited && !prev_inherited {
+                    diags.push(make_diag(
+                        line_range(entry.line),
+                        DiagnosticSeverity::WARNING,
+                        codes::AG008,
+                        format!("duplicate flag '--{}' in '{}'", field.display_name, func.name),
+                    ));
+                }
+            }
+            // Track: prefer non-inherited status (if any non-inherited seen, keep that)
+            let current = seen.entry(field.display_name.clone()).or_insert(field.is_inherited);
+            if !field.is_inherited {
+                *current = false;
             }
         }
     }
 }
 
 fn check_duplicate_short_aliases(func: &FunctionInfo, diags: &mut Vec<Diagnostic>) {
-    let mut seen: HashSet<String> = HashSet::new();
+    // Track (field_name, is_inherited) per short alias to only suppress AG009
+    // when the duplicate short comes from the same field name with :^
+    let mut seen: std::collections::HashMap<String, (String, bool)> = std::collections::HashMap::new();
     for entry in &func.args_entries {
         if entry.spec == "-" { continue; }
         if let Ok(ref field) = entry.parsed {
             if let Some(ref short) = field.short {
-                if !seen.insert(short.clone()) {
-                    diags.push(make_diag(
-                        line_range(entry.line),
-                        DiagnosticSeverity::WARNING,
-                        codes::AG009,
-                        format!("duplicate short alias '-{}' in '{}'", short, func.name),
-                    ));
+                if let Some(&(ref prev_name, prev_inherited)) = seen.get(short) {
+                    // Only suppress AG009 if both entries share the same field name
+                    // and :^ is involved (same-name dedup will resolve it)
+                    let same_field = *prev_name == field.name;
+                    if !(same_field && (field.is_inherited || prev_inherited)) {
+                        diags.push(make_diag(
+                            line_range(entry.line),
+                            DiagnosticSeverity::WARNING,
+                            codes::AG009,
+                            format!("duplicate short alias '-{}' in '{}'", short, func.name),
+                        ));
+                    }
                 }
+                seen.entry(short.clone()).or_insert((field.name.clone(), field.is_inherited));
             }
         }
     }
@@ -560,9 +578,161 @@ fn check_unresolved_imports(
     }
 }
 
+/// Warn when a :^ inherited field's local declaration doesn't use ${var:-...}
+/// to inherit the parent's value. Without this pattern, the parent's value
+/// is shadowed by the child's default.
+fn check_inherited_without_default(func: &FunctionInfo, diags: &mut Vec<Diagnostic>) {
+    for entry in &func.args_entries {
+        if entry.spec == "-" { continue; }
+        if let Ok(ref field) = entry.parsed {
+            if !field.is_inherited { continue; }
+
+            // Find the local declaration for this field
+            if let Some(local_var) = func.local_vars.iter().find(|v| v.name == field.name) {
+                // Check if the default value uses ${name:-...} pattern.
+                // Bare ${name} is not accepted — it fails under set -u when standalone.
+                let has_inherit_default = local_var.default_value.as_ref().map(|v| {
+                    let pattern = format!("${{{}:-", field.name);
+                    v.contains(&pattern)
+                }).unwrap_or(false);
+
+                if !has_inherit_default {
+                    diags.push(make_diag(
+                        line_range(local_var.line),
+                        DiagnosticSeverity::WARNING,
+                        codes::AG014,
+                        format!(
+                            "':^' field '{}' should use '${{{}:-...}}' to inherit parent value",
+                            field.display_name, field.name
+                        ),
+                    ));
+                }
+            }
+        }
+    }
+}
+
 fn line_range(line: usize) -> Range {
     Range {
         start: Position { line: line as u32, character: 0 },
         end: Position { line: line as u32, character: 999 },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use argsh_syntax::document::analyze;
+
+    fn empty_imports() -> ResolvedImports {
+        ResolvedImports {
+            functions: vec![],
+            resolved_files: vec![],
+            resolution_ran: false,
+        }
+    }
+
+    #[test]
+    fn test_ag008_suppressed_for_inherited() {
+        let content = r#"#!/usr/bin/env bash
+source argsh
+f() {
+  local domain
+  local -a args=(
+    'domain|:^' "Domain"
+    'domain|' "Domain"
+  )
+  :args "Test" "${@}"
+}
+"#;
+        let analysis = analyze(content);
+        let diags = generate_diagnostics(&analysis, &empty_imports(), content);
+        let ag008: Vec<_> = diags.iter()
+            .filter(|d| d.code == Some(NumberOrString::String("AG008".to_string())))
+            .collect();
+        assert!(ag008.is_empty(), "Expected no AG008 for :^ inherited duplicate, got: {:?}", ag008);
+    }
+
+    #[test]
+    fn test_ag008_fires_without_inherited() {
+        let content = r#"#!/usr/bin/env bash
+source argsh
+f() {
+  local domain
+  local -a args=(
+    'domain|' "Domain"
+    'domain|' "Domain"
+  )
+  :args "Test" "${@}"
+}
+"#;
+        let analysis = analyze(content);
+        let diags = generate_diagnostics(&analysis, &empty_imports(), content);
+        let ag008: Vec<_> = diags.iter()
+            .filter(|d| d.code == Some(NumberOrString::String("AG008".to_string())))
+            .collect();
+        assert!(!ag008.is_empty(), "Expected AG008 for plain duplicate flags");
+    }
+
+    #[test]
+    fn test_ag014_fires_without_inherit_default() {
+        let content = r#"#!/usr/bin/env bash
+source argsh
+f() {
+  local domain=""
+  local -a args=(
+    'domain|:^' "Domain"
+  )
+  :args "Test" "${@}"
+}
+"#;
+        let analysis = analyze(content);
+        let diags = generate_diagnostics(&analysis, &empty_imports(), content);
+        let ag014: Vec<_> = diags.iter()
+            .filter(|d| d.code == Some(NumberOrString::String("AG014".to_string())))
+            .collect();
+        assert!(!ag014.is_empty(), "Expected AG014 for :^ without ${{var:-}} default");
+    }
+
+    #[test]
+    fn test_ag014_suppressed_with_inherit_default() {
+        let content = "#!/usr/bin/env bash\nsource argsh\nf() {\n  local domain=\"${domain:-}\"\n  local -a args=(\n    'domain|:^' \"Domain\"\n  )\n  :args \"Test\" \"${@}\"\n}\n";
+        let analysis = analyze(content);
+        let diags = generate_diagnostics(&analysis, &empty_imports(), content);
+        let ag014: Vec<_> = diags.iter()
+            .filter(|d| d.code == Some(NumberOrString::String("AG014".to_string())))
+            .collect();
+        assert!(ag014.is_empty(), "Expected no AG014 when ${{domain:-}} pattern used, got: {:?}", ag014);
+    }
+
+    #[test]
+    fn test_ag014_suppressed_with_env_fallback() {
+        let content = "#!/usr/bin/env bash\nsource argsh\nf() {\n  local domain=\"${domain:-${DOMAIN_NAME:-}}\"\n  local -a args=(\n    'domain|:^' \"Domain\"\n  )\n  :args \"Test\" \"${@}\"\n}\n";
+        let analysis = analyze(content);
+        let diags = generate_diagnostics(&analysis, &empty_imports(), content);
+        let ag014: Vec<_> = diags.iter()
+            .filter(|d| d.code == Some(NumberOrString::String("AG014".to_string())))
+            .collect();
+        assert!(ag014.is_empty(), "Expected no AG014 when ${{domain:-${{ENV:-}}}} pattern used, got: {:?}", ag014);
+    }
+
+    #[test]
+    fn test_ag014_not_fired_for_non_inherited() {
+        let content = r#"#!/usr/bin/env bash
+source argsh
+f() {
+  local domain=""
+  local -a args=(
+    'domain|' "Domain"
+  )
+  :args "Test" "${@}"
+}
+"#;
+        let analysis = analyze(content);
+        let diags = generate_diagnostics(&analysis, &empty_imports(), content);
+        let ag014: Vec<_> = diags.iter()
+            .filter(|d| d.code == Some(NumberOrString::String("AG014".to_string())))
+            .collect();
+        assert!(ag014.is_empty(), "AG014 should not fire for non-:^ fields");
     }
 }

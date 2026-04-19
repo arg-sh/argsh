@@ -104,7 +104,8 @@ pub fn usage_help_main(args: &[String]) -> i32 {
 
     let title = &args[0];
     let usage_pairs: Vec<String> = args[1..].to_vec();
-    let args_arr = shell::read_array("args");
+    let args_arr = field::dedup_inherited(&shell::read_array("args"));
+    shell::write_array("args", &args_arr);
 
     usage_help_text(title, &usage_pairs, &args_arr);
     0
@@ -122,9 +123,10 @@ pub fn usage_main(args: &[String]) -> i32 {
     let title = &args[0];
     let cli_args = &args[1..];
 
-    // Read usage and args arrays from shell scope
+    // Read usage and args arrays from shell scope, dedup :^ inherited entries
     let usage_arr = shell::read_array("usage");
-    let args_arr = shell::read_array("args");
+    let args_arr = field::dedup_inherited(&shell::read_array("args"));
+    shell::write_array("args", &args_arr);
 
     // Validate usage array is pairs (REVIEW finding 4: use % for Rust <1.87 compat)
     #[allow(clippy::manual_is_multiple_of)]
@@ -446,8 +448,8 @@ pub fn print_flags_section<W: Write>(out: &mut W, args_arr: &[String], _fw: usiz
         let entry = &args_with_help[i];
         let desc = args_with_help.get(i + 1).map(|s| s.as_str()).unwrap_or("");
 
-        // Hidden
-        if entry.starts_with('#') {
+        // Hidden (# prefix or :# modifier)
+        if entry.starts_with('#') || field::parse_field(entry).map(|f| f.is_hidden).unwrap_or(false) {
             continue;
         }
 

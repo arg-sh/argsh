@@ -38,6 +38,8 @@ pub struct FieldDef {
     pub hidden: bool,
     /// No `|` separator in definition — positional parameter.
     pub is_positional: bool,
+    /// `:^` modifier — field yields to non-`:^` duplicates (inherited).
+    pub is_inherited: bool,
     /// Raw spec string, preserved for diagnostics.
     pub raw: String,
 }
@@ -98,6 +100,7 @@ pub fn parse_field(spec: &str) -> Result<FieldDef, FieldError> {
     let mut type_name = String::new();
     let mut required = false;
     let mut saw_hidden_mod = false;
+    let mut is_inherited = false;
 
     if let Some(colon_pos) = spec.find(':') {
         let mods = &spec[colon_pos + 1..];
@@ -130,7 +133,7 @@ pub fn parse_field(spec: &str) -> Result<FieldDef, FieldError> {
                     // Collect type name until next modifier or separator
                     let mut tname = String::new();
                     while let Some(&tc) = chars.peek() {
-                        if tc == '+' || tc == '~' || tc == '!' || tc == '#' || tc == ':' {
+                        if tc == '+' || tc == '~' || tc == '!' || tc == '#' || tc == '^' || tc == ':' {
                             break;
                         }
                         tname.push(tc);
@@ -149,6 +152,10 @@ pub fn parse_field(spec: &str) -> Result<FieldDef, FieldError> {
                 }
                 '#' => {
                     saw_hidden_mod = true;
+                    chars.next();
+                }
+                '^' => {
+                    is_inherited = true;
                     chars.next();
                 }
                 _ => {
@@ -174,6 +181,7 @@ pub fn parse_field(spec: &str) -> Result<FieldDef, FieldError> {
         required,
         hidden: hidden || saw_hidden_mod,
         is_positional,
+        is_inherited,
         raw,
     })
 }
@@ -449,5 +457,42 @@ mod tests {
         assert!(def.required);
         assert!(def.hidden);
         assert!(!def.is_boolean);
+    }
+
+    #[test]
+    fn test_inherited_modifier() {
+        let def = parse_field("domain|:^").unwrap();
+        assert!(def.is_inherited);
+        assert_eq!(def.name, "domain");
+        assert!(!def.is_positional);
+    }
+
+    #[test]
+    fn test_inherited_with_short() {
+        let def = parse_field("domain|d:^").unwrap();
+        assert!(def.is_inherited);
+        assert_eq!(def.short, Some("d".to_string()));
+    }
+
+    #[test]
+    fn test_inherited_with_type() {
+        let def = parse_field("port|p:^:~int").unwrap();
+        assert!(def.is_inherited);
+        assert_eq!(def.type_name, "int");
+    }
+
+    #[test]
+    fn test_inherited_with_all_modifiers() {
+        let def = parse_field("combo|c:^:~int:!:#").unwrap();
+        assert!(def.is_inherited);
+        assert_eq!(def.type_name, "int");
+        assert!(def.required);
+        assert!(def.hidden);
+    }
+
+    #[test]
+    fn test_not_inherited_by_default() {
+        let def = parse_field("normal|n").unwrap();
+        assert!(!def.is_inherited);
     }
 }
