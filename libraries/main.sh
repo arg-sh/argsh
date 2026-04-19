@@ -183,6 +183,8 @@ argsh::builtin::download() {
     curl -fsSL "https://github.com/arg-sh/argsh/releases/download/${_tag}/sha256sum.txt" \
       | grep -F -- "${_asset}" | head -1 | cut -d' ' -f1
   )" || true
+  # Validate: SHA256 must be exactly 64 hex chars
+  [[ "${_expected_sha}" =~ ^[0-9a-f]{64}$ ]] || _expected_sha=""
   if [[ -n "${_expected_sha}" ]]; then
     # Find available SHA256 tool
     if command -v sha256sum &>/dev/null; then

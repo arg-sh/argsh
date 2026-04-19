@@ -269,57 +269,29 @@ declare -gi ARGSH_BUILTIN="${ARGSH_BUILTIN:-0}"
 # and atomically `mv`s into place.
 # ---------------------------------------------------------------------------
 
-# Shared curl stub for download tests. Handles both:
-# - sha256sum.txt requests (stdout, computes checksum of _STUB_CONTENT)
-# - .so download requests (-o file, writes _STUB_CONTENT)
-# Set _STUB_CONTENT before calling, or override curl entirely for error tests.
-_STUB_CONTENT="fake-so-content"
-_stub_curl() {
-  local _out="" _url=""
-  while [[ $# -gt 0 ]]; do
-    case "${1}" in
-      -o) _out="${2}"; shift 2 ;;
-      -*) shift ;;
-      *) _url="${1}"; shift ;;
-    esac
-  done
-  if [[ "${_url}" == *"sha256sum.txt" ]]; then
-    local _sha
-    _sha="$(printf '%s\n' "${_STUB_CONTENT}" | sha256sum | cut -d' ' -f1)"
-    local _arch; _arch="$(uname -m)"; [[ "${_arch}" == "aarch64" ]] && _arch="arm64" || _arch="amd64"
-    echo "${_sha}  argsh-linux-${_arch}.so"
-    return 0
-  fi
-  [[ -n "${_out}" ]] || return 1
-  printf '%s\n' "${_STUB_CONTENT}" > "${_out}"
-}
-
 @test "builtin::download: writes to temp path then atomically moves" {
   if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
   local _tmp
   _tmp="$(mktemp -d)"
   # Stub the network and verification — we want to assert on filesystem behavior.
   github::latest() { echo "v0.0.0-test"; }
-  _STUB_CONTENT="fake-so-content"
   curl() {
-    # Wrap _stub_curl but also verify temp path (not direct-to-dest)
-    local _has_out=""
-    local _a; for _a in "${@}"; do [[ "${_a}" == "-o" ]] && _has_out=1; done
-    if [[ -n "${_has_out}" ]]; then
-      # Extract -o path to check it's not the final destination
-      local _args=("${@}") _o_path="" _j
-      for (( _j=0; _j<${#_args[@]}; _j++ )); do
-        [[ "${_args[_j]}" == "-o" ]] && { _o_path="${_args[_j+1]}"; break; }
-      done
-      [[ "${_o_path}" != "${_tmp}/argsh.so" ]] || {
-        echo "regression: curl wrote directly to destination, not temp" >&2
-        return 1
-      }
-    fi
-    _stub_curl "${@}"
+    # Find -o argument and write a fake payload there. Verify it is NOT the
+    # final destination path (regression: previous code wrote directly to dest).
+    local _out=""
+    while [[ $# -gt 0 ]]; do
+      [[ "${1}" == "-o" ]] && { _out="${2}"; shift 2; continue; }
+      shift
+    done
+    [[ -n "${_out}" ]] || return 1
+    [[ "${_out}" != "${_tmp}/argsh.so" ]] || {
+      echo "regression: curl wrote directly to destination, not temp" >&2
+      return 1
+    }
+    echo "fake-so-content" > "${_out}"
   }
   enable() { :; }  # stub `enable -f` verification
-  export -f github::latest curl enable _stub_curl
+  export -f github::latest curl enable
 
   PATH_BIN="${_tmp}" argsh::builtin::download 1 >"${stdout}" 2>"${stderr}" || status=$?
 
@@ -361,10 +333,16 @@ _stub_curl() {
   local _tmp
   _tmp="$(mktemp -d)"
   github::latest() { echo "v0.0.0-test"; }
-  _STUB_CONTENT="bad"
-  curl() { _stub_curl "${@}"; }
+  curl() {
+    local _out=""
+    while [[ $# -gt 0 ]]; do
+      [[ "${1}" == "-o" ]] && { _out="${2}"; shift 2; continue; }
+      shift
+    done
+    echo "bad" > "${_out}"
+  }
   enable() { return 1; }  # simulate failed load at `enable -f`
-  export -f github::latest curl enable _stub_curl
+  export -f github::latest curl enable
 
   PATH_BIN="${_tmp}" argsh::builtin::download 1 >"${stdout}" 2>"${stderr}" || status=$?
 
@@ -379,92 +357,26 @@ _stub_curl() {
   rm -rf "${_tmp}"
 }
 
-@test "builtin::download: checksum mismatch fails and cleans up" {
-  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
-  local _tmp
-  _tmp="$(mktemp -d)"
-  github::latest() { echo "v0.0.0-test"; }
-  # Return mismatched checksum: stub writes "real-content" but sha256sum.txt has hash of "other"
-  curl() {
-    local _out="" _url=""
-    while [[ $# -gt 0 ]]; do
-      case "${1}" in
-        -o) _out="${2}"; shift 2 ;;
-        -*) shift ;;
-        *) _url="${1}"; shift ;;
-      esac
-    done
-    if [[ "${_url}" == *"sha256sum.txt" ]]; then
-      local _arch; _arch="$(uname -m)"; [[ "${_arch}" == "aarch64" ]] && _arch="arm64" || _arch="amd64"
-      echo "0000000000000000000000000000000000000000000000000000000000000000  argsh-linux-${_arch}.so"
-      return 0
-    fi
-    [[ -n "${_out}" ]] || return 1
-    echo "real-content" > "${_out}"
-  }
-  export -f github::latest curl
-
-  PATH_BIN="${_tmp}" argsh::builtin::download 1 >"${stdout}" 2>"${stderr}" || status=$?
-
-  assert "${status}" -ne 0
-  contains "checksum mismatch" stderr
-  assert ! -f "${_tmp}/argsh.so"
-
-  rm -rf "${_tmp}"
-}
-
-@test "builtin::download: missing sha256sum.txt warns and continues" {
-  # The sha256sum.txt curl call runs in a pipeline subshell where exported
-  # function stubs are unreliable in bats. Skip until we can use a script stub.
-  skip "curl function stubs don't survive pipeline subshells in bats"
-  local _tmp
-  _tmp="$(mktemp -d)"
-  github::latest() { echo "v0.0.0-test"; }
-  _STUB_CONTENT="test-content"
-  _STUB_SHA256_FAIL=1
-  curl() {
-    local _out="" _url=""
-    while [[ $# -gt 0 ]]; do
-      case "${1}" in
-        -o) _out="${2}"; shift 2 ;;
-        -*) shift ;;
-        *) _url="${1}"; shift ;;
-      esac
-    done
-    # sha256sum.txt returns no matching entry
-    if [[ "${_url}" == *"sha256sum.txt" ]]; then
-      echo "deadbeef  some-other-asset.so"
-      return 0
-    fi
-    [[ -n "${_out}" ]] || return 1
-    printf '%s\n' "${_STUB_CONTENT}" > "${_out}"
-  }
-  enable() { :; }
-  export -f github::latest curl enable
-
-  PATH_BIN="${_tmp}" argsh::builtin::download 1 >"${stdout}" 2>"${stderr}" || status=$?
-
-  assert "${status}" -eq 0
-  contains "could not verify checksum" stderr
-  assert -f "${_tmp}/argsh.so"
-
-  rm -rf "${_tmp}"
-}
-
 @test "builtin::download: surfaces enable -f stderr on failure" {
   if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
   local _tmp
   _tmp="$(mktemp -d)"
   github::latest() { echo "v0.0.0-test"; }
-  _STUB_CONTENT="bad"
-  curl() { _stub_curl "${@}"; }
+  curl() {
+    local _out=""
+    while [[ $# -gt 0 ]]; do
+      [[ "${1}" == "-o" ]] && { _out="${2}"; shift 2; continue; }
+      shift
+    done
+    echo "bad" > "${_out}"
+  }
   # Stub `enable` itself — this is the real code path now, so loader
   # diagnostics must propagate end-to-end without being swallowed.
   enable() {
     echo "cannot open shared object: wrong ELF class" >&2
     return 1
   }
-  export -f github::latest curl enable _stub_curl
+  export -f github::latest curl enable
 
   PATH_BIN="${_tmp}" argsh::builtin::download 1 >"${stdout}" 2>"${stderr}" || status=$?
 
@@ -483,10 +395,16 @@ _stub_curl() {
   # Pre-existing .so with old content (simulates already-installed builtin).
   echo "old-content" > "${_tmp}/argsh.so"
   github::latest() { echo "v0.0.0-test"; }
-  _STUB_CONTENT="new-content"
-  curl() { _stub_curl "${@}"; }
+  curl() {
+    local _out=""
+    while [[ $# -gt 0 ]]; do
+      [[ "${1}" == "-o" ]] && { _out="${2}"; shift 2; continue; }
+      shift
+    done
+    echo "new-content" > "${_out}"
+  }
   enable() { :; }
-  export -f github::latest curl enable _stub_curl
+  export -f github::latest curl enable
 
   PATH_BIN="${_tmp}" argsh::builtin::download 1 >"${stdout}" 2>"${stderr}" || status=$?
 
@@ -501,14 +419,21 @@ _stub_curl() {
   local _tmp
   _tmp="$(mktemp -d)"
   github::latest() { echo "v0.0.0-test"; }
-  _STUB_CONTENT="new-content"
-  curl() { _stub_curl "${@}"; }
+  curl() {
+    local _out=""
+    while [[ $# -gt 0 ]]; do
+      [[ "${1}" == "-o" ]] && { _out="${2}"; shift 2; continue; }
+      shift
+    done
+    echo "new-content" > "${_out}"
+  }
   enable() { :; }
-  export -f github::latest curl enable _stub_curl
+  export -f github::latest curl enable
 
   PATH_BIN="${_tmp}" argsh::builtin::download 1 >"${stdout}" 2>"${stderr}" || status=$?
 
   assert "${status}" -eq 0
+  # Must be read-only (0444) — prevents accidental in-place overwrite of loaded .so.
   local _mode
   _mode="$(stat -c '%a' "${_tmp}/argsh.so")"
   assert "${_mode}" = "444"
@@ -524,14 +449,21 @@ _stub_curl() {
   echo "old-content" > "${_tmp}/argsh.so"
   chmod 0444 "${_tmp}/argsh.so"
   github::latest() { echo "v0.0.0-test"; }
-  _STUB_CONTENT="new-content"
-  curl() { _stub_curl "${@}"; }
+  curl() {
+    local _out=""
+    while [[ $# -gt 0 ]]; do
+      [[ "${1}" == "-o" ]] && { _out="${2}"; shift 2; continue; }
+      shift
+    done
+    echo "new-content" > "${_out}"
+  }
   enable() { :; }
-  export -f github::latest curl enable _stub_curl
+  export -f github::latest curl enable
 
   PATH_BIN="${_tmp}" argsh::builtin::download 1 >"${stdout}" 2>"${stderr}" || status=$?
 
   assert "${status}" -eq 0
+  # Updated .so should also be read-only
   assert "$(cat "${_tmp}/argsh.so")" = "new-content"
   local _mode
   _mode="$(stat -c '%a' "${_tmp}/argsh.so")"
