@@ -276,14 +276,22 @@ declare -gi ARGSH_BUILTIN="${ARGSH_BUILTIN:-0}"
   # Stub the network and verification — we want to assert on filesystem behavior.
   github::latest() { echo "v0.0.0-test"; }
   curl() {
-    # Find -o argument and write a fake payload there. Verify it is NOT the
-    # final destination path (regression: previous code wrote directly to dest).
-    local _out=""
+    local _out="" _url=""
     while [[ $# -gt 0 ]]; do
-      [[ "${1}" == "-o" ]] && { _out="${2}"; shift 2; continue; }
-      shift
+      case "${1}" in
+        -o) _out="${2}"; shift 2 ;;
+        -*) shift ;;
+        *) _url="${1}"; shift ;;
+      esac
     done
+    # sha256sum.txt → return matching checksum on stdout
+    if [[ "${_url}" == *"sha256sum.txt" ]]; then
+      local _sha; _sha="$(printf '%s\n' "fake-so-content" | sha256sum | cut -d' ' -f1)"
+      echo "${_sha}  argsh-linux-amd64.so"
+      return 0
+    fi
     [[ -n "${_out}" ]] || return 1
+    # Verify not writing directly to destination
     [[ "${_out}" != "${_tmp}/argsh.so" ]] || {
       echo "regression: curl wrote directly to destination, not temp" >&2
       return 1
