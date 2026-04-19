@@ -58,8 +58,8 @@
     },
     {
       "file": "builtin/src/field.rs",
-      "percent_covered": "97.44",
-      "covered_lines": "266",
+      "percent_covered": "99.27",
+      "covered_lines": "271",
       "total_lines": "273",
       "excluded_lines": "8"
     },
@@ -85,12 +85,12 @@
       "excluded_lines": "105"
     }
   ],
-  "percent_covered": "89.38",
-  "covered_lines": 2727,
+  "percent_covered": "89.54",
+  "covered_lines": 2732,
   "total_lines": 3051,
   "excluded_lines": 229,
   "percent_low": 25,
   "percent_high": 75,
   "command": "bats+llvm-cov",
-  "date": "2026-04-16 21:10:16"
+  "date": "2026-04-19 16:30:57"
 }
