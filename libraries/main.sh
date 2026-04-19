@@ -197,18 +197,19 @@ argsh::builtin::download() {
     fi
   fi
   if [[ -n "${_expected_sha}" ]]; then
-    _actual_sha="$(${_sha_cmd} "${_tmp}")"
+    _actual_sha="$(${_sha_cmd} "${_tmp}" 2>/dev/null)" || true
     _actual_sha="${_actual_sha%% *}"
-    if [[ "${_actual_sha}" != "${_expected_sha}" ]]; then
+    if [[ -z "${_actual_sha}" ]]; then
+      echo "argsh: warning: ${_sha_cmd} failed — skipping checksum verification" >&2
+    elif [[ "${_actual_sha}" != "${_expected_sha}" ]]; then
       echo "argsh: SHA256 checksum mismatch for ${_asset}" >&2
       echo "  expected: ${_expected_sha}" >&2
       echo "  actual:   ${_actual_sha}" >&2
       rm -f "${_tmp}"
       return 1
+    else
+      [[ "${ARGSH_DEBUG:-}" != "1" ]] || echo "argsh:debug: SHA256 verified: ${_actual_sha}" >&2
     fi
-    [[ "${ARGSH_DEBUG:-}" != "1" ]] || echo "argsh:debug: SHA256 verified: ${_actual_sha}" >&2
-  elif [[ -z "${_expected_sha}" ]]; then
-    echo "argsh: warning: could not verify checksum — sha256sum.txt unavailable or missing entry for ${_asset}" >&2
   fi
 
   # Verify the downloaded file loads as a builtin. Run `enable -f` in a

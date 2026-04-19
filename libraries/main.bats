@@ -286,8 +286,11 @@ declare -gi ARGSH_BUILTIN="${ARGSH_BUILTIN:-0}"
     done
     # sha256sum.txt → return matching checksum on stdout
     if [[ "${_url}" == *"sha256sum.txt" ]]; then
-      local _sha; _sha="$(printf '%s\n' "fake-so-content" | sha256sum | cut -d' ' -f1)"
-      echo "${_sha}  argsh-linux-amd64.so"
+      local _sha _arch
+      _arch="$(uname -m)"; [[ "${_arch}" == "aarch64" ]] && _arch="arm64" || _arch="amd64"
+      _sha="$(printf '%s\n' "fake-so-content" | sha256sum 2>/dev/null || shasum -a 256 2>/dev/null)"
+      _sha="${_sha%% *}"
+      echo "${_sha}  argsh-linux-${_arch}.so"
       return 0
     fi
     [[ -n "${_out}" ]] || return 1
