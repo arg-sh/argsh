@@ -441,7 +441,7 @@ if ! (( ARGSH_BUILTIN )); then
     fi
 
     # If non-:^ entries exist for this name, skip :^ entries
-    if [[ -n "${_non_inherited[${_name}]:-}" && "${args[_i]}" == *"^"* ]]; then
+    if [[ -n "${_non_inherited[${_name}]:-}" && "${args[_i]}" == *":^"* ]]; then
       continue # :^ yields to non-:^
     fi
 
