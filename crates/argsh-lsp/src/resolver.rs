@@ -215,11 +215,38 @@ fn resolve_recursive(
                 .unwrap_or_else(|| project_root.to_path_buf());
             (stripped.to_string(), resolved_base)
         } else if let Some(stripped) = module.strip_prefix('^') {
-            // ^ prefix: relative to PATH_SCRIPTS — skip if no scripts dir found
-            // (matches runtime behavior: fails when PATH_SCRIPTS is unset)
-            match find_scripts_dir(project_root, envrc_vars) {
-                Some(scripts_dir) => (stripped.to_string(), scripts_dir),
-                None => continue, // unresolvable — AG013 will flag it
+            // ^ prefix: PATH_SCRIPTS → # argsh source= directive → walk up → skip
+            if let Some(scripts_dir) = find_scripts_dir(project_root, envrc_vars) {
+                (stripped.to_string(), scripts_dir)
+            } else if let Some(ref directive) = analysis.source_directive {
+                // Resolve directive path relative to the importing file
+                let directive_path = if std::path::Path::new(directive).is_relative() {
+                    base_dir.join(directive)
+                } else {
+                    std::path::PathBuf::from(directive)
+                };
+                if directive_path.is_dir() {
+                    (stripped.to_string(), directive_path)
+                } else {
+                    continue
+                }
+            } else {
+                // Walk up from base_dir looking for the module
+                let mut search = base_dir.to_path_buf();
+                let mut found = false;
+                while search.starts_with(project_root) {
+                    let candidates = resolve_module_path(stripped, &search);
+                    if candidates.iter().any(|p| p.is_file()) {
+                        found = true;
+                        break;
+                    }
+                    if !search.pop() { break; }
+                }
+                if found {
+                    (stripped.to_string(), search)
+                } else {
+                    continue // unresolvable — AG013 will flag it
+                }
             }
         } else if let Some(stripped) = module.strip_prefix('~') {
             (stripped.to_string(), base_dir.to_path_buf())
