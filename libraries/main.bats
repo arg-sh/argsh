@@ -286,7 +286,8 @@ _stub_curl() {
   if [[ "${_url}" == *"sha256sum.txt" ]]; then
     local _sha
     _sha="$(printf '%s\n' "${_STUB_CONTENT}" | sha256sum | cut -d' ' -f1)"
-    echo "${_sha}  argsh-linux-amd64.so"
+    local _arch; _arch="$(uname -m)"; [[ "${_arch}" == "aarch64" ]] && _arch="arm64" || _arch="amd64"
+    echo "${_sha}  argsh-linux-${_arch}.so"
     return 0
   fi
   [[ -n "${_out}" ]] || return 1
@@ -374,6 +375,40 @@ _stub_curl() {
   local _leftover
   _leftover=$(command ls "${_tmp}"/*.download.* 2>/dev/null || true)
   assert "${_leftover}" = ""
+
+  rm -rf "${_tmp}"
+}
+
+@test "builtin::download: checksum mismatch fails and cleans up" {
+  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
+  local _tmp
+  _tmp="$(mktemp -d)"
+  github::latest() { echo "v0.0.0-test"; }
+  # Return mismatched checksum: stub writes "real-content" but sha256sum.txt has hash of "other"
+  curl() {
+    local _out="" _url=""
+    while [[ $# -gt 0 ]]; do
+      case "${1}" in
+        -o) _out="${2}"; shift 2 ;;
+        -*) shift ;;
+        *) _url="${1}"; shift ;;
+      esac
+    done
+    if [[ "${_url}" == *"sha256sum.txt" ]]; then
+      local _arch; _arch="$(uname -m)"; [[ "${_arch}" == "aarch64" ]] && _arch="arm64" || _arch="amd64"
+      echo "0000000000000000000000000000000000000000000000000000000000000000  argsh-linux-${_arch}.so"
+      return 0
+    fi
+    [[ -n "${_out}" ]] || return 1
+    echo "real-content" > "${_out}"
+  }
+  export -f github::latest curl
+
+  PATH_BIN="${_tmp}" argsh::builtin::download 1 >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -ne 0
+  contains "checksum mismatch" stderr
+  assert ! -f "${_tmp}/argsh.so"
 
   rm -rf "${_tmp}"
 }

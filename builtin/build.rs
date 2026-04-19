@@ -19,7 +19,8 @@ fn main() {
     println!("cargo:rustc-env=ARGSH_SO_VERSION={}", version);
     println!("cargo:rustc-env=ARGSH_SO_COMMIT={}", commit);
 
-    // Rerun when git state changes (branch switch, new commit, tag)
+    // Rerun when git state changes (branch switch, new commit, tag, gc)
     println!("cargo:rerun-if-changed=../.git/HEAD");
     println!("cargo:rerun-if-changed=../.git/refs/");
+    println!("cargo:rerun-if-changed=../.git/packed-refs");
 }

@@ -206,7 +206,7 @@ argsh::builtin::download() {
     fi
     [[ "${ARGSH_DEBUG:-}" != "1" ]] || echo "argsh:debug: SHA256 verified: ${_actual_sha}" >&2
   elif [[ -z "${_expected_sha}" ]]; then
-    echo "argsh: warning: could not verify checksum — sha256sum.txt unavailable" >&2
+    echo "argsh: warning: could not verify checksum — sha256sum.txt unavailable or missing entry for ${_asset}" >&2
   fi
 
   # Verify the downloaded file loads as a builtin. Run `enable -f` in a
