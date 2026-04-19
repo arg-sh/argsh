@@ -45,8 +45,8 @@
     {
       "file": "builtin/src/args.rs",
       "percent_covered": "100.00",
-      "covered_lines": "134",
-      "total_lines": "134",
+      "covered_lines": "136",
+      "total_lines": "136",
       "excluded_lines": "11"
     },
     {
@@ -85,12 +85,12 @@
       "excluded_lines": "105"
     }
   ],
-  "percent_covered": "89.54",
-  "covered_lines": 2732,
-  "total_lines": 3051,
+  "percent_covered": "89.55",
+  "covered_lines": 2734,
+  "total_lines": 3053,
   "excluded_lines": 229,
   "percent_low": 25,
   "percent_high": 75,
   "command": "bats+llvm-cov",
-  "date": "2026-04-19 16:30:57"
+  "date": "2026-04-19 20:52:56"
 }
