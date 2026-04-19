@@ -92,8 +92,6 @@ RUN set -eux \
       /usr/local/lib/bats-support/.git \
       /usr/local/lib/bats-assert/.git \
       /usr/local/lib/bats-file/.git \
-  && apt-get remove -y git \
-  && apt-get autoremove -y \
   && rm -rf /var/lib/apt/lists/*
 
 # lint
