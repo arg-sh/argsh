@@ -86,9 +86,9 @@
     },
     {
       "file": "crates/argsh-lsp/src/diagnostics.rs",
-      "percent_covered": "86.02",
-      "covered_lines": "400",
-      "total_lines": "465",
+      "percent_covered": "87.50",
+      "covered_lines": "483",
+      "total_lines": "552",
       "excluded_lines": "0"
     },
     {
@@ -162,9 +162,9 @@
       "excluded_lines": "0"
     }
   ],
-  "percent_covered": "81.38",
-  "covered_lines": 6382,
-  "total_lines": 7842,
+  "percent_covered": "81.54",
+  "covered_lines": 6465,
+  "total_lines": 7929,
   "excluded_lines": 0,
   "percent_low": 25,
   "percent_high": 75,
