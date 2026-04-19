@@ -177,6 +177,43 @@ argsh::builtin::download() {
     return 1
   }
 
+  # Verify SHA256 checksum against the release's sha256sum.txt
+  local _expected_sha _actual_sha _sha_cmd
+  _expected_sha="$(
+    curl -fsSL "https://github.com/arg-sh/argsh/releases/download/${_tag}/sha256sum.txt" \
+      | grep -F -- "${_asset}" | head -1 | cut -d' ' -f1
+  )" || true
+  # Validate: SHA256 must be exactly 64 hex chars
+  [[ "${_expected_sha}" =~ ^[0-9a-f]{64}$ ]] || _expected_sha=""
+  if [[ -n "${_expected_sha}" ]]; then
+    # Find available SHA256 tool
+    if command -v sha256sum &>/dev/null; then
+      _sha_cmd="sha256sum"
+    elif command -v shasum &>/dev/null; then
+      _sha_cmd="shasum -a 256"
+    else
+      echo "argsh: warning: no sha256sum/shasum available — skipping checksum verification" >&2
+      _expected_sha=""
+    fi
+  fi
+  if [[ -n "${_expected_sha}" ]]; then
+    _actual_sha="$(${_sha_cmd} "${_tmp}" 2>/dev/null)" || true
+    _actual_sha="${_actual_sha%% *}"
+    if [[ -z "${_actual_sha}" ]]; then
+      echo "argsh: warning: ${_sha_cmd} failed — skipping checksum verification" >&2
+    elif [[ "${_actual_sha}" != "${_expected_sha}" ]]; then
+      echo "argsh: SHA256 checksum mismatch for ${_asset}" >&2
+      echo "  expected: ${_expected_sha}" >&2
+      echo "  actual:   ${_actual_sha}" >&2
+      rm -f "${_tmp}"
+      return 1
+    else
+      [[ "${ARGSH_DEBUG:-}" != "1" ]] || echo "argsh:debug: SHA256 verified: ${_actual_sha}" >&2
+    fi
+  else
+    [[ "${ARGSH_DEBUG:-}" != "1" ]] || echo "argsh:debug: SHA256 verification skipped (no checksum available)" >&2
+  fi
+
   # Verify the downloaded file loads as a builtin. Run `enable -f` in a
   # subshell so any interaction with the parent process's already-loaded
   # builtins cannot affect or crash the parent. Call `enable -f` directly
@@ -193,16 +230,10 @@ argsh::builtin::download() {
     return 1
   }
 
-  # mktemp creates files with mode 0600. Set a sensible mode before the
-  # atomic move so the installed .so isn't unexpectedly restrictive in shared
-  # install locations. If a previous .so exists, preserve its mode (operator
-  # may have customized it); otherwise default to 0644, matching what
-  # `curl -o` (the previous direct-write approach) would produce under a
-  # typical 0022 umask.
-  local _mode="644"
-  if [[ -f "${_dest}" ]]; then
-    _mode="$(stat -c '%a' "${_dest}" 2>/dev/null || echo 644)"
-  fi
+  # mktemp creates files with mode 0600. Set read-only before the atomic
+  # move: 0444 prevents accidental in-place overwrites (which cause segfaults
+  # when the .so is already loaded). bash's enable -f only needs read access.
+  local _mode="444"
   chmod "${_mode}" "${_tmp}" 2>/dev/null || true
 
   # Atomically replace the destination. mv on the same filesystem is atomic.
@@ -323,6 +354,10 @@ argsh::status() {
   fi
   echo "Builtin (.so):"
   echo "  status:       ${_so_status}"
+  if (( ${ARGSH_BUILTIN:-0} )); then
+    echo "  version:      ${__ARGSH_BUILTIN_VERSION:-unknown}"
+    echo "  commit:       ${__ARGSH_BUILTIN_COMMIT:-unknown}"
+  fi
   echo "  path:         ${_loc}"
   echo "  architecture: $(uname -s | tr '[:upper:]' '[:lower:]')/${_arch}"
   echo ""

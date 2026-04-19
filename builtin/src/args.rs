@@ -28,6 +28,9 @@ pub static mut ARGS_STRUCT: BashBuiltin = BashBuiltin {
 
 #[export_name = ":args_builtin_load"]
 pub extern "C" fn args_builtin_load(_name: *const c_char) -> c_int {
+    // Expose build-time version info to shell
+    shell::set_scalar("__ARGSH_BUILTIN_VERSION", env!("ARGSH_SO_VERSION"));
+    shell::set_scalar("__ARGSH_BUILTIN_COMMIT", env!("ARGSH_SO_COMMIT"));
     1 // success
 }
 

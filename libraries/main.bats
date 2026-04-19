@@ -276,14 +276,25 @@ declare -gi ARGSH_BUILTIN="${ARGSH_BUILTIN:-0}"
   # Stub the network and verification — we want to assert on filesystem behavior.
   github::latest() { echo "v0.0.0-test"; }
   curl() {
-    # Find -o argument and write a fake payload there. Verify it is NOT the
-    # final destination path (regression: previous code wrote directly to dest).
-    local _out=""
+    local _out="" _url=""
     while [[ $# -gt 0 ]]; do
-      [[ "${1}" == "-o" ]] && { _out="${2}"; shift 2; continue; }
-      shift
+      case "${1}" in
+        -o) _out="${2}"; shift 2 ;;
+        -*) shift ;;
+        *) _url="${1}"; shift ;;
+      esac
     done
+    # sha256sum.txt → return matching checksum on stdout
+    if [[ "${_url}" == *"sha256sum.txt" ]]; then
+      local _sha _arch
+      _arch="$(uname -m)"; [[ "${_arch}" == "aarch64" ]] && _arch="arm64" || _arch="amd64"
+      _sha="$(printf '%s\n' "fake-so-content" | sha256sum 2>/dev/null || shasum -a 256 2>/dev/null)"
+      _sha="${_sha%% *}"
+      echo "${_sha}  argsh-linux-${_arch}.so"
+      return 0
+    fi
     [[ -n "${_out}" ]] || return 1
+    # Verify not writing directly to destination
     [[ "${_out}" != "${_tmp}/argsh.so" ]] || {
       echo "regression: curl wrote directly to destination, not temp" >&2
       return 1
@@ -414,7 +425,7 @@ declare -gi ARGSH_BUILTIN="${ARGSH_BUILTIN:-0}"
   rm -rf "${_tmp}"
 }
 
-@test "builtin::download: fresh install uses 0644 mode (not mktemp's 0600)" {
+@test "builtin::download: fresh install uses 0444 mode (read-only)" {
   if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
   local _tmp
   _tmp="$(mktemp -d)"
@@ -433,21 +444,21 @@ declare -gi ARGSH_BUILTIN="${ARGSH_BUILTIN:-0}"
   PATH_BIN="${_tmp}" argsh::builtin::download 1 >"${stdout}" 2>"${stderr}" || status=$?
 
   assert "${status}" -eq 0
-  # Must NOT be 0600 (mktemp default) — that would break shared install dirs.
+  # Must be read-only (0444) — prevents accidental in-place overwrite of loaded .so.
   local _mode
   _mode="$(stat -c '%a' "${_tmp}/argsh.so")"
-  assert "${_mode}" = "644"
+  assert "${_mode}" = "444"
 
   rm -rf "${_tmp}"
 }
 
-@test "builtin::download: preserves existing .so mode on update" {
+@test "builtin::download: update replaces read-only .so via mv" {
   if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
   local _tmp
   _tmp="$(mktemp -d)"
-  # Pre-existing .so with a custom (non-default) mode set by the operator.
+  # Pre-existing read-only .so
   echo "old-content" > "${_tmp}/argsh.so"
-  chmod 0755 "${_tmp}/argsh.so"
+  chmod 0444 "${_tmp}/argsh.so"
   github::latest() { echo "v0.0.0-test"; }
   curl() {
     local _out=""
@@ -463,10 +474,11 @@ declare -gi ARGSH_BUILTIN="${ARGSH_BUILTIN:-0}"
   PATH_BIN="${_tmp}" argsh::builtin::download 1 >"${stdout}" 2>"${stderr}" || status=$?
 
   assert "${status}" -eq 0
-  # Mode must be preserved across updates so operator customizations stick.
+  # Updated .so should also be read-only
+  assert "$(cat "${_tmp}/argsh.so")" = "new-content"
   local _mode
   _mode="$(stat -c '%a' "${_tmp}/argsh.so")"
-  assert "${_mode}" = "755"
+  assert "${_mode}" = "444"
 
   rm -rf "${_tmp}"
 }
