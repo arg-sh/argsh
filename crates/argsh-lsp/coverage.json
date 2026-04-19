@@ -44,9 +44,9 @@
     },
     {
       "file": "crates/argsh-lsp/tests/integration.rs",
-      "percent_covered": "93.45",
-      "covered_lines": "1213",
-      "total_lines": "1298",
+      "percent_covered": "93.53",
+      "covered_lines": "1229",
+      "total_lines": "1314",
       "excluded_lines": "0"
     },
     {
@@ -85,17 +85,17 @@
       "excluded_lines": "0"
     },
     {
+      "file": "crates/argsh-lsp/src/diagnostics.rs",
+      "percent_covered": "87.48",
+      "covered_lines": "482",
+      "total_lines": "551",
+      "excluded_lines": "0"
+    },
+    {
       "file": "crates/argsh-syntax/src/document.rs",
       "percent_covered": "85.93",
       "covered_lines": "336",
       "total_lines": "391",
-      "excluded_lines": "0"
-    },
-    {
-      "file": "crates/argsh-lsp/src/diagnostics.rs",
-      "percent_covered": "83.58",
-      "covered_lines": "341",
-      "total_lines": "408",
       "excluded_lines": "0"
     },
     {
@@ -120,6 +120,13 @@
       "excluded_lines": "0"
     },
     {
+      "file": "crates/argsh-syntax/src/field.rs",
+      "percent_covered": "71.88",
+      "covered_lines": "69",
+      "total_lines": "96",
+      "excluded_lines": "0"
+    },
+    {
       "file": "crates/argsh-lsp/src/goto_def.rs",
       "percent_covered": "71.32",
       "covered_lines": "184",
@@ -127,24 +134,17 @@
       "excluded_lines": "0"
     },
     {
-      "file": "crates/argsh-syntax/src/field.rs",
-      "percent_covered": "70.00",
-      "covered_lines": "63",
-      "total_lines": "90",
-      "excluded_lines": "0"
-    },
-    {
       "file": "crates/argsh-lsp/src/completion.rs",
-      "percent_covered": "69.13",
-      "covered_lines": "262",
-      "total_lines": "379",
+      "percent_covered": "69.69",
+      "covered_lines": "269",
+      "total_lines": "386",
       "excluded_lines": "0"
     },
     {
       "file": "crates/argsh-lsp/src/hover.rs",
-      "percent_covered": "63.92",
+      "percent_covered": "63.74",
       "covered_lines": "457",
-      "total_lines": "715",
+      "total_lines": "717",
       "excluded_lines": "0"
     },
     {
@@ -162,12 +162,12 @@
       "excluded_lines": "0"
     }
   ],
-  "percent_covered": "81.17",
-  "covered_lines": 6294,
-  "total_lines": 7754,
+  "percent_covered": "81.53",
+  "covered_lines": 6464,
+  "total_lines": 7928,
   "excluded_lines": 0,
   "percent_low": 25,
   "percent_high": 75,
   "command": "cargo-test+llvm-cov",
-  "date": "2026-04-18 18:03:55"
+  "date": "2026-04-19 16:31:14"
 }

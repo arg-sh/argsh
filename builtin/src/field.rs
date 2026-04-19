@@ -58,6 +58,7 @@ pub struct FieldDef {
     pub required: bool,       // :! modifier
     pub is_positional: bool,  // no | in definition
     pub is_hidden: bool,      // # prefix
+    pub is_inherited: bool,   // :^ modifier — yields to non-:^ duplicates
     pub is_array: bool,       // variable declared as array in shell
     pub has_default: bool,    // variable already initialized
     pub is_multiple: bool,    // array variable (collects multiple values)
@@ -89,7 +90,7 @@ pub fn parse_field(field: &str) -> Result<FieldDef, String> {
     let raw = field.to_string();
     let name = field_name(field, true);
     let display_name = field_name(field, false);
-    let is_hidden = field.starts_with('#');
+    let mut is_hidden = field.starts_with('#');
     let is_positional = !field.contains('|') && field != "-";
 
     // Parse short name
@@ -109,6 +110,7 @@ pub fn parse_field(field: &str) -> Result<FieldDef, String> {
     let mut is_boolean = false;
     let mut type_name = String::new();
     let mut required = false;
+    let mut is_inherited = false;
 
     if let Some(colon_pos) = field.find(':') {
         let mods = &field[colon_pos + 1..];
@@ -133,7 +135,7 @@ pub fn parse_field(field: &str) -> Result<FieldDef, String> {
                     // Collect type name until next modifier
                     let mut tname = String::new();
                     while let Some(&tc) = chars.peek() {
-                        if tc == '+' || tc == '~' || tc == '!' {
+                        if tc == '+' || tc == '~' || tc == '!' || tc == '^' || tc == '#' || tc == ':' {
                             break;
                         }
                         tname.push(tc);
@@ -146,6 +148,19 @@ pub fn parse_field(field: &str) -> Result<FieldDef, String> {
                         return Err("field already flagged as required".to_string());
                     }
                     required = true;
+                    chars.next();
+                }
+                '^' => {
+                    is_inherited = true;
+                    chars.next();
+                }
+                '#' => {
+                    // hidden modifier (also handled by # prefix)
+                    is_hidden = true;
+                    chars.next();
+                }
+                ':' => {
+                    // separator between chained modifiers
                     chars.next();
                 }
                 _ => {
@@ -182,11 +197,88 @@ pub fn parse_field(field: &str) -> Result<FieldDef, String> {
         required,
         is_positional,
         is_hidden,
+        is_inherited,
         is_array: is_arr,
         has_default,
         is_multiple,
         raw,
     })
+}
+
+/// Deduplicate args array entries based on `:^` (inherited) modifier.
+///
+/// The args array is structured as pairs: [spec, description, spec, description, ...].
+/// When a field name appears more than once:
+///   - Last non-`:^` entry wins (if any non-`:^` exists)
+///   - If all are `:^`, last one wins
+///
+/// Also strips trailing empty strings (from `"${args[@]:-}"` expansion).
+pub fn dedup_inherited(args: &[String]) -> Vec<String> {
+    // Strip trailing empty strings only if they make the count odd
+    // (from "${args[@]:-}" expansion when no parent args exist)
+    let mut len = args.len();
+    while len > 0 && len % 2 != 0 && args[len - 1].is_empty() {
+        len -= 1;
+    }
+    let args = &args[..len];
+
+    // Ensure even count (spec + description pairs)
+    if args.len() % 2 != 0 {
+        return args.to_vec();
+    }
+
+    // Build map: field_name -> Vec<(pair_index, is_inherited)>
+    let mut field_map: std::collections::HashMap<String, Vec<(usize, bool)>> =
+        std::collections::HashMap::new();
+    for i in (0..args.len()).step_by(2) {
+        if args[i] == "-" {
+            continue; // group separator
+        }
+        let name = field_name(&args[i], true);
+        if name.is_empty() {
+            continue;
+        }
+        let inherited = parse_field(&args[i]).map(|f| f.is_inherited).unwrap_or(false);
+        field_map.entry(name).or_default().push((i, inherited));
+    }
+
+    // Determine which pair indices to remove
+    let mut remove_indices: std::collections::HashSet<usize> = std::collections::HashSet::new();
+    for entries in field_map.values() {
+        if entries.len() <= 1 {
+            continue;
+        }
+        // Find the last non-inherited entry
+        let last_non_inherited = entries.iter().rev().find(|(_, inh)| !inh);
+        if let Some(&(winner_idx, _)) = last_non_inherited {
+            // Remove all entries except the winner
+            for &(idx, _) in entries {
+                if idx != winner_idx {
+                    remove_indices.insert(idx);
+                }
+            }
+        } else {
+            // All inherited — keep only the last one
+            let last_idx = entries.last().unwrap().0;
+            for &(idx, _) in entries {
+                if idx != last_idx {
+                    remove_indices.insert(idx);
+                }
+            }
+        }
+    }
+
+    // Build result, skipping removed pairs
+    let mut result = Vec::new();
+    for i in (0..args.len()).step_by(2) {
+        if !remove_indices.contains(&i) {
+            result.push(args[i].clone());
+            if i + 1 < args.len() {
+                result.push(args[i + 1].clone());
+            }
+        }
+    }
+    result
 }
 
 /// Convert a value to the expected type. Returns the converted value or an error message.

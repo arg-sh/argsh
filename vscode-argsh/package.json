@@ -2,7 +2,7 @@
   "name": "argsh",
   "displayName": "argsh",
   "description": "Language support, linting, and debugging for argsh — structured Bash scripting framework",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "publisher": "arg-sh",
   "repository": {
     "type": "git",

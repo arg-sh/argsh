@@ -62,8 +62,11 @@ pub fn args_main(args: &[String]) -> i32 {
     let title = &args[0];
     let cli_args = &args[1..];
 
-    // Read args array from shell scope
-    let args_arr = shell::read_array("args");
+    // Read args array from shell scope, dedup :^ inherited entries and strip trailing empties
+    let args_arr = field::dedup_inherited(&shell::read_array("args"));
+
+    // Write deduped array back so help text reflects the final state
+    shell::write_array("args", &args_arr);
 
     // Validate args array is pairs (REVIEW finding 4: use % for Rust <1.87 compat)
     #[allow(clippy::manual_is_multiple_of)]

@@ -413,6 +413,58 @@ local -a args=(
 )
 ```
 
+### Inherited fields (`:^`)
+
+The `:^` modifier marks a field as "inheritable" — it yields to non-`:^` duplicates with the same field name.
+
+**Use case:** A script that works both standalone and as a subcommand of another script. When called standalone, it defines its own flags. When called as a subcommand, the parent already parsed shared flags like `--domain` — the child should inherit those values instead of re-declaring them.
+
+```bash
+# secrets — works standalone OR as `lo secrets` subcommand
+#
+# Standalone:  ./secrets init --domain prod --ssh-key ~/.ssh/id_ed25519
+# Via parent:  lo --domain prod secrets init --ssh-key ~/.ssh/id_ed25519
+#              (parent already parsed --domain, child inherits it)
+
+main::secrets() {
+  local domain="${domain:-${DOMAIN_NAME:-}}"  # inherit parent or use env default
+  local -a args=(
+    'domain|:^' 'Domain to use'
+    "${args[@]:-}"                            # pull in parent's args (if any)
+  )
+  local -a usage=(
+    'init'    'Initialize encryption'
+    'encrypt' 'Encrypt secrets'
+  )
+  :usage "Manage secrets" "${@}"
+  "${usage[@]}"
+}
+
+secrets::init() {
+  local ssh_key="${ssh_key:-${LOK8S_SSH_KEY}}"
+  local domain="${domain:-}"                   # inherit from parent scope
+  local -a args=(
+    'ssh-key|k' 'Path to SSH key'
+    'domain|:^' 'Domain to use'
+    "${args[@]:-}"
+  )
+  :args "Initialize encryption" "${@}"
+}
+```
+
+**How the pattern works:**
+
+1. `"${args[@]:-}"` pulls the parent's `args` array into the child via bash dynamic scope. If no parent exists, it expands to nothing.
+2. `:^` fields yield to non-`:^` duplicates with the same name. So when the parent's `domain|` (non-`:^`) flows in, it wins over the local `domain|:^`.
+3. `local domain="${domain:-...}"` inherits the parent's already-parsed value via bash dynamic scope. The `${domain:-...}` pattern preserves the parent's value if set, otherwise falls back to a default.
+
+**Important:** Always use `${var:-...}` in the `local` declaration for `:^` fields. Without it, the child shadows the parent's value. The linter (AG014) warns if this pattern is missing.
+
+**Priority rules:**
+- Last non-`:^` entry wins for each field name
+- If all entries for a name are `:^`, last one wins
+- Trailing empty strings from `"${args[@]:-}"` are stripped automatically
+
 ## Custom help
 
 When `:usage` or `:args` encounters `--help`, it doesn't exit immediately. The actual help is displayed when you call `"${usage[@]}"`. This gives you two ways to customize help output.
