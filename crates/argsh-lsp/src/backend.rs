@@ -105,7 +105,7 @@ impl Backend {
                     } else {
                         base.join(directive)
                     };
-                    if !resolved.is_dir() {
+                    if !resolved.exists() {
                         // Find the line number of the directive
                         let line = doc.content.lines().enumerate()
                             .take(20)

@@ -79,7 +79,8 @@ import::_resolve_scripts() {
   [[ "${_s}" == */* ]] && _dir="${_s%/*}" || _dir="."
   _line="$(head -20 "${_s}" | grep -m1 '^# argsh source=' 2>/dev/null)" || return 0
   local _path="${_line#*=}"
-  _path="${_path## }"
+  _path="${_path#"${_path%%[![:space:]]*}"}"  # trim all leading whitespace
+  _path="${_path%"${_path##*[![:space:]]}"}"  # trim all trailing whitespace
   # Resolve relative to script directory
   if [[ "${_path:0:1}" != "/" ]]; then
     _path="${_dir}/${_path}"

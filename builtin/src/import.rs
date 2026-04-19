@@ -342,7 +342,10 @@ fn resolve_scripts_dir() -> Option<String> {
 /// Stops at git root or filesystem root.
 /// Returns the full path WITH the matched extension.
 fn walk_up(start_dir: &str, module: &str) -> Option<String> {
-    let root = git_toplevel().unwrap_or_else(|| "/".to_string());
+    let root = git_toplevel()
+        .and_then(|r| std::path::Path::new(&r).canonicalize().ok())
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|| "/".to_string());
     // Resolve to absolute path to prevent infinite loop on relative dirs
     let abs_dir = std::path::Path::new(start_dir).canonicalize().ok()?;
     let mut dir = abs_dir;
