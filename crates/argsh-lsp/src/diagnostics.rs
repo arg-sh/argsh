@@ -23,6 +23,7 @@ pub mod codes {
     pub const AG012: &str = "AG012"; // local variable shadows parent scope args field
     pub const AG013: &str = "AG013"; // import could not be resolved
     pub const AG014: &str = "AG014"; // :^ field without ${var:-...} default pattern
+    pub const AG015: &str = "AG015"; // # argsh source= path does not exist
 }
 
 /// Generate LSP diagnostics from a document analysis.

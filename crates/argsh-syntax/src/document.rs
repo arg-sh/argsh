@@ -74,6 +74,8 @@ pub struct DocumentAnalysis {
     pub has_argsh_shebang: bool,
     /// Raw shebang line if present.
     pub shebang: Option<String>,
+    /// `# argsh source=<path>` directive value, if present (first 20 lines).
+    pub source_directive: Option<String>,
 }
 
 /// An import statement found in the source.
@@ -113,6 +115,11 @@ pub fn analyze(source: &str) -> DocumentAnalysis {
             || (trimmed.starts_with(". ") && trimmed.contains("ARGSH_SOURCE"))
     });
 
+    // Parse # argsh source= directive (first 20 lines, must not be indented)
+    let source_directive = lines.iter().take(20).find_map(|l| {
+        l.strip_prefix("# argsh source=").map(|v| v.trim().to_string())
+    });
+
     let functions = find_functions(&lines);
     let imports = find_imports(&lines);
 
@@ -122,6 +129,7 @@ pub fn analyze(source: &str) -> DocumentAnalysis {
         has_source_argsh,
         has_argsh_shebang,
         shebang,
+        source_directive,
     }
 }
 
@@ -665,6 +673,26 @@ main::cmd2() {
         let doc = analyze(SAMPLE_SCRIPT);
         assert!(doc.has_argsh_shebang);
         assert_eq!(doc.shebang.as_deref(), Some("#!/usr/bin/env argsh"));
+    }
+
+    #[test]
+    fn test_source_directive_parsed() {
+        let content = "#!/usr/bin/env argsh\n# argsh source=../libs\nimport ^utils/verbose\nmain() { :; }\n";
+        let doc = analyze(content);
+        assert_eq!(doc.source_directive.as_deref(), Some("../libs"));
+    }
+
+    #[test]
+    fn test_source_directive_absent() {
+        let doc = analyze(SAMPLE_SCRIPT);
+        assert!(doc.source_directive.is_none());
+    }
+
+    #[test]
+    fn test_source_directive_with_spaces() {
+        let content = "#!/usr/bin/env bash\n# argsh source= ../../root \nmain() { :; }\n";
+        let doc = analyze(content);
+        assert_eq!(doc.source_directive.as_deref(), Some("../../root"));
     }
 
     #[test]

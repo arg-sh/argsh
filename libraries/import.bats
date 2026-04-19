@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# shellcheck shell=bash disable=SC2154 disable=SC2034 disable=SC2030 disable=SC2031
+# shellcheck shell=bash disable=SC1091 disable=SC2154 disable=SC2034 disable=SC2030 disable=SC2031
 # vim: filetype=bash
 # NOTE: do NOT add set -euo pipefail — it breaks bats internals (BATS_TEARDOWN_STARTED unbound)
 # argsh disable-file=AG013
@@ -334,3 +334,91 @@ fi
     return 1
   }
 }
+
+# ── @ fallback to git root ──────────────────────────────
+
+@test "import: @ falls back to git root when PATH_BASE unset" {
+  if [[ -n "${__BUILTIN_SKIP}" ]]; then skip "${__BUILTIN_SKIP}"; fi
+  command -v git &>/dev/null || skip "git not available"
+  local _tmp
+  _tmp="$(mktemp -d)"
+  mkdir -p "${_tmp}/libs"
+  echo 'test_at_fallback() { echo "at-fallback-ok"; }' > "${_tmp}/libs/helper.sh"
+  git -C "${_tmp}" init -q
+  cat > "${_tmp}/run.sh" <<'SCRIPT'
+#!/usr/bin/env bash
+import @libs/helper
+test_at_fallback
+SCRIPT
+  chmod +x "${_tmp}/run.sh"
+
+  (
+    unset PATH_BASE 2>/dev/null || true
+    cd "${_tmp}" || exit 1
+    ARGSH_SOURCE="${_tmp}/run.sh" source "${_tmp}/run.sh"
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains "at-fallback-ok" stdout
+
+  rm -rf "${_tmp}"
+}
+
+# ── ^ walk-up fallback ──────────────────────────────────
+
+@test "import: ^ walks up from script dir when PATH_SCRIPTS unset" {
+  if [[ -n "${__BUILTIN_SKIP}" ]]; then skip "${__BUILTIN_SKIP}"; fi
+  local _tmp
+  _tmp="$(mktemp -d)"
+  # Create: root/utils/verbose.sh and root/sub/deep/script.sh
+  mkdir -p "${_tmp}/utils" "${_tmp}/sub/deep"
+  # Init git repo to bound walk-up (prevents escaping to host filesystem)
+  command -v git &>/dev/null && git -C "${_tmp}" init -q 2>/dev/null || true
+  echo 'test_walkup() { echo "walkup-ok"; }' > "${_tmp}/utils/verbose.sh"
+  cat > "${_tmp}/sub/deep/run.sh" <<'SCRIPT'
+#!/usr/bin/env bash
+import ^utils/verbose
+test_walkup
+SCRIPT
+  chmod +x "${_tmp}/sub/deep/run.sh"
+
+  (
+    unset PATH_SCRIPTS 2>/dev/null || true
+    cd "${_tmp}/sub/deep" || exit 1
+    ARGSH_SOURCE="${_tmp}/sub/deep/run.sh" source "${_tmp}/sub/deep/run.sh"
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains "walkup-ok" stdout
+
+  rm -rf "${_tmp}"
+}
+
+# ── # argsh source= directive ──────────────────────────
+
+@test "import: ^ uses # argsh source= directive" {
+  if [[ -n "${__BUILTIN_SKIP}" ]]; then skip "${__BUILTIN_SKIP}"; fi
+  local _tmp
+  _tmp="$(mktemp -d)"
+  mkdir -p "${_tmp}/libs/utils"
+  echo 'test_directive() { echo "directive-ok"; }' > "${_tmp}/libs/utils/verbose.sh"
+  # Script with directive pointing to libs/
+  cat > "${_tmp}/run.sh" <<SCRIPT
+#!/usr/bin/env bash
+# argsh source=${_tmp}/libs
+import ^utils/verbose
+test_directive
+SCRIPT
+  chmod +x "${_tmp}/run.sh"
+
+  (
+    unset PATH_SCRIPTS 2>/dev/null || true
+    ARGSH_SOURCE="${_tmp}/run.sh" source "${_tmp}/run.sh"
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains "directive-ok" stdout
+
+  rm -rf "${_tmp}"
+}
+

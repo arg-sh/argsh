@@ -239,16 +239,30 @@ fn get_argsh_source_path() -> Option<String> {
 }
 
 /// Resolve module path following import.sh semantics.
-/// Prefixes: @ → PATH_BASE, ^ → PATH_SCRIPTS, ~ → ARGSH_SOURCE/BASH_SOURCE[-1],
-/// plain → ARGSH_SOURCE/__ARGSH_LIB_DIR/BASH_SOURCE[0]
+/// Prefixes:
+///   @ → PATH_BASE → git root
+///   ^ → PATH_SCRIPTS → # argsh source= directive → walk up
+///   ~ → ARGSH_SOURCE/BASH_SOURCE[-1]
+///   plain → ARGSH_SOURCE/__ARGSH_LIB_DIR/BASH_SOURCE[0]
 /// Extension fallback: "", ".sh", ".bash"
 fn resolve_module_path(module: &str) -> Option<String> {
     let base_path = if let Some(rest) = module.strip_prefix('@') {
-        let path_base = shell::get_scalar("PATH_BASE")?;
-        format!("{}/{}", path_base, rest)
+        // @ prefix: PATH_BASE → git root
+        let path_base = shell::get_scalar("PATH_BASE")
+            .or_else(|| git_toplevel());
+        format!("{}/{}", path_base?, rest)
     } else if let Some(rest) = module.strip_prefix('^') {
-        let path_scripts = shell::get_scalar("PATH_SCRIPTS")?;
-        format!("{}/{}", path_scripts, rest)
+        // ^ prefix: PATH_SCRIPTS → directive → walk up
+        let scripts = resolve_scripts_dir();
+        if let Some(dir) = scripts {
+            format!("{}/{}", dir, rest)
+        } else {
+            // Walk up from script dir
+            let src = get_argsh_source_path()
+                .or_else(shell::get_bash_source_last)?;
+            let script_dir = path_dirname(&src);
+            return walk_up(&script_dir, rest);
+        }
     } else if let Some(rest) = module.strip_prefix('~') {
         let src = get_argsh_source_path()
             .or_else(shell::get_bash_source_last)?;
@@ -284,4 +298,71 @@ fn path_dirname(path: &str) -> &str {
     } else {
         "."
     }
+}
+
+/// Get git repository root via `git rev-parse --show-toplevel`.
+fn git_toplevel() -> Option<String> {
+    std::process::Command::new("git")
+        .args(["rev-parse", "--show-toplevel"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+/// Resolve scripts directory for ^ imports.
+/// Priority: PATH_SCRIPTS env var → # argsh source= directive in calling script
+fn resolve_scripts_dir() -> Option<String> {
+    // PATH_SCRIPTS env var (always wins)
+    if let Some(ps) = shell::get_scalar("PATH_SCRIPTS") {
+        return Some(ps);
+    }
+    // Parse # argsh source= from the calling script (first 20 lines)
+    let src = get_argsh_source_path()
+        .or_else(shell::get_bash_source_last)?;
+    let content = std::fs::read_to_string(&src).ok()?;
+    for line in content.lines().take(20) {
+        if let Some(path) = line.strip_prefix("# argsh source=") {
+            let path = path.trim();
+            if path.starts_with('/') {
+                return Some(path.to_string());
+            }
+            // Relative to script dir
+            let dir = path_dirname(&src);
+            let resolved = std::path::Path::new(dir).join(path);
+            return resolved.canonicalize().ok().map(|p| p.to_string_lossy().to_string());
+        }
+    }
+    None
+}
+
+/// Walk up from a directory looking for a module file.
+/// Stops at git root or filesystem root.
+/// Returns the full path WITH the matched extension.
+fn walk_up(start_dir: &str, module: &str) -> Option<String> {
+    let root = git_toplevel()
+        .and_then(|r| std::path::Path::new(&r).canonicalize().ok())
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|| "/".to_string());
+    // Resolve to absolute path to prevent infinite loop on relative dirs
+    let abs_dir = std::path::Path::new(start_dir).canonicalize().ok()?;
+    let mut dir = abs_dir;
+    loop {
+        for ext in &["", ".sh", ".bash"] {
+            let candidate = dir.join(format!("{}{}", module, ext));
+            if candidate.is_file() {
+                return Some(candidate.to_string_lossy().to_string());
+            }
+        }
+        if dir.to_string_lossy() == root {
+            break;
+        }
+        match dir.parent() {
+            Some(p) if !p.as_os_str().is_empty() => dir = p.to_path_buf(),
+            _ => break,
+        }
+    }
+    None
 }
