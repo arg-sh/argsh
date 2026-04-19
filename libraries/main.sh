@@ -178,13 +178,24 @@ argsh::builtin::download() {
   }
 
   # Verify SHA256 checksum against the release's sha256sum.txt
-  local _expected_sha _actual_sha
+  local _expected_sha _actual_sha _sha_cmd
   _expected_sha="$(
     curl -fsSL "https://github.com/arg-sh/argsh/releases/download/${_tag}/sha256sum.txt" \
-      | grep "${_asset}" | cut -d' ' -f1
+      | grep -F -- "${_asset}" | head -1 | cut -d' ' -f1
   )" || true
   if [[ -n "${_expected_sha}" ]]; then
-    _actual_sha="$(sha256sum "${_tmp}" 2>/dev/null || shasum -a 256 "${_tmp}" 2>/dev/null)"
+    # Find available SHA256 tool
+    if command -v sha256sum &>/dev/null; then
+      _sha_cmd="sha256sum"
+    elif command -v shasum &>/dev/null; then
+      _sha_cmd="shasum -a 256"
+    else
+      echo "argsh: warning: no sha256sum/shasum available — skipping checksum verification" >&2
+      _expected_sha=""
+    fi
+  fi
+  if [[ -n "${_expected_sha}" ]]; then
+    _actual_sha="$(${_sha_cmd} "${_tmp}")"
     _actual_sha="${_actual_sha%% *}"
     if [[ "${_actual_sha}" != "${_expected_sha}" ]]; then
       echo "argsh: SHA256 checksum mismatch for ${_asset}" >&2
@@ -194,8 +205,8 @@ argsh::builtin::download() {
       return 1
     fi
     [[ "${ARGSH_DEBUG:-}" != "1" ]] || echo "argsh:debug: SHA256 verified: ${_actual_sha}" >&2
-  else
-    echo "argsh: warning: could not fetch sha256sum.txt — skipping checksum verification" >&2
+  elif [[ -z "${_expected_sha}" ]]; then
+    echo "argsh: warning: could not verify checksum — sha256sum.txt unavailable" >&2
   fi
 
   # Verify the downloaded file loads as a builtin. Run `enable -f` in a
