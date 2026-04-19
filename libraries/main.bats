@@ -307,7 +307,7 @@ _stub_curl() {
     local _a; for _a in "${@}"; do [[ "${_a}" == "-o" ]] && _has_out=1; done
     if [[ -n "${_has_out}" ]]; then
       # Extract -o path to check it's not the final destination
-      local _args=("${@}") _o_path=""
+      local _args=("${@}") _o_path="" _j
       for (( _j=0; _j<${#_args[@]}; _j++ )); do
         [[ "${_args[_j]}" == "-o" ]] && { _o_path="${_args[_j+1]}"; break; }
       done
@@ -409,6 +409,44 @@ _stub_curl() {
   assert "${status}" -ne 0
   contains "checksum mismatch" stderr
   assert ! -f "${_tmp}/argsh.so"
+
+  rm -rf "${_tmp}"
+}
+
+@test "builtin::download: missing sha256sum.txt warns and continues" {
+  # The sha256sum.txt curl call runs in a pipeline subshell where exported
+  # function stubs are unreliable in bats. Skip until we can use a script stub.
+  skip "curl function stubs don't survive pipeline subshells in bats"
+  local _tmp
+  _tmp="$(mktemp -d)"
+  github::latest() { echo "v0.0.0-test"; }
+  _STUB_CONTENT="test-content"
+  _STUB_SHA256_FAIL=1
+  curl() {
+    local _out="" _url=""
+    while [[ $# -gt 0 ]]; do
+      case "${1}" in
+        -o) _out="${2}"; shift 2 ;;
+        -*) shift ;;
+        *) _url="${1}"; shift ;;
+      esac
+    done
+    # sha256sum.txt returns no matching entry
+    if [[ "${_url}" == *"sha256sum.txt" ]]; then
+      echo "deadbeef  some-other-asset.so"
+      return 0
+    fi
+    [[ -n "${_out}" ]] || return 1
+    printf '%s\n' "${_STUB_CONTENT}" > "${_out}"
+  }
+  enable() { :; }
+  export -f github::latest curl enable
+
+  PATH_BIN="${_tmp}" argsh::builtin::download 1 >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains "could not verify checksum" stderr
+  assert -f "${_tmp}/argsh.so"
 
   rm -rf "${_tmp}"
 }
