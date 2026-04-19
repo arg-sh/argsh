@@ -339,6 +339,7 @@ fi
 
 @test "import: @ falls back to git root when PATH_BASE unset" {
   if [[ -n "${__BUILTIN_SKIP}" ]]; then skip "${__BUILTIN_SKIP}"; fi
+  command -v git &>/dev/null || skip "git not available"
   local _tmp
   _tmp="$(mktemp -d)"
   mkdir -p "${_tmp}/libs"
