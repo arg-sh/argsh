@@ -252,7 +252,7 @@ fn resolve_module_path(module: &str) -> Option<String> {
             .or_else(|| git_toplevel());
         format!("{}/{}", path_base?, rest)
     } else if let Some(rest) = module.strip_prefix('^') {
-        // ^ prefix: directive → PATH_SCRIPTS → walk up
+        // ^ prefix: PATH_SCRIPTS → directive → walk up
         let scripts = resolve_scripts_dir();
         if let Some(dir) = scripts {
             format!("{}/{}", dir, rest)
@@ -340,7 +340,7 @@ fn resolve_scripts_dir() -> Option<String> {
 
 /// Walk up from a directory looking for a module file.
 /// Stops at git root or filesystem root.
-/// Returns the path without extension — `import::source` handles extension probing.
+/// Returns the full path WITH the matched extension.
 fn walk_up(start_dir: &str, module: &str) -> Option<String> {
     let root = git_toplevel().unwrap_or_else(|| "/".to_string());
     // Resolve to absolute path to prevent infinite loop on relative dirs
@@ -350,7 +350,7 @@ fn walk_up(start_dir: &str, module: &str) -> Option<String> {
         for ext in &["", ".sh", ".bash"] {
             let candidate = dir.join(format!("{}{}", module, ext));
             if candidate.is_file() {
-                return Some(dir.join(module).to_string_lossy().to_string());
+                return Some(candidate.to_string_lossy().to_string());
             }
         }
         if dir.to_string_lossy() == root {
