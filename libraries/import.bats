@@ -371,6 +371,8 @@ SCRIPT
   _tmp="$(mktemp -d)"
   # Create: root/utils/verbose.sh and root/sub/deep/script.sh
   mkdir -p "${_tmp}/utils" "${_tmp}/sub/deep"
+  # Init git repo to bound walk-up (prevents escaping to host filesystem)
+  command -v git &>/dev/null && git -C "${_tmp}" init -q 2>/dev/null || true
   echo 'test_walkup() { echo "walkup-ok"; }' > "${_tmp}/utils/verbose.sh"
   cat > "${_tmp}/sub/deep/run.sh" <<'SCRIPT'
 #!/usr/bin/env bash

@@ -228,7 +228,22 @@ fn resolve_recursive(
                 if directive_path.is_dir() {
                     (stripped.to_string(), directive_path)
                 } else {
-                    continue
+                    // Directive path invalid — fall through to walk-up
+                    let mut search = base_dir.to_path_buf();
+                    let mut found = false;
+                    while search.starts_with(project_root) {
+                        let candidates = resolve_module_path(stripped, &search);
+                        if candidates.iter().any(|p| p.is_file()) {
+                            found = true;
+                            break;
+                        }
+                        if !search.pop() { break; }
+                    }
+                    if found {
+                        (stripped.to_string(), search)
+                    } else {
+                        continue
+                    }
                 }
             } else {
                 // Walk up from base_dir looking for the module
