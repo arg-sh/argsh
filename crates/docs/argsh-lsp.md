@@ -112,6 +112,7 @@ pub mod resolver;     // Cross-file import resolution
 | ~~AG011~~ | — | *(removed)* Trailing `\|` is valid syntax for long-only flags |
 | AG012 | Hint | Local variable shadows parent scope args field |
 | AG013 | Warning | Import could not be resolved |
+| AG014 | Warning | `:^` field without `${var:-...}` default (won't inherit parent value) |
 
 Suppress per-line with `# argsh-ignore=AG004,AG012` or `# argsh disable=AG004`.
 

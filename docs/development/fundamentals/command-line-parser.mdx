@@ -415,14 +415,22 @@ local -a args=(
 
 ### Inherited fields (`:^`)
 
-The `:^` modifier marks a field as "inheritable" — it yields to non-`:^` duplicates with the same field name. This enables parent/child function patterns where a parent defines a flag and children inherit it via `"${args[@]}"` expansion.
+The `:^` modifier marks a field as "inheritable" — it yields to non-`:^` duplicates with the same field name.
+
+**Use case:** A script that works both standalone and as a subcommand of another script. When called standalone, it defines its own flags. When called as a subcommand, the parent already parsed shared flags like `--domain` — the child should inherit those values instead of re-declaring them.
 
 ```bash
+# secrets — works standalone OR as `lo secrets` subcommand
+#
+# Standalone:  ./secrets init --domain prod --ssh-key ~/.ssh/id_ed25519
+# Via parent:  lo --domain prod secrets init --ssh-key ~/.ssh/id_ed25519
+#              (parent already parsed --domain, child inherits it)
+
 main::secrets() {
-  local domain="${domain:-${DOMAIN_NAME:-}}"
+  local domain="${domain:-${DOMAIN_NAME:-}}"  # inherit parent or use env default
   local -a args=(
     'domain|:^' 'Domain to use'
-    "${args[@]:-}"
+    "${args[@]:-}"                            # pull in parent's args (if any)
   )
   local -a usage=(
     'init'    'Initialize encryption'
@@ -433,8 +441,8 @@ main::secrets() {
 }
 
 secrets::init() {
-  local ssh_key="${LOK8S_SSH_KEY}"
-  local domain="${domain:-}"
+  local ssh_key="${ssh_key:-${LOK8S_SSH_KEY}}"
+  local domain="${domain:-}"                   # inherit from parent scope
   local -a args=(
     'ssh-key|k' 'Path to SSH key'
     'domain|:^' 'Domain to use'
@@ -444,15 +452,18 @@ secrets::init() {
 }
 ```
 
+**How the pattern works:**
+
+1. `"${args[@]:-}"` pulls the parent's `args` array into the child via bash dynamic scope. If no parent exists, it expands to nothing.
+2. `:^` fields yield to non-`:^` duplicates with the same name. So when the parent's `domain|` (non-`:^`) flows in, it wins over the local `domain|:^`.
+3. `local domain="${domain:-...}"` inherits the parent's already-parsed value via bash dynamic scope. The `${domain:-...}` pattern preserves the parent's value if set, otherwise falls back to a default.
+
+**Important:** Always use `${var:-...}` in the `local` declaration for `:^` fields. Without it, the child shadows the parent's value. The linter (AG014) warns if this pattern is missing.
+
 **Priority rules:**
 - Last non-`:^` entry wins for each field name
 - If all entries for a name are `:^`, last one wins
 - Trailing empty strings from `"${args[@]:-}"` are stripped automatically
-
-**How it works:**
-- When called from a parent (e.g. `lo secrets init --domain prod`): the parent's `args` array flows in via `"${args[@]:-}"`, the parent's `domain|` entry (non-`:^`) wins over the local `domain|:^`, and the parent's already-parsed `domain` value is inherited via bash dynamic scope
-- When called standalone (`secrets init --domain prod`): no parent `args` exist, `"${args[@]:-}"` expands to nothing, the local `:^` entry is used as a normal field
-- `local domain="${domain:-${DOMAIN_NAME:-}}"` inherits the parent's value if set, falls back to env var, then empty
 
 ## Custom help
 
