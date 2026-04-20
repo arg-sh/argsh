@@ -309,8 +309,6 @@ fn path_dirname(path: &str) -> &str {
 /// Does not shell out to `git` — avoids safe.directory and PATH issues.
 fn git_toplevel() -> Option<String> {
     let cwd = std::env::current_dir().ok()?;
-    shell::write_stderr(&format!("argsh:debug:git_toplevel cwd={} .git={}",
-        cwd.display(), cwd.join(".git").exists()));
     let mut dir = cwd.as_path();
     loop {
         if dir.join(".git").exists() {
