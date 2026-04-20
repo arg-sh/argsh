@@ -285,6 +285,203 @@ argsh::builtin() {
 # @internal
 argsh::builtins() { argsh::builtin "${@}"; }
 
+# ── Plugin library management ──────────────────────────────────────────
+
+# @description Default OCI registry for argsh official libs.
+declare -g __ARGSH_LIB_REGISTRY="${ARGSH_LIB_REGISTRY:-ghcr.io/arg-sh/libs}"
+
+# @description Resolve the libs directory for the current project.
+# Reads from .argsh.yaml defaults.path_libs, falls back to .argsh/libs/.
+# @stdout The resolved libs directory path
+# @internal
+argsh::lib::dir() {
+  local _dir="${PATH_BASE:-.}"
+  if [[ -f "${_dir}/.argsh.yaml" ]]; then
+    local _custom
+    _custom="$(yq -r '.defaults.path_libs // ""' "${_dir}/.argsh.yaml" 2>/dev/null)" || _custom=""
+    [[ -z "${_custom}" ]] || { echo "${_dir}/${_custom}"; return; }
+  fi
+  echo "${_dir}/.argsh/libs"
+}
+
+# @description Parse provider@name into registry endpoint and lib name.
+# @arg $1 string Lib reference (e.g. argsh@data, myco@k8s-utils, data)
+# @stdout Two lines: registry_endpoint and lib_name
+# @internal
+argsh::lib::resolve() {
+  local _ref="${1}"
+  local _provider _name _registry
+
+  if [[ "${_ref}" == *@* ]]; then
+    _provider="${_ref%%@*}"
+    _name="${_ref#*@}"
+  else
+    _provider="argsh"
+    _name="${_ref}"
+  fi
+
+  if [[ "${_provider}" == "argsh" ]]; then
+    _registry="${__ARGSH_LIB_REGISTRY}"
+  else
+    # Look up in .argsh.yaml
+    local _dir="${PATH_BASE:-.}"
+    if [[ -f "${_dir}/.argsh.yaml" ]]; then
+      _registry="$(yq -r ".registries.${_provider}.endpoint // \"\"" "${_dir}/.argsh.yaml" 2>/dev/null)" || _registry=""
+    fi
+    if [[ -z "${_registry}" ]]; then
+      echo "argsh: unknown registry provider: ${_provider}" >&2
+      return 1
+    fi
+  fi
+
+  echo "${_registry}"
+  echo "${_name}"
+}
+
+# @description Add a plugin library to the project.
+# @arg $1 string Lib reference (e.g. argsh@data, data, data@0.1.0)
+# @example
+#   argsh lib add data
+#   argsh lib add argsh@data
+# @internal
+argsh::lib::add() {
+  local _ref="${1:-}"
+  [[ -n "${_ref}" ]] || { echo "argsh lib add: specify a library (e.g. argsh@data)" >&2; return 1; }
+
+  local _version=""
+  if [[ "${_ref}" == *@*@* ]]; then
+    # provider@name@version
+    _version="${_ref##*@}"
+    _ref="${_ref%@*}"
+  fi
+
+  local _registry _name
+  { read -r _registry; read -r _name; } < <(argsh::lib::resolve "${_ref}")
+
+  local _tag="${_version:-latest}"
+  local _oci_ref="${_registry}/${_name}:${_tag}"
+  local _lib_dir
+  _lib_dir="$(argsh::lib::dir)"
+  local _dest="${_lib_dir}/${_name}"
+
+  mkdir -p "${_dest}"
+
+  echo "argsh: downloading ${_name} from ${_oci_ref}..." >&2
+
+  # Download via GitHub API (for ghcr.io) or oras
+  if command -v oras &>/dev/null; then
+    oras pull "${_oci_ref}" -o "${_dest}" || {
+      echo "argsh: failed to pull ${_oci_ref}" >&2
+      return 1
+    }
+  else
+    # Fallback: download from GitHub releases (for argsh official libs)
+    local _url="https://github.com/arg-sh/libs/releases/download/${_name}%2Fv${_tag}/${_name}.tar.gz"
+    if [[ "${_tag}" == "latest" ]]; then
+      _url="https://github.com/arg-sh/libs/releases/latest/download/${_name}.tar.gz"
+    fi
+    curl -fsSL "${_url}" | tar xz -C "${_dest}" --strip-components=1 || {
+      echo "argsh: failed to download ${_name}" >&2
+      echo "  Install 'oras' for OCI registry support, or check the lib name" >&2
+      rm -rf "${_dest}"
+      return 1
+    }
+  fi
+
+  echo "argsh: installed ${_name} to ${_dest}" >&2
+
+  # Update .argsh.yaml if it exists
+  local _dir="${PATH_BASE:-.}"
+  if [[ -f "${_dir}/.argsh.yaml" ]]; then
+    local _entry="${_ref}"
+    [[ "${_ref}" == *@* ]] || _entry="argsh@${_ref}"
+    # Add or update lib entry
+    yq -i ".libs.\"${_entry}\" = \"${_version:-latest}\"" "${_dir}/.argsh.yaml" 2>/dev/null || true
+  fi
+}
+
+# @description List installed plugin libraries.
+# @internal
+argsh::lib::list() {
+  local _lib_dir
+  _lib_dir="$(argsh::lib::dir)"
+
+  if [[ ! -d "${_lib_dir}" ]]; then
+    echo "No libraries installed (${_lib_dir} not found)"
+    return
+  fi
+
+  local _d
+  for _d in "${_lib_dir}"/*/; do
+    [[ -d "${_d}" ]] || continue
+    local _name _version="?"
+    _name="$(basename "${_d}")"
+    if [[ -f "${_d}/argsh-plugin.yml" ]]; then
+      _version="$(yq -r '.version // "?"' "${_d}/argsh-plugin.yml" 2>/dev/null)" || _version="?"
+    fi
+    echo "${_name} (${_version})"
+  done
+}
+
+# @description Remove a plugin library.
+# @arg $1 string Library name
+# @internal
+argsh::lib::remove() {
+  local _name="${1:-}"
+  [[ -n "${_name}" ]] || { echo "argsh lib remove: specify a library name" >&2; return 1; }
+
+  local _lib_dir
+  _lib_dir="$(argsh::lib::dir)"
+  local _dest="${_lib_dir}/${_name}"
+
+  if [[ ! -d "${_dest}" ]]; then
+    echo "argsh: library '${_name}' not found in ${_lib_dir}" >&2
+    return 1
+  fi
+
+  rm -rf "${_dest}"
+  echo "argsh: removed ${_name}"
+}
+
+# @description Install all libraries from .argsh.yaml.
+# @internal
+argsh::lib::install() {
+  local _dir="${PATH_BASE:-.}"
+  if [[ ! -f "${_dir}/.argsh.yaml" ]]; then
+    echo "argsh: no .argsh.yaml found" >&2
+    return 1
+  fi
+
+  local _lib _version
+  while IFS='=' read -r _lib _version; do
+    [[ -n "${_lib}" ]] || continue
+    _version="${_version//\"/}"
+    echo "Installing ${_lib}..."
+    argsh::lib::add "${_lib}" || true
+  done < <(yq -r '.libs // {} | to_entries[] | .key + "=" + .value' "${_dir}/.argsh.yaml" 2>/dev/null)
+}
+
+# @description Manage plugin libraries.
+# @arg $1 string Subcommand: add, list, remove, install
+argsh::lib() {
+  case "${1:-}" in
+    add)     shift; argsh::lib::add "${@}" ;;
+    list|ls) shift; argsh::lib::list ;;
+    remove)  shift; argsh::lib::remove "${@}" ;;
+    install) shift; argsh::lib::install ;;
+    "")
+      argsh::lib::list
+      echo ""
+      echo "Usage: argsh lib [add|list|remove|install]"
+      ;;
+    *)
+      echo "argsh: unknown lib subcommand: ${1}" >&2
+      echo "Usage: argsh lib [add|list|remove|install]" >&2
+      return 1
+      ;;
+  esac
+}
+
 # @description Discover search directories for scripts and tests.
 # Uses PATH_TESTS (semicolon-separated), then common locations under PATH_BASE.
 # @set _search_dirs array Directories to search (deduplicated)
@@ -793,6 +990,7 @@ argsh::main() {
     'docs:-argsh::docs'          "Generate documentation"
     '-'                          "Runtime"
     'builtin:-argsh::builtin'    "Manage native builtins (.so)"
+    'lib:-argsh::lib'            "Manage plugin libraries"
     'status:-argsh::_status_cmd' "Show argsh runtime status"
   )
   :usage "Enhance your Bash scripting by promoting structure and maintainability,
