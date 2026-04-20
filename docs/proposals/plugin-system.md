@@ -199,7 +199,21 @@ libc = "0.2"
 
 ### Distribution via OCI
 
-Plain OCI artifacts. Any OCI-compliant registry — no vendor lock-in.
+Each file is a separate OCI layer with a media type. Standard OCI artifact layout.
+
+```text
+ghcr.io/arg-sh/libs/data:0.1.0
+├── manifest.json
+│   └── layers:
+│       ├── sha256:abc... → data.sh             (application/vnd.argsh.lib.v1+bash)
+│       ├── sha256:def... → argsh-plugin.yml    (application/vnd.argsh.plugin.v1+yaml)
+│       └── sha256:ghi... → data-linux-amd64.so (application/vnd.argsh.builtin.v1+so)
+└── config.json (empty, required by OCI spec)
+```
+
+Benefits: selective pull (skip .so if not needed), layer dedup across versions, inspectable with standard OCI tools.
+
+Multi-arch `.so`: platform in filename (`data-linux-amd64.so`), client picks the right one. No manifest list needed for v1.
 
 ```bash
 # Publish (library author)
@@ -212,6 +226,20 @@ argsh lib add harbor.myco.com/team/k8s-utils@0.2.0  # any registry
 ```
 
 Works with: `ghcr.io`, Harbor, Docker Hub, AWS ECR, GitLab Registry, any OCI-compliant registry.
+
+### OCI client implementation
+
+Vendored from [ocipkg](https://github.com/termoshtt/ocipkg) (Apache-2.0 + MIT). Only the sync client (~300 lines) using `ureq` — no tokio, no async runtime. Built into `libargsh.so`.
+
+```rust
+// builtin/src/oci.rs — vendored from ocipkg
+// - get_manifest() → pull manifest
+// - get_blob() → download layer by digest
+// - bearer token auth (ghcr.io, Harbor, ECR)
+// - ~300 lines, ureq as only HTTP dependency
+```
+
+Bash fallback (no .so): downloads tarball from GitHub releases via `curl`.
 
 ### Global install (opt-in)
 
