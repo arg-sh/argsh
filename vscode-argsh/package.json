@@ -13,7 +13,7 @@
   },
   "icon": "icon.png",
   "categories": ["Programming Languages", "Linters", "Debuggers", "Snippets"],
-  "activationEvents": ["onLanguage:shellscript", "onDebugResolve:argsh", "onStartupFinished"],
+  "activationEvents": ["onLanguage:shellscript", "onDebugResolve:argsh"],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
