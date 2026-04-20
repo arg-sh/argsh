@@ -299,7 +299,10 @@ argsh::lib::dir() {
   if [[ -f "${_dir}/.argsh.yaml" ]]; then
     local _custom
     _custom="$(yq -r '.defaults.path_libs // ""' "${_dir}/.argsh.yaml" 2>/dev/null)" || _custom=""
-    [[ -z "${_custom}" ]] || { echo "${_dir}/${_custom}"; return; }
+    if [[ -n "${_custom}" ]]; then
+      if [[ "${_custom:0:1}" == "/" ]]; then echo "${_custom}"; else echo "${_dir}/${_custom}"; fi
+      return
+    fi
   fi
   echo "${_dir}/.argsh/libs"
 }
@@ -320,13 +323,19 @@ argsh::lib::resolve() {
     _name="${_ref}"
   fi
 
+  # Validate provider name (prevent yq expression injection)
+  if [[ ! "${_provider}" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+    echo "argsh: invalid provider name: ${_provider}" >&2
+    return 1
+  fi
+
   if [[ "${_provider}" == "argsh" ]]; then
     _registry="${__ARGSH_LIB_REGISTRY}"
   else
     # Look up in .argsh.yaml
     local _dir="${PATH_BASE:-.}"
     if [[ -f "${_dir}/.argsh.yaml" ]]; then
-      _registry="$(yq -r ".registries.${_provider}.endpoint // \"\"" "${_dir}/.argsh.yaml" 2>/dev/null)" || _registry=""
+      _registry="$(yq -r --arg p "${_provider}" '.registries[strenv("p")].endpoint // ""' "${_dir}/.argsh.yaml" 2>/dev/null)" || _registry=""
     fi
     if [[ -z "${_registry}" ]]; then
       echo "argsh: unknown registry provider: ${_provider}" >&2
@@ -353,6 +362,14 @@ argsh::lib::add() {
     # provider@name@version
     _version="${_ref##*@}"
     _ref="${_ref%@*}"
+  elif [[ "${_ref}" == *@* ]]; then
+    # Could be name@version or provider@name
+    local _after="${_ref#*@}"
+    if [[ "${_after}" =~ ^[0-9] ]]; then
+      # name@version (version starts with digit)
+      _version="${_after}"
+      _ref="${_ref%%@*}"
+    fi
   fi
 
   local _registry _name
@@ -364,14 +381,16 @@ argsh::lib::add() {
   _lib_dir="$(argsh::lib::dir)"
   local _dest="${_lib_dir}/${_name}"
 
-  mkdir -p "${_dest}"
-
   echo "argsh: downloading ${_name} from ${_oci_ref}..." >&2
 
-  # Download via GitHub API (for ghcr.io) or oras
+  local _tmp_dest
+  _tmp_dest="$(mktemp -d)"
+
+  # Download via oras or GitHub releases fallback
   if command -v oras &>/dev/null; then
-    oras pull "${_oci_ref}" -o "${_dest}" || {
+    oras pull "${_oci_ref}" -o "${_tmp_dest}" || {
       echo "argsh: failed to pull ${_oci_ref}" >&2
+      rm -rf "${_tmp_dest}"
       return 1
     }
   else
@@ -380,13 +399,23 @@ argsh::lib::add() {
     if [[ "${_tag}" == "latest" ]]; then
       _url="https://github.com/arg-sh/libs/releases/latest/download/${_name}.tar.gz"
     fi
-    curl -fsSL "${_url}" | tar xz -C "${_dest}" --strip-components=1 || {
+    local _tmpfile; _tmpfile="$(mktemp)"
+    if ! curl -fsSL "${_url}" -o "${_tmpfile}" || ! tar xzf "${_tmpfile}" -C "${_tmp_dest}" --strip-components=1; then
       echo "argsh: failed to download ${_name}" >&2
       echo "  Install 'oras' for OCI registry support, or check the lib name" >&2
-      rm -rf "${_dest}"
+      rm -f "${_tmpfile}"; rm -rf "${_tmp_dest}"
       return 1
-    }
+    fi
+    rm -f "${_tmpfile}"
   fi
+
+  # Atomic install: move from temp to final destination
+  local _lib_dir
+  _lib_dir="$(argsh::lib::dir)"
+  local _dest="${_lib_dir}/${_name}"
+  mkdir -p "${_lib_dir}"
+  rm -rf "${_dest}"
+  mv "${_tmp_dest}" "${_dest}"
 
   echo "argsh: installed ${_name} to ${_dest}" >&2
 
@@ -452,12 +481,17 @@ argsh::lib::install() {
     return 1
   fi
 
-  local _lib _version
+  local _lib _version _ref
   while IFS='=' read -r _lib _version; do
     [[ -n "${_lib}" ]] || continue
     _version="${_version//\"/}"
-    echo "Installing ${_lib}..."
-    argsh::lib::add "${_lib}" || true
+    _version="${_version#^}"  # strip semver range prefix
+    _version="${_version#~}"
+    echo "Installing ${_lib} (${_version})..."
+    # Append version if available and not a range
+    _ref="${_lib}"
+    [[ -z "${_version}" || "${_version}" == "latest" ]] || _ref="${_lib}@${_version}"
+    argsh::lib::add "${_ref}" || true
   done < <(yq -r '.libs // {} | to_entries[] | .key + "=" + .value' "${_dir}/.argsh.yaml" 2>/dev/null)
 }
 

@@ -55,9 +55,9 @@ libs:
 
 When you `import data`, argsh looks in this order:
 
-1. **Project libs** — `.argsh/libs/data/`
-2. **Bundled** — argsh core libraries (`libraries/`)
-3. **Standard import paths** — relative to caller, `PATH_SCRIPTS`, etc.
+1. **Relative to caller** — standard import path (`${ARGSH_SOURCE}/../data`)
+2. **Project libs** — `.argsh/libs/data/` (fallback for plain imports)
+3. **Bundled** — argsh core libraries (`libraries/`)
 
 ## Available libraries
 

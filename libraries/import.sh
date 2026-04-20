@@ -66,14 +66,15 @@ declare -gA import_cache=()
     else
       local _s="${ARGSH_SOURCE:-${BASH_SOURCE[0]}}"
       src="${_s%/*}/${src}"
-      # Plain import: also check plugin libs as fallback
-      if ! import::source "${src}" 2>/dev/null; then
+      # Plain import: check if file exists, fallback to plugin libs
+      if ! import::_file_exists "${src}"; then
         local _libs_dir
         _libs_dir="$(import::_libs_dir)"
         local _lib="${_libs_dir}/${1}/${1}"
-        import::source "${_lib}" 2>/dev/null || import::source "${src}" || exit 1
+        if import::_file_exists "${_lib}"; then
+          src="${_lib}"
+        fi
       fi
-      return 0
     fi
     import::source "${src}" || exit 1
   }
@@ -107,6 +108,19 @@ import::_resolve_scripts() {
   echo "${_path}"
 }
 
+# @description Check if a file exists with any of the standard extensions.
+# @arg $1 string Base path (without extension)
+# @exitcode 0 If found
+# @exitcode 1 If not found
+# @internal
+import::_file_exists() {
+  local _ext
+  for _ext in "" ".sh" ".bash"; do
+    [[ -f "${1}${_ext}" ]] && return 0
+  done
+  return 1
+}
+
 # @description Resolve the plugin libs directory.
 # Reads defaults.path_libs from .argsh.yaml (cached after first call).
 # Falls back to .argsh/libs/.
@@ -123,7 +137,11 @@ import::_libs_dir() {
     local _custom
     _custom="$(yq -r '.defaults.path_libs // ""' "${_base}/.argsh.yaml" 2>/dev/null)" || _custom=""
     if [[ -n "${_custom}" ]]; then
-      __ARGSH_LIBS_DIR="${_base}/${_custom}"
+      if [[ "${_custom:0:1}" == "/" ]]; then
+        __ARGSH_LIBS_DIR="${_custom}"
+      else
+        __ARGSH_LIBS_DIR="${_base}/${_custom}"
+      fi
       echo "${__ARGSH_LIBS_DIR}"
       return
     fi
