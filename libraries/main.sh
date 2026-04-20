@@ -389,33 +389,24 @@ argsh::lib::add() {
   _lib_dir="$(argsh::lib::dir)"
   local _dest="${_lib_dir}/${_name}"
 
-  echo "argsh: downloading ${_name} from ${_oci_ref}..." >&2
+  echo "argsh: downloading ${_name} (${_tag})..." >&2
 
   local _tmp_dest
   _tmp_dest="$(mktemp -d)"
 
-  # Download via oras or GitHub releases fallback
-  if command -v oras &>/dev/null; then
-    oras pull "${_oci_ref}" -o "${_tmp_dest}" || {
-      echo "argsh: failed to pull ${_oci_ref}" >&2
-      rm -rf "${_tmp_dest}"
-      return 1
-    }
-  else
-    # Fallback: download from GitHub releases (for argsh official libs)
-    local _url="https://github.com/arg-sh/libs/releases/download/${_name}%2Fv${_tag}/${_name}.tar.gz"
-    if [[ "${_tag}" == "latest" ]]; then
-      _url="https://github.com/arg-sh/libs/releases/latest/download/${_name}.tar.gz"
-    fi
-    local _tmpfile; _tmpfile="$(mktemp)"
-    if ! curl -fsSL "${_url}" -o "${_tmpfile}" || ! tar xzf "${_tmpfile}" -C "${_tmp_dest}" --strip-components=1; then
-      echo "argsh: failed to download ${_name}" >&2
-      echo "  Install 'oras' for OCI registry support, or check the lib name" >&2
-      rm -f "${_tmpfile}"; rm -rf "${_tmp_dest}"
-      return 1
-    fi
-    rm -f "${_tmpfile}"
+  # v1: download from GitHub releases (tarball)
+  # v2: OCI pull via vendored Rust client in libargsh.so
+  local _url="https://github.com/arg-sh/libs/releases/download/${_name}%2Fv${_tag}/${_name}.tar.gz"
+  if [[ "${_tag}" == "latest" ]]; then
+    _url="https://github.com/arg-sh/libs/releases/latest/download/${_name}.tar.gz"
   fi
+  local _tmpfile; _tmpfile="$(mktemp)"
+  if ! curl -fsSL "${_url}" -o "${_tmpfile}" || ! tar xzf "${_tmpfile}" -C "${_tmp_dest}" --strip-components=1; then
+    echo "argsh: failed to download ${_name}" >&2
+    rm -f "${_tmpfile}"; rm -rf "${_tmp_dest}"
+    return 1
+  fi
+  rm -f "${_tmpfile}"
 
   # Atomic install: move from temp to final destination
   local _lib_dir
@@ -498,8 +489,9 @@ argsh::lib::install() {
   while IFS='=' read -r _lib _version; do
     [[ -n "${_lib}" ]] || continue
     _version="${_version//\"/}"
-    _version="${_version#^}"  # strip semver range prefix
+    _version="${_version#^}"  # strip semver range prefix (v1: exact match only)
     _version="${_version#~}"
+    # v1: semver ranges not resolved — uses stripped version as exact tag
     echo "Installing ${_lib} (${_version})..."
     # Append version if available and not a range
     _ref="${_lib}"
