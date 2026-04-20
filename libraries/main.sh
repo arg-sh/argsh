@@ -335,7 +335,8 @@ argsh::lib::resolve() {
     # Look up in .argsh.yaml
     local _dir="${PATH_BASE:-.}"
     if [[ -f "${_dir}/.argsh.yaml" ]]; then
-      _registry="$(yq -r --arg p "${_provider}" '.registries[strenv("p")].endpoint // ""' "${_dir}/.argsh.yaml" 2>/dev/null)" || _registry=""
+      # shellcheck disable=SC2016
+      _registry="$(yq -r --arg p "${_provider}" '.registries[$p].endpoint // ""' "${_dir}/.argsh.yaml" 2>/dev/null)" || _registry=""
     fi
     if [[ -z "${_registry}" ]]; then
       echo "argsh: unknown registry provider: ${_provider}" >&2
@@ -373,7 +374,14 @@ argsh::lib::add() {
   fi
 
   local _registry _name
-  { read -r _registry; read -r _name; } < <(argsh::lib::resolve "${_ref}")
+  { read -r _registry; read -r _name; } < <(argsh::lib::resolve "${_ref}") || {
+    echo "argsh lib add: failed to resolve '${_ref}'" >&2; return 1
+  }
+  # Validate library name (prevent path traversal)
+  if [[ ! "${_name}" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+    echo "argsh: invalid library name: ${_name}" >&2
+    return 1
+  fi
 
   local _tag="${_version:-latest}"
   local _oci_ref="${_registry}/${_name}:${_tag}"

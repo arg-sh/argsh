@@ -327,12 +327,16 @@ fn path_dirname(path: &str) -> &str {
 /// Reads __ARGSH_LIBS_DIR (cached by bash), falls back to PATH_BASE/.argsh/libs/.
 fn resolve_libs_dir() -> String {
     // Check cached value first (set by bash import::_libs_dir)
-    if let Some(dir) = shell::get_scalar("__ARGSH_LIBS_DIR") {
-        if !dir.is_empty() {
+    if !shell::is_uninitialized("__ARGSH_LIBS_DIR") {
+        if let Some(dir) = shell::get_scalar("__ARGSH_LIBS_DIR").filter(|s| !s.is_empty()) {
             return dir;
         }
     }
-    let path_base = shell::get_scalar("PATH_BASE").unwrap_or_else(|| ".".to_string());
+    let path_base = if shell::is_uninitialized("PATH_BASE") {
+        ".".to_string()
+    } else {
+        shell::get_scalar("PATH_BASE").filter(|s| !s.is_empty()).unwrap_or_else(|| ".".to_string())
+    };
     format!("{}/.argsh/libs", path_base)
 }
 

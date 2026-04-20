@@ -46,9 +46,9 @@ myproject/
 ├── .argsh.lock          # resolved versions — machine-generated (committed)
 ├── .argsh/
 │   └── libs/            # installed plugins (gitignored, like node_modules/)
-│       └─�� data/
+│       └── data/
 │           ├── data.sh
-│           └─�� data.so  # optional platform-specific builtin
+│           └── data.so  # optional platform-specific builtin
 └── script.sh
 ```
 
