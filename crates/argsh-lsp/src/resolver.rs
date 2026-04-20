@@ -219,7 +219,6 @@ fn resolve_recursive(
             if let Some(scripts_dir) = find_scripts_dir(project_root, envrc_vars) {
                 (stripped.to_string(), scripts_dir)
             } else if let Some(ref directive) = analysis.source_directive {
-                // Resolve directive path relative to the importing file
                 let directive_path = if std::path::Path::new(directive).is_relative() {
                     base_dir.join(directive)
                 } else {
@@ -227,41 +226,15 @@ fn resolve_recursive(
                 };
                 if directive_path.is_dir() {
                     (stripped.to_string(), directive_path)
+                } else if let Some(dir) = walk_up_resolve(stripped, base_dir, project_root) {
+                    (stripped.to_string(), dir)
                 } else {
-                    // Directive path invalid — fall through to walk-up
-                    let mut search = base_dir.to_path_buf();
-                    let mut found = false;
-                    while search.starts_with(project_root) {
-                        let candidates = resolve_module_path(stripped, &search);
-                        if candidates.iter().any(|p| p.is_file()) {
-                            found = true;
-                            break;
-                        }
-                        if !search.pop() { break; }
-                    }
-                    if found {
-                        (stripped.to_string(), search)
-                    } else {
-                        continue
-                    }
+                    continue
                 }
+            } else if let Some(dir) = walk_up_resolve(stripped, base_dir, project_root) {
+                (stripped.to_string(), dir)
             } else {
-                // Walk up from base_dir looking for the module
-                let mut search = base_dir.to_path_buf();
-                let mut found = false;
-                while search.starts_with(project_root) {
-                    let candidates = resolve_module_path(stripped, &search);
-                    if candidates.iter().any(|p| p.is_file()) {
-                        found = true;
-                        break;
-                    }
-                    if !search.pop() { break; }
-                }
-                if found {
-                    (stripped.to_string(), search)
-                } else {
-                    continue // unresolvable — AG013 will flag it
-                }
+                continue // unresolvable — AG013 will flag it
             }
         } else if let Some(stripped) = module.strip_prefix('~') {
             (stripped.to_string(), base_dir.to_path_buf())
@@ -366,6 +339,19 @@ fn find_project_root(start: &Path) -> Option<PathBuf> {
 
 /// Find the PATH_SCRIPTS directory from a project root.
 /// Looks for common script directory names.
+/// Walk up from `base_dir` looking for `module`, stopping at `project_root`.
+fn walk_up_resolve(module: &str, base_dir: &Path, project_root: &Path) -> Option<PathBuf> {
+    let mut search = base_dir.to_path_buf();
+    while search.starts_with(project_root) {
+        let candidates = resolve_module_path(module, &search);
+        if candidates.iter().any(|p| p.is_file()) {
+            return Some(search);
+        }
+        if !search.pop() { break; }
+    }
+    None
+}
+
 fn find_scripts_dir(project_root: &Path, envrc_vars: &HashMap<String, String>) -> Option<PathBuf> {
     // Prefer explicit PATH_SCRIPTS env var (matches runtime behavior)
     if let Ok(path) = std::env::var("PATH_SCRIPTS") {
