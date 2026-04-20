@@ -9,8 +9,9 @@
 # :usage. This entrypoint just forwards to argsh so the container and the
 # host launcher share one source of truth.
 set -euo pipefail
-: "${ARGSH_SOURCE:="argsh"}"
-export ARGSH_SOURCE
+# Set ARGSH_SOURCE for this invocation only — don't export it into child
+# processes (bats tests, user scripts) where it would interfere with
+# standalone-vs-sourced detection guards.
 # Use absolute path — /usr/local/sbin may shadow argsh when PATH_BIN
 # is mounted there (it comes before /usr/local/bin on PATH).
-exec /usr/local/bin/argsh "${@}"
+ARGSH_SOURCE="${ARGSH_SOURCE:-argsh}" exec /usr/local/bin/argsh "${@}"

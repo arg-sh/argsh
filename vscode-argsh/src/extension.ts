@@ -154,10 +154,12 @@ export function activate(context: vscode.ExtensionContext) {
   // VSCode may misdetect them as "ini" or "plaintext" without a .sh extension.
   const setArgshLanguage = (doc: vscode.TextDocument) => {
     if (doc.languageId === 'shellscript') return;
-    if (doc.lineCount === 0) return;
     const firstLine = doc.lineAt(0).text;
     if (/^#!.*\bargsh\b/.test(firstLine)) {
-      vscode.languages.setTextDocumentLanguage(doc, 'shellscript');
+      vscode.languages.setTextDocumentLanguage(doc, 'shellscript').then(
+        undefined,
+        () => {} // ignore errors (document may have been closed)
+      );
     }
   };
   // Check all currently open documents
