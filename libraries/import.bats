@@ -348,7 +348,7 @@ fi
     echo "git init failed:" >&2; cat "${stderr}" >&2; return 1
   }
   # Mark temp dir as safe (required for git 2.35.2+ in containers)
-  git config --global --add safe.directory "${_tmp}" 2>/dev/null || true
+  git config --global --add safe.directory '*' 2>/dev/null || true
   cat > "${_tmp}/run.sh" <<'SCRIPT'
 #!/usr/bin/env bash
 import @libs/helper
@@ -359,14 +359,8 @@ SCRIPT
   (
     unset PATH_BASE 2>/dev/null || true
     cd "${_tmp}" || exit 1
-    echo "bash-PATH_BASE=[${PATH_BASE:-UNSET}]" >&2
-    echo "bash-env-PATH_BASE=[$(env | grep ^PATH_BASE= || echo UNSET)]" >&2
     ARGSH_SOURCE="${_tmp}/run.sh" source "${_tmp}/run.sh"
   ) >"${stdout}" 2>"${stderr}" || status=$?
-
-  if [[ "${status:-0}" -ne 0 ]]; then
-    cat "${stderr}" >&2
-  fi
   assert "${status}" -eq 0
   contains "at-fallback-ok" stdout
 

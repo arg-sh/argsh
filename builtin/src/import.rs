@@ -248,8 +248,13 @@ fn get_argsh_source_path() -> Option<String> {
 fn resolve_module_path(module: &str) -> Option<String> {
     let base_path = if let Some(rest) = module.strip_prefix('@') {
         // @ prefix: PATH_BASE → git root
-        let path_base = shell::get_scalar("PATH_BASE")
-            .or_else(|| git_toplevel());
+        // Use is_uninitialized to handle `unset PATH_BASE` (find_as_string
+        // may still return the Docker ENV value after unset)
+        let path_base = if shell::is_uninitialized("PATH_BASE") {
+            None
+        } else {
+            shell::get_scalar("PATH_BASE")
+        }.or_else(|| git_toplevel());
         format!("{}/{}", path_base?, rest)
     } else if let Some(rest) = module.strip_prefix('^') {
         // ^ prefix: PATH_SCRIPTS → directive → walk up
@@ -300,24 +305,29 @@ fn path_dirname(path: &str) -> &str {
     }
 }
 
-/// Get git repository root via `git rev-parse --show-toplevel`.
+/// Find git repository root by walking up from CWD looking for `.git`.
+/// Does not shell out to `git` — avoids safe.directory and PATH issues.
 fn git_toplevel() -> Option<String> {
-    std::process::Command::new("git")
-        .args(["rev-parse", "--show-toplevel"])
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
+    let cwd = std::env::current_dir().ok()?;
+    shell::write_stderr(&format!("argsh:debug:git_toplevel cwd={} .git={}",
+        cwd.display(), cwd.join(".git").exists()));
+    let mut dir = cwd.as_path();
+    loop {
+        if dir.join(".git").exists() {
+            return Some(dir.to_string_lossy().to_string());
+        }
+        dir = dir.parent()?;
+    }
 }
 
 /// Resolve scripts directory for ^ imports.
 /// Priority: PATH_SCRIPTS env var → # argsh source= directive in calling script
 fn resolve_scripts_dir() -> Option<String> {
-    // PATH_SCRIPTS env var (always wins)
-    if let Some(ps) = shell::get_scalar("PATH_SCRIPTS") {
-        return Some(ps);
+    // PATH_SCRIPTS env var (always wins, unless unset)
+    if !shell::is_uninitialized("PATH_SCRIPTS") {
+        if let Some(ps) = shell::get_scalar("PATH_SCRIPTS") {
+            return Some(ps);
+        }
     }
     // Parse # argsh source= from the calling script (first 20 lines)
     let src = get_argsh_source_path()
