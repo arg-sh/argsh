@@ -466,6 +466,11 @@ argsh::lib::list() {
 argsh::lib::remove() {
   local _name="${1:-}"
   [[ -n "${_name}" ]] || { echo "argsh lib remove: specify a library name" >&2; return 1; }
+  # Validate name (prevent path traversal via rm -rf)
+  if [[ ! "${_name}" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+    echo "argsh: invalid library name: ${_name}" >&2
+    return 1
+  fi
 
   local _lib_dir
   _lib_dir="$(argsh::lib::dir)"
@@ -489,7 +494,7 @@ argsh::lib::install() {
     return 1
   fi
 
-  local _lib _version _ref
+  local _lib _version _ref _failed=0
   while IFS='=' read -r _lib _version; do
     [[ -n "${_lib}" ]] || continue
     _version="${_version//\"/}"
@@ -499,8 +504,9 @@ argsh::lib::install() {
     # Append version if available and not a range
     _ref="${_lib}"
     [[ -z "${_version}" || "${_version}" == "latest" ]] || _ref="${_lib}@${_version}"
-    argsh::lib::add "${_ref}" || true
+    argsh::lib::add "${_ref}" || { echo "argsh: failed to install ${_lib}" >&2; _failed=1; }
   done < <(yq -r '.libs // {} | to_entries[] | .key + "=" + .value' "${_dir}/.argsh.yaml" 2>/dev/null)
+  return "${_failed}"
 }
 
 # @description Manage plugin libraries.
