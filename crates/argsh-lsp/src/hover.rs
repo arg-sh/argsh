@@ -496,6 +496,9 @@ fn hover_array_overview(
                     if field.hidden {
                         desc.push_str(" *(hidden)*");
                     }
+                    if field.is_inherited {
+                        desc.push_str(" *(inherited)*");
+                    }
 
                     md.push_str(&format!("| {} | {} | {} |\n", flag_str, type_str, desc));
                 } else {
@@ -633,6 +636,9 @@ fn render_args_entry_detail(entry: &ArgsArrayEntry) -> Hover {
     ));
     if field.hidden {
         md.push_str("\n*Hidden: yes*");
+    }
+    if field.is_inherited {
+        md.push_str("\n*Inherited: yields to non-`:^` duplicates*");
     }
 
     Hover {
