@@ -64,7 +64,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=build-${{ matrix.arch }}
       - name: Validate and make executables
         run: |
-          for f in out/minifier out/shdoc out/libargsh.so out/argsh-lsp out/argsh-lint out/argsh-dap; do
+          for f in out/minifier out/shdoc out/libargsh.so out/libargsh-musl.so out/argsh-lsp out/argsh-lint out/argsh-dap; do
             if [[ ! -f "${f}" ]]; then
               echo "Missing expected artifact: ${f}" >&2
               exit 1
@@ -572,6 +572,7 @@ jobs:
 
           for arch in amd64 arm64; do
             cp "artifacts/binaries-linux-${arch}/libargsh.so" "release/argsh-linux-${arch}.so"
+            cp "artifacts/binaries-linux-${arch}/libargsh-musl.so" "release/argsh-linux-musl-${arch}.so"
             cp "artifacts/binaries-linux-${arch}/minifier"    "release/minifier-linux-${arch}"
             cp "artifacts/binaries-linux-${arch}/shdoc"       "release/shdoc-linux-${arch}"
             cp "artifacts/argsh-so-linux-${arch}/argsh-so" "release/argsh-so-linux-${arch}"

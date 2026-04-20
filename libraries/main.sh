@@ -153,7 +153,12 @@ argsh::builtin::download() {
     return 1
   }
 
-  local _asset="argsh-linux-${_arch}.so"
+  # Detect libc: musl systems (Alpine) need the musl-linked .so
+  local _libc=""
+  if command -v ldd &>/dev/null && ldd --version 2>&1 | grep -qi musl; then
+    _libc="-musl"
+  fi
+  local _asset="argsh-linux${_libc}-${_arch}.so"
   # Download to a temp file alongside the destination, then atomically move
   # into place. This avoids two failure modes:
   #   1. A partially-downloaded .so being left at the destination on network

@@ -29,7 +29,8 @@ RUN cargo build --release
 # -fuse-ld=lld resolves to system lld on all architectures.
 # (-Clinker-features=-lld would be cleaner but is only stable on x86_64.)
 # See: https://github.com/rust-lang/rust/issues/38238
-FROM rust:1-slim-trixie AS builtin-build
+# Build on bookworm (glibc 2.36) for maximum glibc compatibility.
+FROM rust:1-slim-bookworm AS builtin-build
 RUN apt-get update && apt-get install -y --no-install-recommends lld && rm -rf /var/lib/apt/lists/*
 RUN ln -sf /usr/bin/ld.lld "$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | awk '/host/{print $2}')/bin/gcc-ld/ld.lld"
 ARG RUSTFLAGS
@@ -37,6 +38,21 @@ ARG CARGO_PROFILE_RELEASE_STRIP
 ARG CARGO_PROFILE_RELEASE_LTO
 ARG CARGO_PROFILE_RELEASE_PANIC
 ENV RUSTFLAGS="${RUSTFLAGS} -C link-arg=-fuse-ld=lld"
+WORKDIR /build
+COPY builtin/ .
+RUN cargo build --release
+
+# Musl build for Alpine — cdylib works with -C target-feature=-crt-static.
+FROM rust:1-alpine AS builtin-build-musl
+RUN apk add --no-cache lld
+# Symlink system lld over rust-lld (same workaround as glibc build — colon
+# symbols in export_name break rust-lld's version script parser).
+RUN ln -sf /usr/bin/ld.lld "$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | awk '/host/{print $2}')/bin/gcc-ld/ld.lld"
+ARG RUSTFLAGS
+ARG CARGO_PROFILE_RELEASE_STRIP
+ARG CARGO_PROFILE_RELEASE_LTO
+ARG CARGO_PROFILE_RELEASE_PANIC
+ENV RUSTFLAGS="${RUSTFLAGS} -C target-feature=-crt-static -C link-arg=-fuse-ld=lld"
 WORKDIR /build
 COPY builtin/ .
 RUN cargo build --release
@@ -52,6 +68,7 @@ FROM scratch AS artifacts
 COPY --from=minifier-build /build/target/release/minifier /minifier
 COPY --from=shdoc-build /build/target/release/shdoc /shdoc
 COPY --from=builtin-build /build/target/release/libargsh.so /libargsh.so
+COPY --from=builtin-build-musl /build/target/release/libargsh.so /libargsh-musl.so
 COPY --from=lsp-build /build/crates/argsh-lsp/target/release/argsh-lsp /argsh-lsp
 COPY --from=lsp-build /build/crates/argsh-lsp/target/release/argsh-lint /argsh-lint
 COPY --from=lsp-build /build/crates/argsh-lsp/target/release/argsh-dap /argsh-dap
