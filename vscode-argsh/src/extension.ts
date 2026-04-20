@@ -150,6 +150,25 @@ export function activate(context: vscode.ExtensionContext) {
     )
   );
 
+  // Force-detect extensionless argsh scripts as shellscript.
+  // VSCode may misdetect them as "ini" or "plaintext" without a .sh extension.
+  const setArgshLanguage = (doc: vscode.TextDocument) => {
+    if (doc.languageId === 'shellscript') return;
+    const firstLine = doc.lineAt(0).text;
+    if (/^#!.*\bargsh\b/.test(firstLine)) {
+      vscode.languages.setTextDocumentLanguage(doc, 'shellscript').then(
+        undefined,
+        () => {} // ignore errors (document may have been closed)
+      );
+    }
+  };
+  // Check all currently open documents
+  vscode.workspace.textDocuments.forEach(setArgshLanguage);
+  // Check newly opened documents
+  context.subscriptions.push(
+    vscode.workspace.onDidOpenTextDocument(setArgshLanguage)
+  );
+
   if (!config.get<boolean>('lsp.enabled', true)) {
     return;
   }
