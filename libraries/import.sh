@@ -18,6 +18,9 @@
 #   import ^utils/verbose
 # @internal
 declare -gA import_cache=()
+# Library directory for builtin import resolution (plain names like `import string`)
+# obfus ignore variable
+: "${__ARGSH_LIB_DIR:=${BASH_SOURCE[0]%/*}}"
 
  import() {
   local src="${1}"

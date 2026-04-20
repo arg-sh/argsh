@@ -113,7 +113,7 @@ pub mod resolver;     // Cross-file import resolution
 | AG012 | Hint | Local variable shadows parent scope args field |
 | AG013 | Warning | Import could not be resolved |
 | AG014 | Warning | `:^` field without `${var:-...}` default (won't inherit parent value) |
-| AG015 | Warning | `# argsh source=` path does not exist |
+| AG015 | Warning | `# argsh source=` path does not exist or is not a directory |
 
 Suppress per-line with `# argsh-ignore=AG004,AG012` or `# argsh disable=AG004`.
 
