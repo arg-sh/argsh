@@ -68,7 +68,9 @@ declare -gA import_cache=()
       src="${_s%/*}/${src}"
       # Plain import: also check plugin libs as fallback
       if ! import::source "${src}" 2>/dev/null; then
-        local _lib="${PATH_BASE:-.}/.argsh/libs/${1}/${1}"
+        local _libs_dir
+        _libs_dir="$(import::_libs_dir)"
+        local _lib="${_libs_dir}/${1}/${1}"
         import::source "${_lib}" 2>/dev/null || import::source "${src}" || exit 1
       fi
       return 0
@@ -103,6 +105,31 @@ import::_resolve_scripts() {
   # Normalize
   _path="$(cd "${_path}" 2>/dev/null && pwd)" || return 0
   echo "${_path}"
+}
+
+# @description Resolve the plugin libs directory.
+# Reads defaults.path_libs from .argsh.yaml (cached after first call).
+# Falls back to .argsh/libs/.
+# @stdout The libs directory path
+# @internal
+declare -g __ARGSH_LIBS_DIR=""
+import::_libs_dir() {
+  if [[ -n "${__ARGSH_LIBS_DIR}" ]]; then
+    echo "${__ARGSH_LIBS_DIR}"
+    return
+  fi
+  local _base="${PATH_BASE:-.}"
+  if [[ -f "${_base}/.argsh.yaml" ]] && command -v yq &>/dev/null; then
+    local _custom
+    _custom="$(yq -r '.defaults.path_libs // ""' "${_base}/.argsh.yaml" 2>/dev/null)" || _custom=""
+    if [[ -n "${_custom}" ]]; then
+      __ARGSH_LIBS_DIR="${_base}/${_custom}"
+      echo "${__ARGSH_LIBS_DIR}"
+      return
+    fi
+  fi
+  __ARGSH_LIBS_DIR="${_base}/.argsh/libs"
+  echo "${__ARGSH_LIBS_DIR}"
 }
 
 # @description Find git repository root by walking up from CWD looking for .git.

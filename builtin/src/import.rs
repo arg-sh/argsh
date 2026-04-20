@@ -299,10 +299,10 @@ fn resolve_module_path(module: &str) -> Option<String> {
         }
     }
 
-    // Fallback: check .argsh/libs/<module>/<module> for plugin libraries
+    // Fallback: check plugin libs dir for plain imports
     if !module.starts_with('@') && !module.starts_with('^') && !module.starts_with('~') {
-        let path_base = shell::get_scalar("PATH_BASE").unwrap_or_else(|| ".".to_string());
-        let lib_base = format!("{}/.argsh/libs/{}/{}", path_base, module, module);
+        let libs_dir = resolve_libs_dir();
+        let lib_base = format!("{}/{}/{}", libs_dir, module, module);
         for ext in &["", ".sh", ".bash"] {
             let full = format!("{}{}", lib_base, ext);
             if std::path::Path::new(&full).is_file() {
@@ -321,6 +321,19 @@ fn path_dirname(path: &str) -> &str {
     } else {
         "."
     }
+}
+
+/// Resolve the plugin libs directory.
+/// Reads __ARGSH_LIBS_DIR (cached by bash), falls back to PATH_BASE/.argsh/libs/.
+fn resolve_libs_dir() -> String {
+    // Check cached value first (set by bash import::_libs_dir)
+    if let Some(dir) = shell::get_scalar("__ARGSH_LIBS_DIR") {
+        if !dir.is_empty() {
+            return dir;
+        }
+    }
+    let path_base = shell::get_scalar("PATH_BASE").unwrap_or_else(|| ".".to_string());
+    format!("{}/.argsh/libs", path_base)
 }
 
 /// Find git repository root by walking up from `from` looking for `.git`.
