@@ -339,13 +339,21 @@ fn resolve_scripts_dir() -> Option<String> {
     for line in content.lines().take(20) {
         if let Some(path) = line.strip_prefix("# argsh source=") {
             let path = path.trim();
-            if path.starts_with('/') {
-                return Some(path.to_string());
+            let resolved = if path.starts_with('/') {
+                std::path::PathBuf::from(path)
+            } else {
+                let dir = path_dirname(&src);
+                match std::path::Path::new(dir).join(path).canonicalize() {
+                    Ok(p) => p,
+                    Err(_) => continue, // unresolvable — fall through to walk-up
+                }
+            };
+            // Only return if it's a directory (not a file or missing)
+            if resolved.is_dir() {
+                return Some(resolved.to_string_lossy().to_string());
             }
-            // Relative to script dir
-            let dir = path_dirname(&src);
-            let resolved = std::path::Path::new(dir).join(path);
-            return resolved.canonicalize().ok().map(|p| p.to_string_lossy().to_string());
+            // Invalid directive — fall through to walk-up
+            return None;
         }
     }
     None
