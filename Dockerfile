@@ -29,7 +29,10 @@ RUN cargo build --release
 # -fuse-ld=lld resolves to system lld on all architectures.
 # (-Clinker-features=-lld would be cleaner but is only stable on x86_64.)
 # See: https://github.com/rust-lang/rust/issues/38238
-FROM rust:1-slim-trixie AS builtin-build
+# Build on bookworm (glibc 2.36) for maximum compatibility.
+# cdylib (.so) cannot use musl (no shared library support), so we use the
+# oldest supported glibc to avoid "GLIBC_X.XX not found" on older hosts.
+FROM rust:1-slim-bookworm AS builtin-build
 RUN apt-get update && apt-get install -y --no-install-recommends lld && rm -rf /var/lib/apt/lists/*
 RUN ln -sf /usr/bin/ld.lld "$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | awk '/host/{print $2}')/bin/gcc-ld/ld.lld"
 ARG RUSTFLAGS
