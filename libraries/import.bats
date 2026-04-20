@@ -344,7 +344,11 @@ fi
   _tmp="$(mktemp -d)"
   mkdir -p "${_tmp}/libs"
   echo 'test_at_fallback() { echo "at-fallback-ok"; }' > "${_tmp}/libs/helper.sh"
-  git -C "${_tmp}" init -q
+  git -C "${_tmp}" init -q 2>"${stderr}" || {
+    echo "git init failed:" >&2; cat "${stderr}" >&2; return 1
+  }
+  # Mark temp dir as safe (required for git 2.35.2+ in containers)
+  git config --global --add safe.directory "${_tmp}" 2>/dev/null || true
   cat > "${_tmp}/run.sh" <<'SCRIPT'
 #!/usr/bin/env bash
 import @libs/helper
@@ -355,9 +359,17 @@ SCRIPT
   (
     unset PATH_BASE 2>/dev/null || true
     cd "${_tmp}" || exit 1
+    # Debug: verify git root is discoverable
+    echo "git-root=$(git rev-parse --show-toplevel 2>&1)" >&2
+    echo "cwd=$(pwd)" >&2
+    echo "ls-libs=$(ls "${_tmp}/libs/" 2>&1)" >&2
     ARGSH_SOURCE="${_tmp}/run.sh" source "${_tmp}/run.sh"
   ) >"${stdout}" 2>"${stderr}" || status=$?
 
+  # Show debug output on failure
+  if [[ "${status:-0}" -ne 0 ]]; then
+    cat "${stderr}" >&2
+  fi
   assert "${status}" -eq 0
   contains "at-fallback-ok" stdout
 
