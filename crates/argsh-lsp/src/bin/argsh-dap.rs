@@ -409,7 +409,7 @@ impl DapSession {
                         ];
                         candidates.into_iter().find(|c| {
                             analysis.functions.iter().any(|f| f.name == *c)
-                                || self.imports.as_ref().map_or(false, |imp| {
+                                || self.imports.as_ref().is_some_and(|imp| {
                                     imp.functions.iter().any(|f| f.name == *c)
                                 })
                         }).unwrap_or_else(|| clean.to_string())
@@ -1042,7 +1042,7 @@ impl DapSession {
         // Validate: must be a valid bash identifier (letters, digits, underscores;
         // cannot start with a digit). Reject anything else to prevent injection.
         let is_valid_ident = !name.is_empty()
-            && name.bytes().next().map_or(false, |b| b == b'_' || b.is_ascii_alphabetic())
+            && name.bytes().next().is_some_and(|b| b == b'_' || b.is_ascii_alphabetic())
             && name.bytes().all(|b| b == b'_' || b.is_ascii_alphanumeric());
 
         if !is_valid_ident {
@@ -1439,11 +1439,7 @@ fn main() {
     let mut reader = BufReader::new(stdin.lock());
     let mut session = DapSession::new();
 
-    loop {
-        let msg = match read_dap_message(&mut reader) {
-            Some(m) => m,
-            None => break, // EOF — VSCode closed the connection
-        };
+    while let Some(msg) = read_dap_message(&mut reader) {
 
         if msg.msg_type != "request" {
             continue; // DAP server only handles requests

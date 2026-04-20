@@ -23,6 +23,7 @@ pub mod codes {
     pub const AG012: &str = "AG012"; // local variable shadows parent scope args field
     pub const AG013: &str = "AG013"; // import could not be resolved
     pub const AG014: &str = "AG014"; // :^ field without ${var:-...} default pattern
+    pub const AG015: &str = "AG015"; // # argsh source= path does not exist or is not a directory
 }
 
 /// Generate LSP diagnostics from a document analysis.
@@ -57,6 +58,13 @@ pub fn generate_diagnostics(
     // Filter out suppressed diagnostics
     diags.retain(|d| !is_suppressed(d, &suppressed));
     diags
+}
+
+/// Filter additional diagnostics through the suppression system.
+/// Used for diagnostics generated outside `generate_diagnostics` (e.g. AG015 in backend).
+pub fn filter_suppressed(diags: &mut Vec<Diagnostic>, content: &str) {
+    let suppressed = collect_suppressions(content);
+    diags.retain(|d| !is_suppressed(d, &suppressed));
 }
 
 /// A suppression directive found in a comment.

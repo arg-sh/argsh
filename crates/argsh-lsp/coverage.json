@@ -57,17 +57,10 @@
       "excluded_lines": "0"
     },
     {
-      "file": "crates/argsh-lsp/src/backend.rs",
-      "percent_covered": "91.01",
-      "covered_lines": "81",
-      "total_lines": "89",
-      "excluded_lines": "0"
-    },
-    {
       "file": "crates/argsh-lsp/src/resolver.rs",
-      "percent_covered": "89.74",
-      "covered_lines": "551",
-      "total_lines": "614",
+      "percent_covered": "89.73",
+      "covered_lines": "594",
+      "total_lines": "662",
       "excluded_lines": "0"
     },
     {
@@ -86,23 +79,23 @@
     },
     {
       "file": "crates/argsh-lsp/src/diagnostics.rs",
-      "percent_covered": "87.48",
-      "covered_lines": "482",
-      "total_lines": "551",
+      "percent_covered": "87.59",
+      "covered_lines": "487",
+      "total_lines": "556",
       "excluded_lines": "0"
     },
     {
       "file": "crates/argsh-syntax/src/document.rs",
-      "percent_covered": "85.93",
-      "covered_lines": "336",
-      "total_lines": "391",
+      "percent_covered": "86.18",
+      "covered_lines": "343",
+      "total_lines": "398",
       "excluded_lines": "0"
     },
     {
       "file": "crates/argsh-lsp/src/bin/argsh-dap.rs",
-      "percent_covered": "78.38",
-      "covered_lines": "667",
-      "total_lines": "851",
+      "percent_covered": "78.45",
+      "covered_lines": "666",
+      "total_lines": "849",
       "excluded_lines": "0"
     },
     {
@@ -141,6 +134,13 @@
       "excluded_lines": "0"
     },
     {
+      "file": "crates/argsh-lsp/src/backend.rs",
+      "percent_covered": "68.85",
+      "covered_lines": "84",
+      "total_lines": "122",
+      "excluded_lines": "0"
+    },
+    {
       "file": "crates/argsh-lsp/src/hover.rs",
       "percent_covered": "63.74",
       "covered_lines": "457",
@@ -162,12 +162,12 @@
       "excluded_lines": "0"
     }
   ],
-  "percent_covered": "81.58",
-  "covered_lines": 6486,
-  "total_lines": 7950,
+  "percent_covered": "81.37",
+  "covered_lines": 6543,
+  "total_lines": 8041,
   "excluded_lines": 0,
   "percent_low": 25,
   "percent_high": 75,
   "command": "cargo-test+llvm-cov",
-  "date": "2026-04-19 21:56:56"
+  "date": "2026-04-20 12:27:43"
 }

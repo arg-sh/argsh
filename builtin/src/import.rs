@@ -239,16 +239,41 @@ fn get_argsh_source_path() -> Option<String> {
 }
 
 /// Resolve module path following import.sh semantics.
-/// Prefixes: @ → PATH_BASE, ^ → PATH_SCRIPTS, ~ → ARGSH_SOURCE/BASH_SOURCE[-1],
-/// plain → ARGSH_SOURCE/__ARGSH_LIB_DIR/BASH_SOURCE[0]
+/// Prefixes:
+///   @ → PATH_BASE → git root
+///   ^ → PATH_SCRIPTS → # argsh source= directive → walk up
+///   ~ → ARGSH_SOURCE/BASH_SOURCE[-1]
+///   plain → ARGSH_SOURCE/__ARGSH_LIB_DIR/BASH_SOURCE[0]
 /// Extension fallback: "", ".sh", ".bash"
 fn resolve_module_path(module: &str) -> Option<String> {
     let base_path = if let Some(rest) = module.strip_prefix('@') {
-        let path_base = shell::get_scalar("PATH_BASE")?;
-        format!("{}/{}", path_base, rest)
+        // @ prefix: PATH_BASE → git root
+        // Use is_uninitialized to handle `unset PATH_BASE` (find_as_string
+        // may still return the Docker ENV value after unset)
+        let path_base = if shell::is_uninitialized("PATH_BASE") {
+            None
+        } else {
+            shell::get_scalar("PATH_BASE").filter(|s| !s.is_empty())
+        }.or_else(|| {
+            // Fall back to git root from script dir (not CWD)
+            let src = get_argsh_source_path()
+                .or_else(shell::get_bash_source_last)?;
+            let script_dir = std::path::Path::new(path_dirname(&src));
+            git_toplevel_from(Some(script_dir))
+        });
+        format!("{}/{}", path_base?, rest)
     } else if let Some(rest) = module.strip_prefix('^') {
-        let path_scripts = shell::get_scalar("PATH_SCRIPTS")?;
-        format!("{}/{}", path_scripts, rest)
+        // ^ prefix: PATH_SCRIPTS → directive → walk up
+        let scripts = resolve_scripts_dir();
+        if let Some(dir) = scripts {
+            format!("{}/{}", dir, rest)
+        } else {
+            // Walk up from script dir
+            let src = get_argsh_source_path()
+                .or_else(shell::get_bash_source_last)?;
+            let script_dir = path_dirname(&src);
+            return walk_up(script_dir, rest);
+        }
     } else if let Some(rest) = module.strip_prefix('~') {
         let src = get_argsh_source_path()
             .or_else(shell::get_bash_source_last)?;
@@ -284,4 +309,88 @@ fn path_dirname(path: &str) -> &str {
     } else {
         "."
     }
+}
+
+/// Find git repository root by walking up from `from` looking for `.git`.
+/// Falls back to CWD if `from` is None.
+/// Does not shell out to `git` — avoids safe.directory and PATH issues.
+fn git_toplevel_from(from: Option<&std::path::Path>) -> Option<String> {
+    let cwd;
+    let start = match from {
+        Some(p) => p,
+        None => { cwd = std::env::current_dir().ok()?; cwd.as_path() }
+    };
+    let mut dir = start;
+    loop {
+        if dir.join(".git").exists() {
+            return Some(dir.to_string_lossy().to_string());
+        }
+        dir = dir.parent()?;
+    }
+}
+
+/// Resolve scripts directory for ^ imports.
+/// Priority: PATH_SCRIPTS env var → # argsh source= directive in calling script
+fn resolve_scripts_dir() -> Option<String> {
+    // PATH_SCRIPTS env var (always wins, unless unset)
+    if !shell::is_uninitialized("PATH_SCRIPTS") {
+        if let Some(ps) = shell::get_scalar("PATH_SCRIPTS").filter(|s| !s.is_empty()) {
+            return Some(ps);
+        }
+    }
+    // Parse # argsh source= from the calling script (first 20 lines)
+    let src = get_argsh_source_path()
+        .or_else(shell::get_bash_source_last)?;
+    let content = std::fs::read_to_string(&src).ok()?;
+    for line in content.lines().take(20) {
+        if let Some(path) = line.strip_prefix("# argsh source=") {
+            let path = path.trim();
+            if path.is_empty() { continue; }
+            let resolved = if path.starts_with('/') {
+                std::path::PathBuf::from(path)
+            } else {
+                let dir = path_dirname(&src);
+                match std::path::Path::new(dir).join(path).canonicalize() {
+                    Ok(p) => p,
+                    Err(_) => continue, // unresolvable — fall through to walk-up
+                }
+            };
+            // Only return if it's a directory (not a file or missing)
+            if resolved.is_dir() {
+                return Some(resolved.to_string_lossy().to_string());
+            }
+            // Invalid directive — fall through to walk-up
+            return None;
+        }
+    }
+    None
+}
+
+/// Walk up from a directory looking for a module file.
+/// Stops at git root or filesystem root.
+/// Returns the full path WITH the matched extension.
+fn walk_up(start_dir: &str, module: &str) -> Option<String> {
+    // Resolve to absolute path to prevent infinite loop on relative dirs
+    let abs_dir = std::path::Path::new(start_dir).canonicalize().ok()?;
+    let root = git_toplevel_from(Some(&abs_dir))
+        .and_then(|r| std::path::Path::new(&r).canonicalize().ok())
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|| "/".to_string());
+    let mut dir = abs_dir;
+    loop {
+        for ext in &["", ".sh", ".bash"] {
+            let candidate = dir.join(format!("{}{}", module, ext));
+            if candidate.is_file() {
+                return Some(candidate.to_string_lossy().to_string());
+            }
+        }
+        if dir.to_string_lossy() == root {
+            break;
+        }
+        match dir.parent() {
+            Some(p) if !p.as_os_str().is_empty() => dir = p.to_path_buf(),
+            _ => break,
+        }
+    }
+    None
 }

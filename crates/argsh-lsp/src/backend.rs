@@ -95,7 +95,45 @@ impl Backend {
                     .await;
                 return;
             }
-            let diags = diagnostics::generate_diagnostics(&doc.analysis, &doc.imports, &doc.content);
+            let mut diags = diagnostics::generate_diagnostics(&doc.analysis, &doc.imports, &doc.content);
+            // AG015: check # argsh source= directive resolves
+            if let Some(ref directive) = doc.analysis.source_directive {
+                if let Ok(file_path) = uri.to_file_path() {
+                    let base = file_path.parent().unwrap_or(std::path::Path::new("."));
+                    let resolved = if std::path::Path::new(directive).is_absolute() {
+                        std::path::PathBuf::from(directive)
+                    } else {
+                        base.join(directive)
+                    };
+                    let msg = if !resolved.exists() {
+                        Some(format!("'# argsh source={}' path does not exist", directive))
+                    } else if !resolved.is_dir() {
+                        Some(format!("'# argsh source={}' is not a directory", directive))
+                    } else {
+                        None
+                    };
+                    if let Some(message) = msg {
+                        let line = doc.content.lines().enumerate()
+                            .take(20)
+                            .find(|(_, l)| l.starts_with("# argsh source="))
+                            .map(|(i, _)| i)
+                            .unwrap_or(0);
+                        diags.push(Diagnostic {
+                            range: Range {
+                                start: Position { line: line as u32, character: 0 },
+                                end: Position { line: line as u32, character: 999 },
+                            },
+                            severity: Some(DiagnosticSeverity::WARNING),
+                            code: Some(NumberOrString::String(diagnostics::codes::AG015.to_string())),
+                            source: Some("argsh".to_string()),
+                            message,
+                            ..Default::default()
+                        });
+                    }
+                }
+            }
+            // Re-filter through suppression system (AG015 was added after generate_diagnostics)
+            diagnostics::filter_suppressed(&mut diags, &doc.content);
             self.client
                 .publish_diagnostics(uri.clone(), diags, None)
                 .await;

@@ -113,6 +113,7 @@ pub mod resolver;     // Cross-file import resolution
 | AG012 | Hint | Local variable shadows parent scope args field |
 | AG013 | Warning | Import could not be resolved |
 | AG014 | Warning | `:^` field without `${var:-...}` default (won't inherit parent value) |
+| AG015 | Warning | `# argsh source=` path does not exist or is not a directory |
 
 Suppress per-line with `# argsh-ignore=AG004,AG012` or `# argsh disable=AG004`.
 
@@ -124,6 +125,11 @@ Search order for imports:
 1. Relative to the importing file's directory
 2. Standard library paths (`libraries/`)
 3. Project root (detected by `.git`, `.envrc`, or `.bin/argsh`)
+
+Import prefix fallbacks:
+- `@` → `PATH_BASE` env var → project root (`.git`, `.envrc`, or `.bin/argsh`)
+- `^` → `PATH_SCRIPTS` env var → `# argsh source=` directive → walk up from script dir
+- `~` → relative to the importing file
 
 ## Source Layout
 

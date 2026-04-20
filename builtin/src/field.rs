@@ -217,13 +217,13 @@ pub fn dedup_inherited(args: &[String]) -> Vec<String> {
     // Strip trailing empty strings only if they make the count odd
     // (from "${args[@]:-}" expansion when no parent args exist)
     let mut len = args.len();
-    while len > 0 && len % 2 != 0 && args[len - 1].is_empty() {
+    while len > 0 && !len.is_multiple_of(2) && args[len - 1].is_empty() {
         len -= 1;
     }
     let args = &args[..len];
 
     // Ensure even count (spec + description pairs)
-    if args.len() % 2 != 0 {
+    if !args.len().is_multiple_of(2) {
         return args.to_vec();
     }
 

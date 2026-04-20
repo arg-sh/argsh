@@ -2,13 +2,12 @@
 # @file import
 # @brief Import libraries
 # @description
-#   This file contains functions for importing libraries
+#   Caching import mechanism for bash libraries. Each module is sourced
+#   at most once per session (unless cache is cleared).
+#
+#   Prefixes: @ → PATH_BASE/git root, ^ → PATH_SCRIPTS/directive/walk-up,
+#   ~ → script entry point, bare → relative to caller.
 set -euo pipefail
-
-declare -gA import_cache=()
-# Library directory for builtin import resolution (plain names like `import string`)
-# obfus ignore variable
-: "${__ARGSH_LIB_DIR:=${BASH_SOURCE[0]%/*}}"
 
 # @description
 #   Import a library, relative to the current script
@@ -20,6 +19,12 @@ declare -gA import_cache=()
 #   import fmt
 #   import @libs/helper
 #   import ^utils/verbose
+# @internal
+declare -gA import_cache=()
+# Library directory for builtin import resolution (plain names like `import string`)
+# obfus ignore variable
+: "${__ARGSH_LIB_DIR:=${BASH_SOURCE[0]%/*}}"
+
  import() {
   local src="${1}"
   (( ${import_cache["${src}"]:-} )) || {
@@ -27,9 +32,34 @@ declare -gA import_cache=()
     import_cache["${src}"]=1
     # shellcheck disable=SC1090
     if [[ ${src:0:1} == "@" ]]; then
-      src="${PATH_BASE:?"PATH_BASE missing"}/${src:1}";
+      # @ prefix: PATH_BASE → git root → error
+      local _base="${PATH_BASE:-}"
+      if [[ -z "${_base}" ]]; then
+        # Walk up from script dir looking for .git
+        local _s="${ARGSH_SOURCE:-${BASH_SOURCE[-1]}}"
+        local _sdir; [[ "${_s}" == */* ]] && _sdir="${_s%/*}" || _sdir="."
+        _base="$(import::_find_git_root "$(cd "${_sdir}" 2>/dev/null && pwd)")" || {
+          echo "import: @ prefix requires PATH_BASE or a git repository" >&2
+          exit 1
+        }
+      fi
+      src="${_base}/${src:1}"
     elif [[ ${src:0:1} == "^" ]]; then
-      src="${PATH_SCRIPTS:?"PATH_SCRIPTS missing"}/${src:1}";
+      # ^ prefix: PATH_SCRIPTS → # argsh source= directive → walk up → error
+      local _scripts="" _mod="${src:1}"
+      _scripts="$(import::_resolve_scripts)"
+      if [[ -n "${_scripts}" ]]; then
+        src="${_scripts}/${_mod}"
+      else
+        # Walk up from script dir looking for the module
+        local _s="${ARGSH_SOURCE:-${BASH_SOURCE[-1]}}"
+        local _dir
+        [[ "${_s}" == */* ]] && _dir="${_s%/*}" || _dir="."
+        src="$(import::_walk_up "${_dir}" "${_mod}")" || {
+          echo "import: cannot resolve ^${_mod} — set PATH_SCRIPTS or add '# argsh source=<path>'" >&2
+          exit 1
+        }
+      fi
     elif [[ ${src:0:1} == "~" ]]; then
       local _s="${ARGSH_SOURCE:-${BASH_SOURCE[-1]}}"
       src="${_s%/*}/${src:1}"
@@ -39,6 +69,76 @@ declare -gA import_cache=()
     fi
     import::source "${src}" || exit 1
   }
+}
+
+# @description Resolve the scripts directory for ^ imports.
+# Priority: PATH_SCRIPTS env var → # argsh source= directive in calling script
+# @stdout The resolved scripts directory path, or empty
+# @internal
+import::_resolve_scripts() {
+  # Check PATH_SCRIPTS first (env var always wins)
+  if [[ -n "${PATH_SCRIPTS:-}" ]]; then
+    echo "${PATH_SCRIPTS}"
+    return
+  fi
+  # Look for # argsh source= directive in the calling script (first 20 lines)
+  local _s="${ARGSH_SOURCE:-${BASH_SOURCE[-1]}}"
+  [[ -f "${_s}" ]] || return 0
+  local _dir _line
+  [[ "${_s}" == */* ]] && _dir="${_s%/*}" || _dir="."
+  _line="$(head -20 "${_s}" | grep -m1 '^# argsh source=' 2>/dev/null)" || return 0
+  local _path="${_line#*=}"
+  _path="${_path#"${_path%%[![:space:]]*}"}"  # trim all leading whitespace
+  _path="${_path%"${_path##*[![:space:]]}"}"  # trim all trailing whitespace
+  # Resolve relative to script directory
+  if [[ "${_path:0:1}" != "/" ]]; then
+    _path="${_dir}/${_path}"
+  fi
+  # Normalize
+  _path="$(cd "${_path}" 2>/dev/null && pwd)" || return 0
+  echo "${_path}"
+}
+
+# @description Find git repository root by walking up from CWD looking for .git.
+# Does not shell out to git — avoids safe.directory and PATH issues.
+# @stdout The git root path
+# @exitcode 1 If not found
+# @internal
+import::_find_git_root() {
+  local _d
+  _d="${1:-$(pwd)}"
+  while [[ -n "${_d}" && "${_d}" != "/" ]]; do
+    [[ -e "${_d}/.git" ]] && { echo "${_d}"; return 0; }
+    _d="${_d%/*}"
+  done
+  return 1
+}
+
+# @description Walk up from a directory looking for a module file.
+# Stops at git root or filesystem root.
+# @arg $1 string Starting directory
+# @arg $2 string Module path (e.g. utils/verbose)
+# @stdout Resolved file path
+# @exitcode 1 If not found
+# @internal
+import::_walk_up() {
+  local _dir _mod="${2}" _root _ext _abs
+  # Resolve to absolute path to prevent infinite loop on relative dirs
+  _abs="$(cd "${1}" 2>/dev/null && pwd)" || return 1
+  _dir="${_abs}"
+  _root="$(import::_find_git_root "${_abs}" 2>/dev/null)" || _root="/"
+  while [[ -n "${_dir}" && "${_dir}" != "/" ]]; do
+    for _ext in "" ".sh" ".bash"; do
+      [[ -f "${_dir}/${_mod}${_ext}" ]] && {
+        echo "${_dir}/${_mod}"
+        return 0
+      }
+    done
+    # Stop at git root
+    [[ "${_dir}" != "${_root}" ]] || break
+    _dir="${_dir%/*}"
+  done
+  return 1
 }
 
 import::source() {
