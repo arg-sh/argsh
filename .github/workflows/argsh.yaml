@@ -62,6 +62,9 @@ jobs:
           outputs: type=local,dest=out
           cache-from: type=gha,scope=build-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=build-${{ matrix.arch }}
+          build-args: |
+            ARGSH_SO_VERSION=${{ github.ref_name || github.sha }}
+            ARGSH_SO_COMMIT=${{ github.sha }}
       - name: Validate and make executables
         run: |
           for f in out/minifier out/shdoc out/libargsh.so out/libargsh-musl.so out/argsh-lsp out/argsh-lint out/argsh-dap; do
@@ -90,6 +93,9 @@ jobs:
           platforms: linux/amd64
           tags: ${{ env.CI_IMAGE }}
           cache-from: type=gha,scope=build-amd64
+          build-args: |
+            ARGSH_SO_VERSION=${{ github.ref_name || github.sha }}
+            ARGSH_SO_COMMIT=${{ github.sha }}
       - name: Save CI image
         if: matrix.arch == 'amd64'
         run: docker save ${{ env.CI_IMAGE }} | gzip > /tmp/ci-image.tar.gz

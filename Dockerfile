@@ -37,10 +37,13 @@ ARG RUSTFLAGS
 ARG CARGO_PROFILE_RELEASE_STRIP
 ARG CARGO_PROFILE_RELEASE_LTO
 ARG CARGO_PROFILE_RELEASE_PANIC
+ARG ARGSH_SO_VERSION
+ARG ARGSH_SO_COMMIT
 ENV RUSTFLAGS="${RUSTFLAGS} -C link-arg=-fuse-ld=lld"
 WORKDIR /build
 COPY builtin/ .
-RUN cargo build --release
+RUN ARGSH_SO_VERSION="${ARGSH_SO_VERSION}" ARGSH_SO_COMMIT="${ARGSH_SO_COMMIT}" \
+    cargo build --release
 
 # Musl build for Alpine — cdylib works with -C target-feature=-crt-static.
 FROM rust:1-alpine AS builtin-build-musl
@@ -52,10 +55,13 @@ ARG RUSTFLAGS
 ARG CARGO_PROFILE_RELEASE_STRIP
 ARG CARGO_PROFILE_RELEASE_LTO
 ARG CARGO_PROFILE_RELEASE_PANIC
+ARG ARGSH_SO_VERSION
+ARG ARGSH_SO_COMMIT
 ENV RUSTFLAGS="${RUSTFLAGS} -C target-feature=-crt-static -C link-arg=-fuse-ld=lld"
 WORKDIR /build
 COPY builtin/ .
-RUN cargo build --release
+RUN ARGSH_SO_VERSION="${ARGSH_SO_VERSION}" ARGSH_SO_COMMIT="${ARGSH_SO_COMMIT}" \
+    cargo build --release
 
 # argsh-lsp / argsh-lint — LSP server + CLI linter (share the same crate).
 FROM rust:1-slim-trixie AS lsp-build
