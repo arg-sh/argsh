@@ -338,7 +338,6 @@ fn find_project_root(start: &Path) -> Option<PathBuf> {
 }
 
 /// Find the PATH_SCRIPTS directory from a project root.
-/// Looks for common script directory names.
 /// Walk up from `base_dir` looking for `module`, stopping at `project_root`.
 fn walk_up_resolve(module: &str, base_dir: &Path, project_root: &Path) -> Option<PathBuf> {
     let mut search = base_dir.to_path_buf();
@@ -352,6 +351,7 @@ fn walk_up_resolve(module: &str, base_dir: &Path, project_root: &Path) -> Option
     None
 }
 
+/// Find the PATH_SCRIPTS directory via envrc or common directory names.
 fn find_scripts_dir(project_root: &Path, envrc_vars: &HashMap<String, String>) -> Option<PathBuf> {
     // Prefer explicit PATH_SCRIPTS env var (matches runtime behavior)
     if let Ok(path) = std::env::var("PATH_SCRIPTS") {
@@ -811,6 +811,46 @@ mod tests {
         assert!(imports.resolved_files.iter().any(|(name, _)| name == "^mylib"),
             "resolved_files should preserve ^ prefix in module name, got: {:?}",
             imports.resolved_files.iter().map(|(n, _)| n).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn test_resolve_caret_walkup_fallback() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join(".git")).unwrap();
+        // No .scripts dir, no PATH_SCRIPTS — walk-up should find the module
+        let utils_dir = dir.path().join("utils");
+        fs::create_dir_all(&utils_dir).unwrap();
+        fs::write(utils_dir.join("helper.sh"), "helper_func() { :; }").unwrap();
+
+        // Script in a subdirectory
+        let sub = dir.path().join("sub").join("deep");
+        fs::create_dir_all(&sub).unwrap();
+        let script = sub.join("run.sh");
+        fs::write(&script, "#!/usr/bin/env bash\nimport ^utils/helper\n").unwrap();
+
+        let analysis = analyze(&fs::read_to_string(&script).unwrap());
+        let imports = resolve_imports(&analysis, &script, 2);
+        assert!(!imports.functions.is_empty(),
+            "Walk-up should resolve ^utils/helper from sub/deep/, got: {:?}",
+            imports.resolved_files);
+    }
+
+    #[test]
+    fn test_resolve_caret_directive_fallback() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join(".git")).unwrap();
+        let libs = dir.path().join("mylibs");
+        fs::create_dir_all(&libs).unwrap();
+        fs::write(libs.join("mod.sh"), "mod_func() { :; }").unwrap();
+
+        let script = dir.path().join("run.sh");
+        fs::write(&script, "#!/usr/bin/env bash\n# argsh source=mylibs\nimport ^mod\n").unwrap();
+
+        let analysis = analyze(&fs::read_to_string(&script).unwrap());
+        let imports = resolve_imports(&analysis, &script, 2);
+        assert!(!imports.functions.is_empty(),
+            "Directive should resolve ^mod via # argsh source=mylibs, got: {:?}",
+            imports.resolved_files);
     }
 
     // -------------------------------------------------------------------------
