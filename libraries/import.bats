@@ -339,16 +339,10 @@ fi
 
 @test "import: @ falls back to git root when PATH_BASE unset" {
   if [[ -n "${__BUILTIN_SKIP}" ]]; then skip "${__BUILTIN_SKIP}"; fi
-  command -v git &>/dev/null || skip "git not available"
   local _tmp
   _tmp="$(mktemp -d)"
-  mkdir -p "${_tmp}/libs"
+  mkdir -p "${_tmp}/libs" "${_tmp}/.git"
   echo 'test_at_fallback() { echo "at-fallback-ok"; }' > "${_tmp}/libs/helper.sh"
-  git -C "${_tmp}" init -q 2>"${stderr}" || {
-    echo "git init failed:" >&2; cat "${stderr}" >&2; return 1
-  }
-  # Mark temp dir as safe (required for git 2.35.2+ in containers)
-  git config --global --add safe.directory '*' 2>/dev/null || true
   cat > "${_tmp}/run.sh" <<'SCRIPT'
 #!/usr/bin/env bash
 import @libs/helper
@@ -375,8 +369,8 @@ SCRIPT
   _tmp="$(mktemp -d)"
   # Create: root/utils/verbose.sh and root/sub/deep/script.sh
   mkdir -p "${_tmp}/utils" "${_tmp}/sub/deep"
-  # Init git repo to bound walk-up (prevents escaping to host filesystem)
-  command -v git &>/dev/null && git -C "${_tmp}" init -q 2>/dev/null || true
+  # Create .git to bound walk-up (prevents escaping to host filesystem)
+  mkdir -p "${_tmp}/.git"
   echo 'test_walkup() { echo "walkup-ok"; }' > "${_tmp}/utils/verbose.sh"
   cat > "${_tmp}/sub/deep/run.sh" <<'SCRIPT'
 #!/usr/bin/env bash
