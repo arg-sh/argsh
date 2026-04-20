@@ -104,7 +104,7 @@ import::_resolve_scripts() {
 # @internal
 import::_find_git_root() {
   local _d
-  _d="$(pwd)"
+  _d="${1:-$(pwd)}"
   while [[ -n "${_d}" && "${_d}" != "/" ]]; do
     [[ -e "${_d}/.git" ]] && { echo "${_d}"; return 0; }
     _d="${_d%/*}"
@@ -124,7 +124,7 @@ import::_walk_up() {
   # Resolve to absolute path to prevent infinite loop on relative dirs
   _abs="$(cd "${1}" 2>/dev/null && pwd)" || return 1
   _dir="${_abs}"
-  _root="$(import::_find_git_root 2>/dev/null)" || _root="/"
+  _root="$(import::_find_git_root "${_abs}" 2>/dev/null)" || _root="/"
   while [[ -n "${_dir}" && "${_dir}" != "/" ]]; do
     for _ext in "" ".sh" ".bash"; do
       [[ -f "${_dir}/${_mod}${_ext}" ]] && {
