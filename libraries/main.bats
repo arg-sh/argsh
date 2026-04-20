@@ -797,3 +797,96 @@ EOF
   # starting with "argsh builtin" (with or without trailing 's').
   contains "argsh builtin" stdout
 }
+
+# ── argsh lib ───────────────────────────────────────────
+
+@test "argsh::lib: list shows empty when no libs installed" {
+  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
+  local _tmp
+  _tmp="$(mktemp -d)"
+
+  PATH_BASE="${_tmp}" argsh::lib list >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains "No libraries installed" stdout
+}
+
+@test "argsh::lib: add installs to .argsh/libs/" {
+  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
+  local _tmp
+  _tmp="$(mktemp -d)"
+  mkdir -p "${_tmp}/.argsh/libs"
+
+  # Stub curl to simulate download
+  curl() {
+    local _url=""
+    while [[ $# -gt 0 ]]; do
+      case "${1}" in -*) shift ;; *) _url="${1}"; shift ;; esac
+    done
+    # Create a fake tarball
+    local _td; _td="$(mktemp -d)"
+    mkdir -p "${_td}/data"
+    echo 'data::get() { echo "mock"; }' > "${_td}/data/data.sh"
+    echo 'name: data' > "${_td}/data/argsh-plugin.yml"
+    echo 'version: 0.1.0' >> "${_td}/data/argsh-plugin.yml"
+    tar czf - -C "${_td}" data
+    rm -rf "${_td}"
+  }
+  export -f curl
+
+  PATH_BASE="${_tmp}" argsh::lib add data >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  assert -f "${_tmp}/.argsh/libs/data/data.sh"
+  contains "installed" stderr
+}
+
+@test "argsh::lib: remove deletes lib directory" {
+  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
+  local _tmp
+  _tmp="$(mktemp -d)"
+  mkdir -p "${_tmp}/.argsh/libs/data"
+  echo "placeholder" > "${_tmp}/.argsh/libs/data/data.sh"
+
+  PATH_BASE="${_tmp}" argsh::lib remove data >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  assert ! -d "${_tmp}/.argsh/libs/data"
+  contains "removed" stdout
+}
+
+@test "argsh::lib: list shows installed libs" {
+  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
+  local _tmp
+  _tmp="$(mktemp -d)"
+  mkdir -p "${_tmp}/.argsh/libs/data"
+  cat > "${_tmp}/.argsh/libs/data/argsh-plugin.yml" << 'YAML'
+name: data
+version: 0.1.0
+YAML
+
+  PATH_BASE="${_tmp}" argsh::lib list >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains "data" stdout
+  contains "0.1.0" stdout
+}
+
+@test "import: resolves from .argsh/libs/ fallback" {
+  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
+  local _tmp
+  _tmp="$(mktemp -d)"
+  mkdir -p "${_tmp}/.argsh/libs/mylib"
+  echo 'mylib_func() { echo "from-libs"; }' > "${_tmp}/.argsh/libs/mylib/mylib.sh"
+
+  (
+    export PATH_BASE="${_tmp}"
+    # Clear import cache so it resolves fresh
+    import_cache=()
+    import mylib
+    mylib_func
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains "from-libs" stdout
+}
