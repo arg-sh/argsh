@@ -254,7 +254,13 @@ fn resolve_module_path(module: &str) -> Option<String> {
             None
         } else {
             shell::get_scalar("PATH_BASE").filter(|s| !s.is_empty())
-        }.or_else(|| git_toplevel_from(None));
+        }.or_else(|| {
+            // Fall back to git root from script dir (not CWD)
+            let src = get_argsh_source_path()
+                .or_else(shell::get_bash_source_last)?;
+            let script_dir = std::path::Path::new(path_dirname(&src));
+            git_toplevel_from(Some(script_dir))
+        });
         format!("{}/{}", path_base?, rest)
     } else if let Some(rest) = module.strip_prefix('^') {
         // ^ prefix: PATH_SCRIPTS → directive → walk up

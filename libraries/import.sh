@@ -35,8 +35,10 @@ declare -gA import_cache=()
       # @ prefix: PATH_BASE → git root → error
       local _base="${PATH_BASE:-}"
       if [[ -z "${_base}" ]]; then
-        # Walk up from CWD looking for .git (no git subprocess needed)
-        _base="$(import::_find_git_root)" || {
+        # Walk up from script dir looking for .git
+        local _s="${ARGSH_SOURCE:-${BASH_SOURCE[-1]}}"
+        local _sdir; [[ "${_s}" == */* ]] && _sdir="${_s%/*}" || _sdir="."
+        _base="$(import::_find_git_root "$(cd "${_sdir}" 2>/dev/null && pwd)")" || {
           echo "import: @ prefix requires PATH_BASE or a git repository" >&2
           exit 1
         }
