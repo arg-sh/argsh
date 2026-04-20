@@ -43,8 +43,14 @@ COPY builtin/ .
 RUN cargo build --release
 
 # Musl build for Alpine — cdylib works with -C target-feature=-crt-static.
-FROM rust:alpine AS builtin-build-musl
+FROM rust:1-alpine AS builtin-build-musl
 RUN apk add --no-cache lld
+# Symlink system lld over rust-lld (same workaround as glibc build — colon
+# symbols in export_name break rust-lld's version script parser).
+RUN ln -sf /usr/bin/ld.lld "$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | awk '/host/{print $2}')/bin/gcc-ld/ld.lld"
+ARG CARGO_PROFILE_RELEASE_STRIP
+ARG CARGO_PROFILE_RELEASE_LTO
+ARG CARGO_PROFILE_RELEASE_PANIC
 WORKDIR /build
 COPY builtin/ .
 RUN RUSTFLAGS="-C target-feature=-crt-static -C link-arg=-fuse-ld=lld" cargo build --release

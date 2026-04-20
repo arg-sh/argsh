@@ -155,7 +155,7 @@ argsh::builtin::download() {
 
   # Detect libc: musl systems (Alpine) need the musl-linked .so
   local _libc=""
-  if ldd --version 2>&1 | grep -qi musl; then
+  if command -v ldd &>/dev/null && ldd --version 2>&1 | grep -qi musl; then
     _libc="-musl"
   fi
   local _asset="argsh-linux${_libc}-${_arch}.so"
