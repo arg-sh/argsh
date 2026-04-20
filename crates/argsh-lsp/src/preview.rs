@@ -285,12 +285,16 @@ pre {{
                     } else {
                         "no"
                     };
+                    let mut desc = html_escape(&entry.description);
+                    if field.is_inherited {
+                        desc.push_str(" <span style=\"color:var(--text-dim);font-style:italic\">inherited</span>");
+                    }
                     html.push_str(&format!(
                         "<tr><td>{}</td><td><span class=\"type-badge\">{}</span></td><td>{}</td><td>{}</td></tr>\n",
                         flag_str,
                         html_escape(&type_str),
                         req_str,
-                        html_escape(&entry.description)
+                        desc
                     ));
                 }
             }
@@ -370,9 +374,13 @@ pre {{
                             format!("--{}", html_escape(&field.display_name))
                         };
                         let typ = format_type(field, entry.is_array);
+                        let mut desc = html_escape(&entry.description);
+                        if field.is_inherited {
+                            desc.push_str(" <span style=\"color:var(--text-dim);font-style:italic\">inherited</span>");
+                        }
                         html.push_str(&format!(
                             "<tr><td>{}</td><td><span class=\"type-badge\">{}</span></td><td>{}</td></tr>\n",
-                            flag, html_escape(&typ), html_escape(&entry.description)
+                            flag, html_escape(&typ), desc
                         ));
                     }
                 }
@@ -532,6 +540,9 @@ fn build_docgen_yaml(analysis: &DocumentAnalysis, _content: &str) -> String {
                     }
                     if field.hidden {
                         yaml.push_str("      hidden: true\n");
+                    }
+                    if field.is_inherited {
+                        yaml.push_str("      inherited: true\n");
                     }
                     if let Some(ref short) = field.short {
                         yaml.push_str(&format!("      short: {}\n", short));
