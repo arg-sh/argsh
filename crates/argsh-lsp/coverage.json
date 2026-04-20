@@ -142,16 +142,16 @@
     },
     {
       "file": "crates/argsh-lsp/src/hover.rs",
-      "percent_covered": "63.74",
-      "covered_lines": "457",
-      "total_lines": "717",
+      "percent_covered": "63.76",
+      "covered_lines": "461",
+      "total_lines": "723",
       "excluded_lines": "0"
     },
     {
       "file": "crates/argsh-lsp/src/preview.rs",
-      "percent_covered": "24.81",
-      "covered_lines": "132",
-      "total_lines": "532",
+      "percent_covered": "24.68",
+      "covered_lines": "134",
+      "total_lines": "543",
       "excluded_lines": "0"
     },
     {
@@ -162,12 +162,12 @@
       "excluded_lines": "0"
     }
   ],
-  "percent_covered": "81.37",
-  "covered_lines": 6543,
-  "total_lines": 8041,
+  "percent_covered": "81.27",
+  "covered_lines": 6549,
+  "total_lines": 8058,
   "excluded_lines": 0,
   "percent_low": 25,
   "percent_high": 75,
   "command": "cargo-test+llvm-cov",
-  "date": "2026-04-20 12:27:43"
+  "date": "2026-04-20 18:29:34"
 }
