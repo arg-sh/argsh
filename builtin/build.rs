@@ -24,11 +24,13 @@ fn main() {
     println!("cargo:rustc-env=ARGSH_SO_VERSION={}", version);
     println!("cargo:rustc-env=ARGSH_SO_COMMIT={}", commit);
 
-    // Rerun when git state changes (local builds)
-    println!("cargo:rerun-if-changed=../.git/HEAD");
-    println!("cargo:rerun-if-changed=../.git/refs/");
-    println!("cargo:rerun-if-changed=../.git/packed-refs");
     // Rerun when env vars change (Docker/CI builds)
     println!("cargo:rerun-if-env-changed=ARGSH_SO_VERSION");
     println!("cargo:rerun-if-env-changed=ARGSH_SO_COMMIT");
+    // Rerun when git state changes (local builds only)
+    if std::path::Path::new("../.git").exists() {
+        println!("cargo:rerun-if-changed=../.git/HEAD");
+        println!("cargo:rerun-if-changed=../.git/refs/");
+        println!("cargo:rerun-if-changed=../.git/packed-refs");
+    }
 }
