@@ -2,10 +2,13 @@
 # @file import
 # @brief Import libraries
 # @description
-#   Provides a caching import mechanism for bash libraries.
-#   Each module is sourced at most once per session (unless cache is cleared).
+#   Caching import mechanism for bash libraries. Each module is sourced
+#   at most once per session (unless cache is cleared).
 #
-#   The import function resolves module paths based on prefix:
+#   Prefixes: @ → PATH_BASE/git root, ^ → PATH_SCRIPTS/directive/walk-up,
+#   ~ → script entry point, bare → relative to caller.
+set -euo pipefail
+
 # @description
 #   Import a library, relative to the current script
 #   If '@' is prepended to the library name, it will be imported from the base path (PATH_BASE)
@@ -103,7 +106,7 @@ import::_find_git_root() {
   local _d
   _d="$(pwd)"
   while [[ -n "${_d}" && "${_d}" != "/" ]]; do
-    [[ -d "${_d}/.git" ]] && { echo "${_d}"; return 0; }
+    [[ -e "${_d}/.git" ]] && { echo "${_d}"; return 0; }
     _d="${_d%/*}"
   done
   return 1

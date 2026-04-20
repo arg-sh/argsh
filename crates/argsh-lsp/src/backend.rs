@@ -132,6 +132,8 @@ impl Backend {
                     }
                 }
             }
+            // Re-filter through suppression system (AG015 was added after generate_diagnostics)
+            diagnostics::filter_suppressed(&mut diags, &doc.content);
             self.client
                 .publish_diagnostics(uri.clone(), diags, None)
                 .await;

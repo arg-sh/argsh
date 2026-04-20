@@ -117,7 +117,7 @@ pub fn analyze(source: &str) -> DocumentAnalysis {
 
     // Parse # argsh source= directive (first 20 lines, must not be indented)
     let source_directive = lines.iter().take(20).find_map(|l| {
-        l.strip_prefix("# argsh source=").map(|v| v.trim().to_string())
+        l.strip_prefix("# argsh source=").map(|v| v.trim().to_string()).filter(|v| !v.is_empty())
     });
 
     let functions = find_functions(&lines);

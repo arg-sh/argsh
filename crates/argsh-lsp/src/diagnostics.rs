@@ -60,6 +60,13 @@ pub fn generate_diagnostics(
     diags
 }
 
+/// Filter additional diagnostics through the suppression system.
+/// Used for diagnostics generated outside `generate_diagnostics` (e.g. AG015 in backend).
+pub fn filter_suppressed(diags: &mut Vec<Diagnostic>, content: &str) {
+    let suppressed = collect_suppressions(content);
+    diags.retain(|d| !is_suppressed(d, &suppressed));
+}
+
 /// A suppression directive found in a comment.
 #[derive(Debug)]
 struct Suppression {
