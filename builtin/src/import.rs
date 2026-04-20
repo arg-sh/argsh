@@ -272,7 +272,7 @@ fn resolve_module_path(module: &str) -> Option<String> {
             let src = get_argsh_source_path()
                 .or_else(shell::get_bash_source_last)?;
             let script_dir = path_dirname(&src);
-            return walk_up(&script_dir, rest);
+            return walk_up(script_dir, rest);
         }
     } else if let Some(rest) = module.strip_prefix('~') {
         let src = get_argsh_source_path()
