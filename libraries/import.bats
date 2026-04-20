@@ -359,14 +359,11 @@ SCRIPT
   (
     unset PATH_BASE 2>/dev/null || true
     cd "${_tmp}" || exit 1
-    # Debug: verify git root is discoverable
-    echo "git-root=$(git rev-parse --show-toplevel 2>&1)" >&2
-    echo "cwd=$(pwd)" >&2
-    echo "ls-libs=$(ls "${_tmp}/libs/" 2>&1)" >&2
+    echo "bash-PATH_BASE=[${PATH_BASE:-UNSET}]" >&2
+    echo "bash-env-PATH_BASE=[$(env | grep ^PATH_BASE= || echo UNSET)]" >&2
     ARGSH_SOURCE="${_tmp}/run.sh" source "${_tmp}/run.sh"
   ) >"${stdout}" 2>"${stderr}" || status=$?
 
-  # Show debug output on failure
   if [[ "${status:-0}" -ne 0 ]]; then
     cat "${stderr}" >&2
   fi
