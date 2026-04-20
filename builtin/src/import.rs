@@ -339,6 +339,7 @@ fn resolve_scripts_dir() -> Option<String> {
     for line in content.lines().take(20) {
         if let Some(path) = line.strip_prefix("# argsh source=") {
             let path = path.trim();
+            if path.is_empty() { continue; }
             let resolved = if path.starts_with('/') {
                 std::path::PathBuf::from(path)
             } else {

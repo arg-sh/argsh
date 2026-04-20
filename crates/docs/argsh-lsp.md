@@ -127,7 +127,7 @@ Search order for imports:
 3. Project root (detected by `.git`, `.envrc`, or `.bin/argsh`)
 
 Import prefix fallbacks:
-- `@` → `PATH_BASE` env var → git root
+- `@` → `PATH_BASE` env var → project root (`.git`, `.envrc`, or `.bin/argsh`)
 - `^` → `PATH_SCRIPTS` env var → `# argsh source=` directive → walk up from script dir
 - `~` → relative to the importing file
 
