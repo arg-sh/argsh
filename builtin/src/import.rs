@@ -299,6 +299,18 @@ fn resolve_module_path(module: &str) -> Option<String> {
         }
     }
 
+    // Fallback: check .argsh/libs/<module>/<module> for plugin libraries
+    if !module.starts_with('@') && !module.starts_with('^') && !module.starts_with('~') {
+        let path_base = shell::get_scalar("PATH_BASE").unwrap_or_else(|| ".".to_string());
+        let lib_base = format!("{}/.argsh/libs/{}/{}", path_base, module, module);
+        for ext in &["", ".sh", ".bash"] {
+            let full = format!("{}{}", lib_base, ext);
+            if std::path::Path::new(&full).is_file() {
+                return Some(full);
+            }
+        }
+    }
+
     None
 }
 

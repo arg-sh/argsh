@@ -64,19 +64,14 @@ declare -gA import_cache=()
       local _s="${ARGSH_SOURCE:-${BASH_SOURCE[-1]}}"
       src="${_s%/*}/${src:1}"
     else
-      # Plain import: try relative to caller, then .argsh/libs/
       local _s="${ARGSH_SOURCE:-${BASH_SOURCE[0]}}"
-      local _rel="${_s%/*}/${src}"
-      if import::source "${_rel}" 2>/dev/null; then
-        return 0
+      src="${_s%/*}/${src}"
+      # Plain import: also check plugin libs as fallback
+      if ! import::source "${src}" 2>/dev/null; then
+        local _lib="${PATH_BASE:-.}/.argsh/libs/${1}/${1}"
+        import::source "${_lib}" 2>/dev/null || import::source "${src}" || exit 1
       fi
-      # Try plugin libs directory
-      local _lib_dir="${PATH_BASE:-.}/.argsh/libs/${src}"
-      if [[ -d "${_lib_dir}" ]]; then
-        src="${_lib_dir}/${src}"
-      else
-        src="${_rel}"
-      fi
+      return 0
     fi
     import::source "${src}" || exit 1
   }
