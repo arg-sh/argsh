@@ -32,7 +32,8 @@ declare -gA import_cache=()
       # @ prefix: PATH_BASE → git root → error
       local _base="${PATH_BASE:-}"
       if [[ -z "${_base}" ]]; then
-        _base="$(git rev-parse --show-toplevel 2>/dev/null)" || {
+        # Walk up from CWD looking for .git (no git subprocess needed)
+        _base="$(import::_find_git_root)" || {
           echo "import: @ prefix requires PATH_BASE or a git repository" >&2
           exit 1
         }
@@ -93,6 +94,21 @@ import::_resolve_scripts() {
   echo "${_path}"
 }
 
+# @description Find git repository root by walking up from CWD looking for .git.
+# Does not shell out to git — avoids safe.directory and PATH issues.
+# @stdout The git root path
+# @exitcode 1 If not found
+# @internal
+import::_find_git_root() {
+  local _d
+  _d="$(pwd)"
+  while [[ -n "${_d}" && "${_d}" != "/" ]]; do
+    [[ -d "${_d}/.git" ]] && { echo "${_d}"; return 0; }
+    _d="${_d%/*}"
+  done
+  return 1
+}
+
 # @description Walk up from a directory looking for a module file.
 # Stops at git root or filesystem root.
 # @arg $1 string Starting directory
@@ -105,7 +121,7 @@ import::_walk_up() {
   # Resolve to absolute path to prevent infinite loop on relative dirs
   _abs="$(cd "${1}" 2>/dev/null && pwd)" || return 1
   _dir="${_abs}"
-  _root="$(git rev-parse --show-toplevel 2>/dev/null)" || _root="/"
+  _root="$(import::_find_git_root 2>/dev/null)" || _root="/"
   while [[ -n "${_dir}" && "${_dir}" != "/" ]]; do
     for _ext in "" ".sh" ".bash"; do
       [[ -f "${_dir}/${_mod}${_ext}" ]] && {
