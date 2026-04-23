@@ -198,6 +198,15 @@ module.exports = {
       className: "homepage-sidebar-item",
     },
     {
+      type: "ref",
+      id: "plugins/overview",
+      label: "Plugins",
+      customProps: {
+        sidebar_icon: "puzzle",
+      },
+      className: "homepage-sidebar-item",
+    },
+    {
       type: "html",
       value: "Core",
       customProps: {
@@ -642,6 +651,73 @@ module.exports = {
           type: "doc",
           id: "development/tools/debugger",
           label: "Debugger",
+        },
+      ],
+    },
+  ],
+  plugins: [
+    {
+      type: "ref",
+      id: "homepage",
+      label: "Back to home",
+      customProps: {
+        sidebar_is_back_link: true,
+        sidebar_icon: "back-arrow",
+      },
+    },
+    {
+      type: "doc",
+      id: "plugins/overview",
+      label: "Plugins",
+      customProps: {
+        sidebar_is_title: true,
+        sidebar_icon: "puzzle",
+      },
+    },
+    {
+      type: "category",
+      label: "Getting Started",
+      collapsible: false,
+      customProps: {
+        sidebar_is_group_headline: true,
+      },
+      items: [
+        {
+          type: "doc",
+          id: "plugins/overview",
+          label: "Overview",
+          customProps: {
+            sidebar_icon: "book-open",
+          },
+          className: "homepage-sidebar-item",
+        },
+        {
+          type: "doc",
+          id: "plugins/authoring",
+          label: "Authoring Plugins",
+          customProps: {
+            sidebar_icon: "pencil-square-solid",
+          },
+          className: "homepage-sidebar-item",
+        },
+      ],
+    },
+    {
+      type: "category",
+      label: "Libraries",
+      collapsible: false,
+      customProps: {
+        sidebar_is_group_headline: true,
+      },
+      items: [
+        {
+          type: "doc",
+          id: "plugins/libs/jaml",
+          label: "jaml",
+          customProps: {
+            sidebar_icon: "document-text-solid",
+          },
+          className: "homepage-sidebar-item",
         },
       ],
     },
