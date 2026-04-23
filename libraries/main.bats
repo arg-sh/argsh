@@ -1039,7 +1039,7 @@ YAML
   # Lockfile should not have jaml entry anymore
   if [[ -f "${_tmp}/.argsh.lock" ]]; then
     local _has; _has="$(yq -r '.libs["argsh@jaml"] // "null"' "${_tmp}/.argsh.lock")"
-    [[ "${_has}" == "null" ]]
+    assert "${_has}" == "null"
   fi
   rm -rf "${_tmp}"
 }
