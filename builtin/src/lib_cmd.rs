@@ -79,8 +79,41 @@ fn lib_pull_main(args: &[String]) -> i32 {
         return 1;
     }
 
+    // Detect current platform for .so filtering
+    let current_arch = match std::env::consts::ARCH {
+        "x86_64" => "amd64",
+        "aarch64" => "arm64",
+        _ => "",
+    };
+    let is_musl = std::path::Path::new("/lib/ld-musl-x86_64.so.1").exists()
+        || std::path::Path::new("/lib/ld-musl-aarch64.so.1").exists();
+    let platform_suffix = if is_musl {
+        format!("-linux-musl-{}.so", current_arch)
+    } else {
+        format!("-linux-{}.so", current_arch)
+    };
+
     // Download each layer
+    let mut matching_so: Option<(String, Vec<u8>)> = None;
+
     for layer in &manifest.layers {
+        let filename = layer.annotations.as_ref()
+            .and_then(|a| a.get("org.opencontainers.image.title"))
+            .and_then(|v| v.as_str())
+            .unwrap_or_else(|| {
+                layer.digest.split(':').next_back().unwrap_or("blob")
+            })
+            .to_string();
+
+        // Track .so files for platform filtering
+        let is_so = filename.ends_with(".so");
+        let is_platform_so = is_so && filename.contains("-linux-");
+
+        // Skip non-matching platform .so files
+        if is_platform_so && !filename.ends_with(&platform_suffix) {
+            continue;
+        }
+
         let data = match client.get_blob(&layer.digest) {
             Ok(d) => d,
             Err(e) => {
@@ -89,34 +122,46 @@ fn lib_pull_main(args: &[String]) -> i32 {
             }
         };
 
-        // Determine filename from annotations or media type
-        let filename = layer.annotations.as_ref()
-            .and_then(|a| a.get("org.opencontainers.image.title"))
-            .and_then(|v| v.as_str())
-            .unwrap_or_else(|| {
-                // Fallback: use digest as filename
-                layer.digest.split(':').next_back().unwrap_or("blob")
-            });
+        if is_platform_so {
+            // Rename platform-specific .so to canonical name (strip platform suffix)
+            let canonical = filename.replace(&platform_suffix, ".so");
+            let canonical = canonical.replace(['/', '\\'], "_");
+            if canonical.contains("..") || canonical.starts_with('.') {
+                shell::write_stderr(&format!("lib::pull: refusing unsafe .so filename: {}", canonical));
+                return 1;
+            }
+            matching_so = Some((canonical, data));
+        } else {
+            // Sanitize filename: reject path traversal
+            let filename = filename.replace(['/', '\\'], "_");
+            if filename.contains("..") || filename.starts_with('.') {
+                shell::write_stderr(&format!("lib::pull: refusing unsafe filename: {}", filename));
+                return 1;
+            }
 
-        // Sanitize filename: reject path traversal
-        let filename = filename.replace(['/', '\\'], "_");
-        if filename.contains("..") || filename.starts_with('.') {
-            shell::write_stderr(&format!("lib::pull: refusing unsafe filename: {}", filename));
-            return 1;
+            let path = std::path::Path::new(dest).join(&filename);
+            if let Some(parent) = path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            if let Err(e) = std::fs::write(&path, &data) {
+                shell::write_stderr(&format!("lib::pull: failed to write {}: {}", path.display(), e));
+                return 1;
+            }
         }
+    }
 
-        let path = std::path::Path::new(dest).join(&filename);
-
-        // Create parent directories if needed
-        if let Some(parent) = path.parent() {
-            let _ = std::fs::create_dir_all(parent);
-        }
-
+    // Write the matching .so with canonical name
+    if let Some((canonical, data)) = matching_so {
+        let path = std::path::Path::new(dest).join(&canonical);
         if let Err(e) = std::fs::write(&path, &data) {
             shell::write_stderr(&format!("lib::pull: failed to write {}: {}", path.display(), e));
             return 1;
         }
     }
+
+    // Expose digest to bash caller
+    let digest = client.resolve_digest().unwrap_or_default();
+    shell::set_scalar("__LIB_PULL_DIGEST", &digest);
 
     // Set result variable for bash
     shell::set_scalar("__LIB_PULL_DEST", dest);

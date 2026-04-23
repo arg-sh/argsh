@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 // Derived from ocipkg (https://github.com/termoshtt/ocipkg)
-// OCI Distribution pull client -- simplified from ocipkg (Apache-2.0 + MIT)
+// OCI Distribution client -- simplified from ocipkg (Apache-2.0 + MIT)
 //
-// Provides: get_manifest, get_blob.  Pull only, sync only.
+// Provides: get_manifest, get_blob, push_blob, push_manifest.  Sync only.
 
 use super::auth::{self, AuthChallenge};
 use std::io::Read;
@@ -26,7 +26,7 @@ pub struct Manifest {
     pub layers: Vec<Descriptor>,
 }
 
-/// Sync-only OCI distribution client (pull only).
+/// Sync OCI distribution client (pull + push).
 pub struct OciClient {
     agent: ureq::Agent,
     registry: String,
@@ -59,6 +59,32 @@ impl OciClient {
     /// Build a full URL under `/v2/<name>/...`.
     fn url(&self, path: &str) -> String {
         format!("https://{}/v2/{}/{}", self.registry, self.name, path)
+    }
+
+    /// Ensure we have a valid token with the required scope.
+    /// Triggers a challenge-response against the given URL if needed.
+    fn ensure_auth(&mut self, url: &str) -> Result<(), BoxErr> {
+        if self.token.is_some() {
+            return Ok(());
+        }
+        // Probe to get the 401 challenge.
+        match self.agent.get(url).call() {
+            Ok(_) => Ok(()),
+            Err(ref e) => {
+                if let Some(challenge) = AuthChallenge::from_ureq_error(e) {
+                    let tok = auth::fetch_token(
+                        &self.agent,
+                        &challenge,
+                        self.basic_auth.as_deref(),
+                        &self.registry,
+                    )?;
+                    self.token = Some(tok);
+                    Ok(())
+                } else {
+                    Err(format!("registry request failed: {e}").into())
+                }
+            }
+        }
     }
 
     /// Perform an authenticated GET, handling a single 401 challenge-response
@@ -152,6 +178,89 @@ impl OciClient {
         res.header("Docker-Content-Digest")
             .map(|s| s.to_string())
             .ok_or_else(|| "registry did not return Docker-Content-Digest header".into())
+    }
+
+    // -- push API -----------------------------------------------------------
+
+    /// Upload a blob to the registry.  Returns its `sha256:<hex>` digest.
+    ///
+    /// Implements the OCI blob upload flow:
+    /// 1. `POST /v2/<name>/blobs/uploads/` → get upload URL from `Location` header.
+    /// 2. `PUT <location>?digest=sha256:...` with the blob body (monolithic upload).
+    pub fn push_blob(&mut self, data: &[u8]) -> Result<String, BoxErr> {
+        use sha2::{Digest, Sha256};
+        let digest = format!("sha256:{:x}", Sha256::digest(data));
+
+        // Check if blob already exists (HEAD).
+        let head_url = self.url(&format!("blobs/{}", digest));
+        self.ensure_auth(&head_url)?;
+        if let Some(tok) = &self.token {
+            if let Ok(res) = self.agent.head(&head_url)
+                .set("Authorization", &format!("Bearer {}", tok))
+                .call()
+            {
+                if res.status() == 200 {
+                    return Ok(digest);
+                }
+            }
+        }
+
+        // Initiate upload.
+        let upload_url = self.url("blobs/uploads/");
+        self.ensure_auth(&upload_url)?;
+        let tok = self.token.clone()
+            .ok_or("push_blob: no auth token available after ensure_auth")?;
+        let res = self.agent.post(&upload_url)
+            .set("Authorization", &format!("Bearer {}", tok))
+            .set("Content-Length", "0")
+            .call()?;
+
+        let location = res.header("Location")
+            .ok_or("push_blob: no Location header from POST")?
+            .to_string();
+
+        // Resolve relative Location against registry.
+        let put_url = if location.starts_with("http") {
+            location
+        } else {
+            format!("https://{}{}", self.registry, location)
+        };
+
+        // Append digest query parameter.
+        let separator = if put_url.contains('?') { "&" } else { "?" };
+        let put_url = format!("{}{}digest={}", put_url, separator, digest);
+
+        // Monolithic PUT with full blob body.
+        self.agent.put(&put_url)
+            .set("Authorization", &format!("Bearer {}", tok))
+            .set("Content-Type", "application/octet-stream")
+            .set("Content-Length", &data.len().to_string())
+            .send_bytes(data)?;
+
+        Ok(digest)
+    }
+
+    /// Push a manifest to the registry under the configured reference (tag).
+    /// Returns the manifest digest.
+    pub fn push_manifest(&mut self, manifest_json: &[u8]) -> Result<String, BoxErr> {
+        let url = self.url(&format!("manifests/{}", self.reference));
+        self.ensure_auth(&url)?;
+        let tok = self.token.clone()
+            .ok_or("push_manifest: no auth token available after ensure_auth")?;
+
+        let res = self.agent.put(&url)
+            .set("Authorization", &format!("Bearer {}", tok))
+            .set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
+            .set("Content-Length", &manifest_json.len().to_string())
+            .send_bytes(manifest_json)?;
+
+        let digest = res.header("Docker-Content-Digest")
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| {
+                use sha2::{Digest, Sha256};
+                format!("sha256:{:x}", Sha256::digest(manifest_json))
+            });
+        Ok(digest)
     }
 }
 

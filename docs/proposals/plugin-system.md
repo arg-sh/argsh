@@ -20,8 +20,8 @@ import k8s-utils
 
 # Project management
 argsh lib add data                                # short name, default registry
-argsh lib add ghcr.io/mycompany/internal/utils    # explicit registry
-argsh lib add data@0.1.0                          # pinned
+argsh lib add myco@k8s-utils                      # custom registry (declared in .argsh.yaml)
+argsh lib add data@0.1.0                          # pinned version
 argsh lib install                                 # install all from .argsh.lock
 argsh lib update                                  # update within .argsh.yaml ranges
 argsh lib remove data
@@ -219,11 +219,11 @@ Multi-arch `.so`: platform in filename (`data-linux-amd64.so`), client picks the
 ```bash
 # Publish (library author)
 argsh lib publish                                    # to registry in argsh-plugin.yml
-argsh lib publish --registry harbor.myco.com/argsh   # explicit
+argsh lib publish --registry harbor.myco.com         # explicit registry host
 
 # Install (user)
 argsh lib add data                                   # default registry
-argsh lib add harbor.myco.com/team/k8s-utils@0.2.0  # any registry
+argsh lib add myco@k8s-utils                         # custom registry (from .argsh.yaml)
 ```
 
 Works with: `ghcr.io`, Harbor, Docker Hub, AWS ECR, GitLab Registry, any OCI-compliant registry.
@@ -303,13 +303,17 @@ requires:
 
 v1 ignores `requires.libs`. v2 could warn ("kubernetes recommends data") or error. But v1 plugins are always self-contained — no resolver needed.
 
+## Resolved
+
+1. **Platform-specific `.so` files**: Each platform variant is a separate OCI layer with filename convention `name-linux[-musl]-{arch}.so`. Client selects matching platform on pull and renames to canonical `name.so`.
+2. **Lock file**: `.argsh.lock` records exact OCI refs + digests. `argsh lib install` uses lock for reproducible installs.
+3. **Global install**: `argsh lib add --global` installs to `~/.local/share/argsh/libs/`. Import resolution checks global as final fallback.
+4. **Publish**: `argsh lib publish` uses the Rust OCI client (`lib::push` builtin) to push each file as a separate OCI layer.
+
 ## Open questions
 
-1. Auto-fetch on `import` or require explicit `argsh lib add`?
-2. How to handle platform-specific `.so` files in the artifact?
-3. Monorepo support: per-directory `.argsh.yaml`?
-4. How does `import data@0.1.0` interact with the lock file?
-5. Should `.argsh.yaml` also replace `.envrc` for argsh settings (PATH_BASE, etc.)?
+1. Monorepo support: per-directory `.argsh.yaml`?
+2. Should `.argsh.yaml` also replace `.envrc` for argsh settings (PATH_BASE, etc.)?
 
 ## Related
 

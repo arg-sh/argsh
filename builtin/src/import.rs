@@ -310,6 +310,20 @@ fn resolve_module_path(module: &str) -> Option<String> {
                 return Some(full);
             }
         }
+
+        // Global libs fallback
+        let global_dir = std::env::var("XDG_DATA_HOME")
+            .unwrap_or_else(|_| {
+                let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+                format!("{}/.local/share", home)
+            });
+        let global_base = format!("{}/argsh/libs/{}/{}", global_dir, module, module);
+        for ext in &["", ".sh", ".bash"] {
+            let full = format!("{}{}", global_base, ext);
+            if std::path::Path::new(&full).is_file() {
+                return Some(full);
+            }
+        }
     }
 
     None

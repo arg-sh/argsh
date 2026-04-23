@@ -64,18 +64,18 @@
       "excluded_lines": "22"
     },
     {
-      "file": "builtin/src/import.rs",
-      "percent_covered": "92.95",
-      "covered_lines": "224",
-      "total_lines": "241",
-      "excluded_lines": "10"
-    },
-    {
       "file": "builtin/src/usage/docgen.rs",
       "percent_covered": "92.61",
       "covered_lines": "426",
       "total_lines": "460",
       "excluded_lines": "7"
+    },
+    {
+      "file": "builtin/src/import.rs",
+      "percent_covered": "92.52",
+      "covered_lines": "235",
+      "total_lines": "254",
+      "excluded_lines": "10"
     },
     {
       "file": "builtin/src/usage/mcp.rs",
@@ -86,16 +86,23 @@
     },
     {
       "file": "builtin/src/lib_cmd.rs",
-      "percent_covered": "1.56",
+      "percent_covered": "1.03",
       "covered_lines": "1",
-      "total_lines": "64",
+      "total_lines": "97",
+      "excluded_lines": "0"
+    },
+    {
+      "file": "builtin/src/lib_push_cmd.rs",
+      "percent_covered": "0.86",
+      "covered_lines": "1",
+      "total_lines": "116",
       "excluded_lines": "0"
     },
     {
       "file": "builtin/src/oci/client.rs",
       "percent_covered": "0.00",
       "covered_lines": "0",
-      "total_lines": "110",
+      "total_lines": "183",
       "excluded_lines": "0"
     },
     {
@@ -106,12 +113,12 @@
       "excluded_lines": "0"
     }
   ],
-  "percent_covered": "82.73",
-  "covered_lines": 2816,
-  "total_lines": 3404,
+  "percent_covered": "77.71",
+  "covered_lines": 2828,
+  "total_lines": 3639,
   "excluded_lines": 229,
   "percent_low": 25,
   "percent_high": 75,
   "command": "bats+llvm-cov",
-  "date": "2026-04-21 08:39:48"
+  "date": "2026-04-21 21:02:24"
 }
