@@ -76,7 +76,7 @@ pub fn join_newlines(input: &str) -> String {
 
     while let Some(Ok(raw_line)) = lines.next() {
         // Strip leading whitespace — flatten already ran, but be robust
-        let line = raw_line.trim_start().to_string();
+        let mut line = raw_line.trim_start().to_string();
 
         // Heredoc? Must preserve content verbatim
         if let Some(delim) = heredoc_outside_quotes(&line) {
@@ -119,11 +119,25 @@ pub fn join_newlines(input: &str) -> String {
             continue;
         }
 
-        // Backslash continuation → remove backslash, no separator
+        // Backslash continuation → accumulate all continuation lines into one
+        // logical line, then fall through to process it as a unit (so that
+        // quote tracking sees the complete statement, not a partial prefix).
         if RE_BACKSLASH_CONT.is_match(&line) {
-            let trimmed = &line[..line.len() - 1];
-            output.push_str(trimmed);
-            continue;
+            let mut combined = line[..line.len() - 1].to_string();
+            while let Some(Ok(next)) = lines.peek() {
+                let next_trimmed = next.trim_start().to_string();
+                if RE_BACKSLASH_CONT.is_match(&next_trimmed) {
+                    combined.push_str(&next_trimmed[..next_trimmed.len() - 1]);
+                    lines.next();
+                } else {
+                    combined.push_str(&next_trimmed);
+                    lines.next();
+                    break;
+                }
+            }
+            // Re-process the combined line through all checks below
+            // by replacing `line` and falling through
+            line = combined;
         }
 
         // Trailing operator: `||`, `&&`, `|`, `{`, `(`, `;` → space instead of newline
@@ -377,6 +391,33 @@ mod tests {
         let input = "cmd1 &&\ncmd2\n";
         let result = join_newlines(input);
         assert!(result.contains("cmd1 && cmd2"), "Got: {result}");
+    }
+
+    #[test]
+    fn backslash_continuation_with_sed_and_fallback() {
+        // Reproduces: curl ... \
+        //   | grep ... | head -1 | sed 's/.*"\('"${var}"'\/v[^"]*\)".*/\1/')" || var=""
+        // if [[ -z "${var}" ]]; then
+        //
+        // The minifier must join the backslash continuation, then terminate
+        // the || fallback line with ; before the if statement.
+        let input = concat!(
+            "result=\"$(curl -fsSL url \\\n",
+            "  | head -1 | sed 's/.*/\\1/')\" || result=\"\"\n",
+            "if [[ -z \"${result}\" ]]; then\n",
+            "  echo empty\n",
+            "fi\n",
+        );
+        let result = join_newlines(input);
+        // The || fallback must be terminated before the if
+        assert!(
+            !result.contains("\"\"if"),
+            "Missing separator between fallback and if: {result}"
+        );
+        assert!(
+            result.contains(";if") || result.contains("; if"),
+            "Expected semicolon before if, got: {result}"
+        );
     }
 
     #[test]
