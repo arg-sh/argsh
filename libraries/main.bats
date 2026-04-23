@@ -917,9 +917,7 @@ YAML
 # E2E plugin tests — require network access (curl to GitHub releases).
 # ---------------------------------------------------------------------------
 
-_skip_e2e() {
-  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
-}
+_skip_e2e() { :; }
 
 @test "e2e: argsh lib add jaml (from GitHub releases)" {
   _skip_e2e
