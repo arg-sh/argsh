@@ -68,11 +68,14 @@ declare -gA import_cache=()
       src="${_s%/*}/${src}"
       # Plain import: check if file exists, fallback to plugin libs
       if ! import::_file_exists "${src}"; then
-        local _libs_dir
-        _libs_dir="$(import::_libs_dir)"
-        local _lib="${_libs_dir}/${1}/${1}"
-        if import::_file_exists "${_lib}"; then
-          src="${_lib}"
+        # Only try plugin libs for simple names (no path separators or traversal)
+        if [[ "${1}" != */* && "${1}" != *..* ]]; then
+          local _libs_dir
+          _libs_dir="$(import::_libs_dir)"
+          local _lib="${_libs_dir}/${1}/${1}"
+          if import::_file_exists "${_lib}"; then
+            src="${_lib}"
+          fi
         fi
       fi
     fi

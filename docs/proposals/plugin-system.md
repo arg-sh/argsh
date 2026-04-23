@@ -64,9 +64,10 @@ defaults:
   # builtin_path: .bin/argsh.so            # where to install core .so
 
 registries:
-  # argsh (ghcr.io/arg-sh/libs) is built-in — no need to declare it
+  # argsh (ghcr.io, repo prefix arg-sh/libs) is built-in — no need to declare it
   myco:
-    endpoint: harbor.mycompany.com/argsh
+    endpoint: harbor.mycompany.com          # registry host only (not repo path)
+    namespace: argsh                        # repo prefix (lib name is appended)
     # auth: ~/.docker/config.json           # optional, for private registries
 
 libs:

@@ -299,8 +299,9 @@ fn resolve_module_path(module: &str) -> Option<String> {
         }
     }
 
-    // Fallback: check plugin libs dir for plain imports
-    if !module.starts_with('@') && !module.starts_with('^') && !module.starts_with('~') {
+    // Fallback: check plugin libs dir for plain imports (simple names only, no path separators)
+    if !module.starts_with('@') && !module.starts_with('^') && !module.starts_with('~')
+        && !module.contains('/') && !module.contains("..") {
         let libs_dir = resolve_libs_dir();
         let lib_base = format!("{}/{}/{}", libs_dir, module, module);
         for ext in &["", ".sh", ".bash"] {
