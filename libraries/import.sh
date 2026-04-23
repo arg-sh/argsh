@@ -78,6 +78,15 @@ declare -gA import_cache=()
           fi
         fi
       fi
+      # Global libs fallback
+      if ! import::_file_exists "${src}"; then
+        if [[ "${1}" != */* && "${1}" != *..* ]]; then
+          local _global="${XDG_DATA_HOME:-${HOME}/.local/share}/argsh/libs/${1}/${1}"
+          if import::_file_exists "${_global}"; then
+            src="${_global}"
+          fi
+        fi
+      fi
     fi
     import::source "${src}" || exit 1
   }

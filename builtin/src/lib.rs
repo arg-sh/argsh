@@ -19,6 +19,7 @@ mod field;
 mod import;
 mod is;
 mod lib_cmd;
+mod lib_push_cmd;
 pub mod oci;
 mod shared;
 mod shell;
