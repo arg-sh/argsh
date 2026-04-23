@@ -2,7 +2,7 @@
   "name": "argsh",
   "displayName": "argsh",
   "description": "Language support, linting, and debugging for argsh — structured Bash scripting framework",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "publisher": "arg-sh",
   "repository": {
     "type": "git",
@@ -235,12 +235,15 @@
     "publish:ovsx": "npm run build && npx ovsx publish"
   },
   "devDependencies": {
-    "@types/vscode": "^1.82.0",
-    "@types/node": "^22.0.0",
-    "@vscode/vsce": "^3.7.1",
-    "typescript": "^6.0.0"
+    "@types/vscode": "^1.116.0",
+    "@types/node": "^22.19.0",
+    "@vscode/vsce": "^3.9.1",
+    "typescript": "^6.0.3"
   },
   "dependencies": {
-    "vscode-languageclient": "^9.0.0"
+    "vscode-languageclient": "^9.0.1"
+  },
+  "overrides": {
+    "uuid": "^14.0.0"
   }
 }
