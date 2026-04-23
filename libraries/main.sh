@@ -365,9 +365,11 @@ argsh::lib::_curl_fallback() {
     # Per-lib releases: query GitHub API for latest release matching <name>/v*
     local _latest_tag
     # Use GITHUB_TOKEN/GH_TOKEN if available (avoids 60/hr anonymous rate limit)
-    local _auth_header=""
-    [[ -z "${GITHUB_TOKEN:-${GH_TOKEN:-}}" ]] || _auth_header="-H Authorization: token ${GITHUB_TOKEN:-${GH_TOKEN}}"
-    _latest_tag="$(curl -fsSL ${_auth_header} "https://api.github.com/repos/arg-sh/libs/releases?per_page=100" \
+    local -a _curl_args=(-fsSL)
+    if [[ -n "${GITHUB_TOKEN:-${GH_TOKEN:-}}" ]]; then
+      _curl_args+=(-H "Authorization: token ${GITHUB_TOKEN:-${GH_TOKEN}}")
+    fi
+    _latest_tag="$(curl "${_curl_args[@]}" "https://api.github.com/repos/arg-sh/libs/releases?per_page=100" \
       | grep -o "\"tag_name\": *\"${_name}/v[^\"]*\"" | head -1 | sed 's/.*"\('"${_name}"'\/v[^"]*\)".*/\1/')" || _latest_tag=""
     if [[ -z "${_latest_tag}" ]]; then
       echo "argsh: no release found for ${_name}" >&2
