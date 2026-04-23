@@ -1,0 +1,95 @@
+---
+description: 'Structured jaml access for YAML/JSON files.'
+---
+
+# jaml
+
+Plugin library for reading and writing structured jaml (YAML/JSON).
+
+Install: `argsh lib add jaml`
+
+## jaml::get
+
+Read fields from a YAML/JSON file into variables or stdout.
+
+```bash
+# Batch read into variables (1 yq call for all fields)
+local domain version namespace
+jaml::get config.yaml \
+  domain=.spec.cluster.domain \
+  version=.spec.kubernetes.version \
+  namespace='.spec.cluster.namespace // "default"'
+
+# Single value to stdout
+echo "Version: $(jaml::get config.yaml .spec.kubernetes.version)"
+
+# Mixed: some to variables, some to stdout
+local count
+jaml::get config.yaml .metadata.name count='.items | length'
+
+# Any yq expression works
+jaml::get config.yaml keys='.spec | keys'
+```
+
+**Rule:** `var=.path` → variable, `.path` → stdout. Per-argument, mixable.
+
+## jaml::set
+
+Write variables back to a YAML/JSON file.
+
+```bash
+# Scalar
+local domain="prod.example.com"
+jaml::set config.yaml .spec.cluster.domain=domain
+
+# Indexed array → YAML array
+local -a servers=(10.0.0.1 10.0.0.2)
+jaml::set config.yaml .spec.dns.servers=servers
+
+# Associative array → YAML object
+local -A labels=(["env"]="prod" ["team"]="infra")
+jaml::set config.yaml .metadata.labels=labels
+
+# Append to array
+local new_server="10.0.0.3"
+jaml::set config.yaml '.spec.dns.servers[]=new_server'
+```
+
+**Direction:** `.path=var` → overwrite, `.path[]=var` → append.
+Auto-detects scalar, indexed array (`-a`), and associative array (`-A`).
+
+## jaml::each
+
+Iterate array elements with field binding.
+
+```bash
+# Iterate YAML array
+while jaml::each config.yaml '.spec.nodes.extraMounts[]' \
+  host=.hostPath container=.containerPath
+do
+  echo "${host} -> ${container}"
+done
+
+# Iterate kubectl JSON output
+while jaml::each <(kubectl get pods -o json) '.items[]' \
+  pod=.metadata.name node=.spec.nodeName phase=.status.phase
+do
+  echo "${pod} on ${node}: ${phase}"
+done
+```
+
+Works with files, stdin (`-`), and process substitution (`<(...)`).
+
+## jaml::merge
+
+Deep merge YAML/JSON files. Later files override earlier ones.
+
+```bash
+jaml::merge base.yaml overlay.yaml > merged.yaml
+```
+
+## Source
+
+- Repository: [github.com/arg-sh/libs](https://github.com/arg-sh/libs)
+- Install: `argsh lib add jaml`
+- Import: `import jaml`

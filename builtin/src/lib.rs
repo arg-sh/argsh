@@ -18,6 +18,8 @@ mod args;
 mod field;
 mod import;
 mod is;
+mod lib_cmd;
+pub mod oci;
 mod shared;
 mod shell;
 mod to;

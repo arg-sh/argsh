@@ -65,9 +65,9 @@
     },
     {
       "file": "builtin/src/import.rs",
-      "percent_covered": "94.93",
-      "covered_lines": "206",
-      "total_lines": "217",
+      "percent_covered": "92.95",
+      "covered_lines": "224",
+      "total_lines": "241",
       "excluded_lines": "10"
     },
     {
@@ -83,14 +83,35 @@
       "covered_lines": "408",
       "total_lines": "673",
       "excluded_lines": "105"
+    },
+    {
+      "file": "builtin/src/lib_cmd.rs",
+      "percent_covered": "1.56",
+      "covered_lines": "1",
+      "total_lines": "64",
+      "excluded_lines": "0"
+    },
+    {
+      "file": "builtin/src/oci/client.rs",
+      "percent_covered": "0.00",
+      "covered_lines": "0",
+      "total_lines": "110",
+      "excluded_lines": "0"
+    },
+    {
+      "file": "builtin/src/oci/auth.rs",
+      "percent_covered": "0.00",
+      "covered_lines": "0",
+      "total_lines": "78",
+      "excluded_lines": "0"
     }
   ],
-  "percent_covered": "89.42",
-  "covered_lines": 2797,
-  "total_lines": 3128,
+  "percent_covered": "82.73",
+  "covered_lines": 2816,
+  "total_lines": 3404,
   "excluded_lines": 229,
   "percent_low": 25,
   "percent_high": 75,
   "command": "bats+llvm-cov",
-  "date": "2026-04-20 12:27:21"
+  "date": "2026-04-21 08:39:48"
 }

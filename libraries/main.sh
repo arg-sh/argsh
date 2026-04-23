@@ -348,6 +348,55 @@ argsh::lib::resolve() {
   echo "${_name}"
 }
 
+# @description Download a library via curl from GitHub releases (fallback).
+# @arg $1 string Library name
+# @arg $2 string Version tag
+# @arg $3 string Destination directory
+# @internal
+argsh::lib::_curl_fallback() {
+  local _name="${1}" _tag="${2}" _dest="${3}"
+  local _normalized_tag="${_tag#v}"
+  local _url="https://github.com/arg-sh/libs/releases/download/${_name}%2Fv${_normalized_tag}/${_name}.tar.gz"
+  if [[ "${_tag}" == "latest" ]]; then
+    _url="https://github.com/arg-sh/libs/releases/latest/download/${_name}.tar.gz"
+  fi
+  local _tmpfile; _tmpfile="$(mktemp)"
+  if ! curl -fsSL "${_url}" -o "${_tmpfile}"; then
+    echo "argsh: failed to download ${_name}" >&2
+    rm -f "${_tmpfile}"
+    return 1
+  fi
+  # Validate tarball: reject path traversal, symlinks, and hardlinks
+  local _entry _unsafe=0
+  while IFS= read -r _entry; do
+    _entry="${_entry#./}"
+    [[ -n "${_entry}" ]] || continue
+    if [[ "${_entry}" == /* || "${_entry}" == ".." || "${_entry}" == ../* || "${_entry}" == */../* || "${_entry}" == */.. ]]; then
+      _unsafe=1; break
+    fi
+  done < <(tar -tzf "${_tmpfile}" 2>/dev/null) || _unsafe=1
+  # Reject symlinks and hardlinks
+  if (( ! _unsafe )); then
+    local _line
+    while IFS= read -r _line; do
+      case "${_line}" in
+        l*|h*) _unsafe=1; break ;;
+      esac
+    done < <(tar -tvzf "${_tmpfile}" 2>/dev/null)
+  fi
+  if (( _unsafe )); then
+    echo "argsh: tarball contains unsafe paths, refusing to extract" >&2
+    rm -f "${_tmpfile}"
+    return 1
+  fi
+  if ! tar xzf "${_tmpfile}" -C "${_dest}" --strip-components=1 --no-same-owner; then
+    echo "argsh: failed to extract ${_name}" >&2
+    rm -f "${_tmpfile}"
+    return 1
+  fi
+  rm -f "${_tmpfile}"
+}
+
 # @description Add a plugin library to the project.
 # @arg $1 string Lib reference (e.g. argsh@data, data, data@0.1.0)
 # @example
@@ -366,8 +415,8 @@ argsh::lib::add() {
   elif [[ "${_ref}" == *@* ]]; then
     # Could be name@version or provider@name
     local _after="${_ref#*@}"
-    if [[ "${_after}" =~ ^[0-9] ]]; then
-      # name@version (version starts with digit)
+    if [[ "${_after}" =~ ^v?[0-9] || "${_after}" == "latest" ]]; then
+      # name@version (version starts with digit or v-prefix or "latest")
       _version="${_after}"
       _ref="${_ref%%@*}"
     fi
@@ -384,35 +433,35 @@ argsh::lib::add() {
   fi
 
   local _tag="${_version:-latest}"
-  local _oci_ref="${_registry}/${_name}:${_tag}"
   local _lib_dir
   _lib_dir="$(argsh::lib::dir)"
   local _dest="${_lib_dir}/${_name}"
 
   echo "argsh: downloading ${_name} (${_tag})..." >&2
 
-  local _tmp_dest
-  _tmp_dest="$(mktemp -d)"
-
-  # v1: download from GitHub releases (tarball)
-  # v2: OCI pull via vendored Rust client in libargsh.so
-  local _url="https://github.com/arg-sh/libs/releases/download/${_name}%2Fv${_tag}/${_name}.tar.gz"
-  if [[ "${_tag}" == "latest" ]]; then
-    _url="https://github.com/arg-sh/libs/releases/latest/download/${_name}.tar.gz"
-  fi
-  local _tmpfile; _tmpfile="$(mktemp)"
-  if ! curl -fsSL "${_url}" -o "${_tmpfile}" || ! tar xzf "${_tmpfile}" -C "${_tmp_dest}" --strip-components=1; then
-    echo "argsh: failed to download ${_name}" >&2
-    rm -f "${_tmpfile}"; rm -rf "${_tmp_dest}"
-    return 1
-  fi
-  rm -f "${_tmpfile}"
-
-  # Atomic install: move from temp to final destination
-  local _lib_dir
-  _lib_dir="$(argsh::lib::dir)"
-  local _dest="${_lib_dir}/${_name}"
   mkdir -p "${_lib_dir}"
+  local _tmp_dest
+  _tmp_dest="$(mktemp -d "${_lib_dir}/.tmp.XXXXXX")"
+
+  # Try OCI pull via Rust builtin (if loaded), fallback to curl/GitHub releases
+  if [[ "$(type -t lib::pull 2>/dev/null)" == "builtin" ]]; then
+    # Split registry into host and repo prefix
+    local _host="${_registry%%/*}"
+    local _repo_prefix="${_registry#*/}"
+    lib::pull "${_host}" "${_repo_prefix}/${_name}" "${_tag}" "${_tmp_dest}" || {
+      echo "argsh: OCI pull failed, trying GitHub releases fallback..." >&2
+      rm -rf "${_tmp_dest}"; _tmp_dest="$(mktemp -d)"
+      argsh::lib::_curl_fallback "${_name}" "${_tag}" "${_tmp_dest}" || {
+        rm -rf "${_tmp_dest}"; return 1
+      }
+    }
+  else
+    argsh::lib::_curl_fallback "${_name}" "${_tag}" "${_tmp_dest}" || {
+      rm -rf "${_tmp_dest}"; return 1
+    }
+  fi
+
+  # Atomic install: rename within same filesystem
   rm -rf "${_dest}"
   mv "${_tmp_dest}" "${_dest}"
 
@@ -485,6 +534,11 @@ argsh::lib::install() {
     return 1
   fi
 
+  command -v yq &>/dev/null || {
+    echo "argsh: yq is required for lib install (https://github.com/mikefarah/yq)" >&2
+    return 1
+  }
+
   local _lib _version _ref _failed=0
   while IFS='=' read -r _lib _version; do
     [[ -n "${_lib}" ]] || continue
@@ -492,12 +546,12 @@ argsh::lib::install() {
     _version="${_version#^}"  # strip semver range prefix (v1: exact match only)
     _version="${_version#~}"
     # v1: semver ranges not resolved — uses stripped version as exact tag
-    echo "Installing ${_lib} (${_version})..."
+    echo "Installing ${_lib} (${_version})..." >&2
     # Append version if available and not a range
     _ref="${_lib}"
     [[ -z "${_version}" || "${_version}" == "latest" ]] || _ref="${_lib}@${_version}"
     argsh::lib::add "${_ref}" || { echo "argsh: failed to install ${_lib}" >&2; _failed=1; }
-  done < <(yq -r '.libs // {} | to_entries[] | .key + "=" + .value' "${_dir}/.argsh.yaml" 2>/dev/null)
+  done < <(yq -r '.libs // {} | to_entries[] | .key + "=" + (.value | tostring)' "${_dir}/.argsh.yaml" 2>/dev/null)
   return "${_failed}"
 }
 

@@ -1,0 +1,91 @@
+---
+description: 'How to create an argsh plugin library.'
+---
+
+# Authoring Plugins
+
+Create reusable libraries that others can install via `argsh lib add`.
+
+## Structure
+
+A plugin is a directory with:
+
+```text
+mylib/
+├── argsh-plugin.yml    # metadata (required)
+├── mylib.sh            # bash library (required)
+├── mylib.bats          # tests (recommended)
+└── src/                # optional Rust builtin
+    ├── Cargo.toml
+    └── lib.rs
+```
+
+## Metadata
+
+```yaml
+# argsh-plugin.yml
+name: mylib
+version: 0.1.0
+description: What this library does
+requires:
+  argsh: ">=0.9.0"
+```
+
+## Library file
+
+The main `.sh` file is what `import mylib` sources. Follow argsh conventions:
+
+```bash
+#!/usr/bin/env bash
+# @file mylib
+# @brief Short description
+set -euo pipefail
+
+# @description Do something useful.
+# @arg $1 string Input value
+# @stdout The result
+mylib::do_thing() {
+  local input="${1}"
+  echo "processed: ${input}"
+}
+```
+
+## Testing
+
+Write bats tests alongside the library:
+
+```bash
+#!/usr/bin/env bats
+
+setup() {
+  source "${BATS_TEST_DIRNAME}/mylib.sh"
+}
+
+@test "mylib::do_thing works" {
+  result=$(mylib::do_thing "hello")
+  [[ "${result}" == "processed: hello" ]]
+}
+```
+
+Run with:
+
+```bash
+bats mylib/mylib.bats
+```
+
+## Publishing
+
+Plugins are distributed via the [arg-sh/libs](https://github.com/arg-sh/libs) repository.
+
+To contribute a plugin:
+
+1. Fork `github.com/arg-sh/libs`
+2. Create your library directory with the structure above
+3. Add tests
+4. Submit a pull request
+
+## Optional: Rust builtins
+
+For performance-critical operations, plugins can include a Rust builtin `.so` that provides native implementations of bash functions. See the [libs repo](https://github.com/arg-sh/libs) for the workspace setup.
+
+The `.so` is loaded automatically when available. The `.sh` file provides the pure-bash fallback.

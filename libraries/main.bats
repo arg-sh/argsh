@@ -895,7 +895,7 @@ YAML
     export PATH_BASE="${_tmp}"
     # Clear import cache so it resolves fresh
     import_cache=()
-    import mylib
+    import mylib  # argsh disable=AG013
     mylib_func
   ) >"${stdout}" 2>"${stderr}" || status=$?
 

@@ -1,0 +1,88 @@
+---
+description: 'Extend argsh with plugin libraries — install, use, and manage.'
+---
+
+# Plugins
+
+argsh supports plugin libraries that extend its functionality beyond the core. Plugins are installed per-project and imported like any other library.
+
+## Quick start
+
+```bash
+# Add a plugin
+argsh lib add jaml
+
+# Use it
+import jaml
+
+local domain
+jaml::get config.yaml domain=.spec.cluster.domain
+```
+
+## How it works
+
+Plugins are distributed as OCI artifacts or GitHub release tarballs. They install to your project's `.argsh/libs/` directory and are resolved via the standard `import` system.
+
+```text
+myproject/
+├── .argsh.yaml          # declares dependencies
+├── .argsh/
+│   └── libs/            # installed plugins (gitignored)
+│       └── jaml/
+│           ├── jaml              # executable argsh script
+│           └── argsh-plugin.yml
+└── script.sh
+```
+
+## Commands
+
+| Command | Description |
+| ------- | ----------- |
+| `argsh lib add <name>` | Install a plugin |
+| `argsh lib add <name>@<version>` | Install a specific version |
+| `argsh lib list` | List installed plugins |
+| `argsh lib remove <name>` | Remove a plugin |
+| `argsh lib install` | Install all from `.argsh.yaml` |
+
+## Project configuration
+
+Declare dependencies in `.argsh.yaml`:
+
+```yaml
+defaults:
+  path_libs: .argsh/libs
+
+registries:
+  # argsh registry (ghcr.io/arg-sh/libs) is built-in
+  myco:
+    endpoint: harbor.mycompany.com/argsh
+
+libs:
+  argsh@jaml: ^0.1.0
+  myco@k8s-utils: ^0.2.0
+```
+
+## Import resolution
+
+When you `import jaml`, argsh looks for it in this order:
+
+1. **Relative to caller** — standard import path
+2. **Plugin libs** — `.argsh/libs/jaml/jaml`
+3. **Bundled core** — `libraries/`
+
+## Available plugins
+
+| Plugin | Description | Status |
+| ------ | ----------- | ------ |
+| [jaml](libs/jaml) | Structured YAML/JSON access | v0.1.0 |
+
+## Core vs plugins
+
+Core libraries (`is::`, `to::`, `string::`, `args`, etc.) ship with argsh and are always available. Plugins are optional — install only what you need.
+
+| | Core libraries | Plugins |
+| --- | --- | --- |
+| Location | `libraries/*.sh` | `.argsh/libs/` |
+| Install | Built-in | `argsh lib add` |
+| Docs | [Library Reference](/libraries/overview) | This section |
+| Source | [arg-sh/argsh](https://github.com/arg-sh/argsh) | [arg-sh/libs](https://github.com/arg-sh/libs) |
