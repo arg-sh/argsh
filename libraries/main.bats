@@ -915,14 +915,10 @@ YAML
 
 # ---------------------------------------------------------------------------
 # E2E plugin tests — require network access (curl to GitHub releases).
-# Skipped in CI when ARGSH_SKIP_E2E=1 or when curl is not available.
 # ---------------------------------------------------------------------------
 
 _skip_e2e() {
-  [[ "${ARGSH_SKIP_E2E:-}" != "1" ]] || skip "ARGSH_SKIP_E2E=1"
   if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
-  command -v curl &>/dev/null || skip "curl not available"
-  command -v yq &>/dev/null || skip "yq not available"
 }
 
 @test "e2e: argsh lib add jaml (from GitHub releases)" {
