@@ -369,8 +369,9 @@ argsh::lib::_curl_fallback() {
     if [[ -n "${GITHUB_TOKEN:-${GH_TOKEN:-}}" ]]; then
       _curl_args+=(-H "Authorization: token ${GITHUB_TOKEN:-${GH_TOKEN}}")
     fi
-    _latest_tag="$(curl "${_curl_args[@]}" "https://api.github.com/repos/arg-sh/libs/releases?per_page=100" \
-      | grep -o "\"tag_name\": *\"${_name}/v[^\"]*\"" | head -1 | sed 's/.*"\('"${_name}"'\/v[^"]*\)".*/\1/')" || _latest_tag=""
+    local _releases
+    _releases="$(curl "${_curl_args[@]}" "https://api.github.com/repos/arg-sh/libs/releases?per_page=100")" || _releases=""
+    _latest_tag="$(echo "${_releases}" | grep -o "\"tag_name\": *\"${_name}/v[^\"]*\"" | head -1 | cut -d'"' -f4)" || _latest_tag=""
     if [[ -z "${_latest_tag}" ]]; then
       echo "argsh: no release found for ${_name}" >&2
       return 1
