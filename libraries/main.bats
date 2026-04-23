@@ -1034,24 +1034,19 @@ YAML
   local _global_jaml="${__ARGSH_GLOBAL_LIBS}/jaml"
   local _backup=""
 
-  # Preserve any pre-existing global install
+  # Preserve any pre-existing global install and ensure restore on failure
   if [[ -d "${_global_jaml}" ]]; then
     _backup="$(mktemp -d)"
     mv "${_global_jaml}" "${_backup}/jaml"
   fi
+  # shellcheck disable=SC2064
+  trap "rm -rf '${_global_jaml}'; [[ -z '${_backup}' ]] || { mv '${_backup}/jaml' '${_global_jaml}' 2>/dev/null; rm -rf '${_backup}'; }" RETURN
 
   argsh::lib add --global jaml >"${stdout}" 2>"${stderr}" || status=$?
 
   assert "${status}" -eq 0
   assert -f "${_global_jaml}/jaml"
   contains "installed" stderr
-
-  # Clean up and restore
-  rm -rf "${_global_jaml}"
-  if [[ -n "${_backup}" ]]; then
-    mv "${_backup}/jaml" "${_global_jaml}"
-    rm -rf "${_backup}"
-  fi
 }
 
 @test "e2e: argsh lib update re-fetches" {
