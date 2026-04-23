@@ -1,0 +1,6 @@
+binaries:
+    b: {}
+    jq:
+        version: jq-1.8.1
+    yq:
+        version: v4.53.2

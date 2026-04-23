@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "tool": {
+    "b": "v4.16.0"
+  },
+  "timestamp": "2026-04-23T14:53:08Z",
+  "binaries": [
+    {
+      "name": "jq",
+      "version": "",
+      "sha256": "5942c9b0934e510ee61eb3e30273f1b3fe2590df93933a93d7c58b81d19c8ff5",
+      "source": "github.com/jqlang/jq",
+      "preset": true
+    },
+    {
+      "name": "yq",
+      "version": "v4.53.2",
+      "sha256": "d56bf5c6819e8e696340c312bd70f849dc1678a7cda9c2ad63eebd906371d56b",
+      "source": "github.com/mikefarah/yq",
+      "preset": true
+    }
+  ]
+}
