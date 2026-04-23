@@ -917,10 +917,7 @@ YAML
 # E2E plugin tests — require network access (curl to GitHub releases).
 # ---------------------------------------------------------------------------
 
-_skip_e2e() { :; }
-
 @test "e2e: argsh lib add jaml (from GitHub releases)" {
-  _skip_e2e
   local _tmp; _tmp="$(mktemp -d)"
 
   PATH_BASE="${_tmp}" argsh::lib add jaml >"${stdout}" 2>"${stderr}" || status=$?
@@ -936,7 +933,6 @@ _skip_e2e() { :; }
 }
 
 @test "e2e: argsh lib add jaml@0.1.1 (pinned version)" {
-  _skip_e2e
   local _tmp; _tmp="$(mktemp -d)"
 
   PATH_BASE="${_tmp}" argsh::lib add jaml@0.1.1 >"${stdout}" 2>"${stderr}" || status=$?
@@ -947,7 +943,6 @@ _skip_e2e() { :; }
 }
 
 @test "e2e: argsh lib add creates .argsh.lock" {
-  _skip_e2e
   local _tmp; _tmp="$(mktemp -d)"
 
   PATH_BASE="${_tmp}" argsh::lib add jaml >"${stdout}" 2>"${stderr}" || status=$?
@@ -961,7 +956,6 @@ _skip_e2e() { :; }
 }
 
 @test "e2e: argsh lib install from .argsh.yaml" {
-  _skip_e2e
   local _tmp; _tmp="$(mktemp -d)"
   cat > "${_tmp}/.argsh.yaml" << 'YAML'
 libs:
@@ -976,7 +970,6 @@ YAML
 }
 
 @test "e2e: argsh lib install from .argsh.lock" {
-  _skip_e2e
   local _tmp; _tmp="$(mktemp -d)"
 
   # First add to create lockfile
@@ -997,7 +990,6 @@ YAML
 }
 
 @test "e2e: import jaml after lib add" {
-  _skip_e2e
   local _tmp; _tmp="$(mktemp -d)"
 
   # Install jaml
@@ -1018,7 +1010,6 @@ YAML
 }
 
 @test "e2e: argsh lib remove + lockfile cleanup" {
-  _skip_e2e
   local _tmp; _tmp="$(mktemp -d)"
 
   # Add then remove
@@ -1039,7 +1030,6 @@ YAML
 }
 
 @test "e2e: argsh lib add --global installs to global dir" {
-  _skip_e2e
 
   local _global_jaml="${__ARGSH_GLOBAL_LIBS}/jaml"
   local _backup=""
@@ -1065,7 +1055,6 @@ YAML
 }
 
 @test "e2e: argsh lib update re-fetches" {
-  _skip_e2e
   local _tmp; _tmp="$(mktemp -d)"
   cat > "${_tmp}/.argsh.yaml" << 'YAML'
 libs:
