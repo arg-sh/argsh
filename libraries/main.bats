@@ -1039,13 +1039,21 @@ YAML
     _backup="$(mktemp -d)"
     mv "${_global_jaml}" "${_backup}/jaml"
   fi
-  # shellcheck disable=SC2064
-  trap "rm -rf '${_global_jaml}'; [[ -z '${_backup}' ]] || { mv '${_backup}/jaml' '${_global_jaml}' 2>/dev/null; rm -rf '${_backup}'; }" RETURN
 
   argsh::lib add --global jaml >"${stdout}" 2>"${stderr}" || status=$?
 
-  assert "${status}" -eq 0
-  assert -f "${_global_jaml}/jaml"
+  # Check result before cleanup
+  local _ok=0
+  [[ "${status:-0}" -eq 0 ]] && [[ -f "${_global_jaml}/jaml" ]] && _ok=1
+
+  # Clean up
+  rm -rf "${_global_jaml}"
+  if [[ -n "${_backup}" ]]; then
+    mv "${_backup}/jaml" "${_global_jaml}" 2>/dev/null || true
+    rm -rf "${_backup}"
+  fi
+
+  assert "${_ok}" -eq 1
   contains "installed" stderr
 }
 
