@@ -109,16 +109,16 @@
       "file": "builtin/src/oci/auth.rs",
       "percent_covered": "0.00",
       "covered_lines": "0",
-      "total_lines": "78",
+      "total_lines": "92",
       "excluded_lines": "0"
     }
   ],
-  "percent_covered": "77.71",
+  "percent_covered": "77.42",
   "covered_lines": 2828,
-  "total_lines": 3639,
+  "total_lines": 3653,
   "excluded_lines": 229,
   "percent_low": 25,
   "percent_high": 75,
   "command": "bats+llvm-cov",
-  "date": "2026-04-23 14:21:47"
+  "date": "2026-04-23 18:06:39"
 }
