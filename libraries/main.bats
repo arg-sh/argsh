@@ -818,7 +818,11 @@ EOF
   _tmp="$(mktemp -d)"
   mkdir -p "${_tmp}/.argsh/libs"
 
-  # Stub curl to simulate download (handles -o flag)
+  # Stub lib::pull to force curl fallback path
+  lib::pull() { return 1; }
+  export -f lib::pull
+
+  # Stub curl to simulate both API call (latest tag) and tarball download
   curl() {
     local _out="" _url=""
     while [[ $# -gt 0 ]]; do
@@ -828,6 +832,11 @@ EOF
         *) _url="${1}"; shift ;;
       esac
     done
+    # GitHub API call for latest release tag
+    if [[ "${_url}" == *"api.github.com"* ]]; then
+      echo '[{"tag_name": "data/v0.1.0"}]'
+      return 0
+    fi
     # Create a fake tarball
     local _td; _td="$(mktemp -d)"
     mkdir -p "${_td}/data"
@@ -901,5 +910,177 @@ YAML
 
   assert "${status}" -eq 0
   contains "from-libs" stdout
+  rm -rf "${_tmp}"
+}
+
+# ---------------------------------------------------------------------------
+# E2E plugin tests — require network access (curl to GitHub releases).
+# Skipped in CI when ARGSH_SKIP_E2E=1 or when curl is not available.
+# ---------------------------------------------------------------------------
+
+_skip_e2e() {
+  [[ "${ARGSH_SKIP_E2E:-}" != "1" ]] || skip "ARGSH_SKIP_E2E=1"
+  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
+  command -v curl &>/dev/null || skip "curl not available"
+  command -v yq &>/dev/null || skip "yq not available"
+}
+
+@test "e2e: argsh lib add jaml (from GitHub releases)" {
+  _skip_e2e
+  local _tmp; _tmp="$(mktemp -d)"
+
+  PATH_BASE="${_tmp}" argsh::lib add jaml >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  assert -f "${_tmp}/.argsh/libs/jaml/jaml"
+  assert -f "${_tmp}/.argsh/libs/jaml/argsh-plugin.yml"
+  contains "installed" stderr
+  # Verify plugin metadata has a valid semver version
+  local _ver; _ver="$(yq -r '.version' "${_tmp}/.argsh/libs/jaml/argsh-plugin.yml")"
+  [[ "${_ver}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+  rm -rf "${_tmp}"
+}
+
+@test "e2e: argsh lib add jaml@0.1.1 (pinned version)" {
+  _skip_e2e
+  local _tmp; _tmp="$(mktemp -d)"
+
+  PATH_BASE="${_tmp}" argsh::lib add jaml@0.1.1 >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  assert -f "${_tmp}/.argsh/libs/jaml/jaml"
+  rm -rf "${_tmp}"
+}
+
+@test "e2e: argsh lib add creates .argsh.lock" {
+  _skip_e2e
+  local _tmp; _tmp="$(mktemp -d)"
+
+  PATH_BASE="${_tmp}" argsh::lib add jaml >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  assert -f "${_tmp}/.argsh.lock"
+  # Lock should contain ref and digest
+  grep -q "ref:" "${_tmp}/.argsh.lock"
+  grep -q "digest:" "${_tmp}/.argsh.lock"
+  rm -rf "${_tmp}"
+}
+
+@test "e2e: argsh lib install from .argsh.yaml" {
+  _skip_e2e
+  local _tmp; _tmp="$(mktemp -d)"
+  cat > "${_tmp}/.argsh.yaml" << 'YAML'
+libs:
+  argsh@jaml: "0.1.1"
+YAML
+
+  PATH_BASE="${_tmp}" argsh::lib install >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  assert -f "${_tmp}/.argsh/libs/jaml/jaml"
+  rm -rf "${_tmp}"
+}
+
+@test "e2e: argsh lib install from .argsh.lock" {
+  _skip_e2e
+  local _tmp; _tmp="$(mktemp -d)"
+
+  # First add to create lockfile
+  PATH_BASE="${_tmp}" argsh::lib add jaml >"${stdout}" 2>"${stderr}" || status=$?
+  assert "${status}" -eq 0
+  assert -f "${_tmp}/.argsh.lock"
+
+  # Remove the installed lib
+  rm -rf "${_tmp}/.argsh/libs/jaml"
+  assert ! -d "${_tmp}/.argsh/libs/jaml"
+
+  # Reinstall from lockfile
+  PATH_BASE="${_tmp}" argsh::lib install >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  assert -f "${_tmp}/.argsh/libs/jaml/jaml"
+  rm -rf "${_tmp}"
+}
+
+@test "e2e: import jaml after lib add" {
+  _skip_e2e
+  local _tmp; _tmp="$(mktemp -d)"
+
+  # Install jaml
+  PATH_BASE="${_tmp}" argsh::lib add jaml >"${stdout}" 2>"${stderr}" || status=$?
+  assert "${status}" -eq 0
+
+  # Import and use it
+  (
+    export PATH_BASE="${_tmp}"
+    import_cache=()
+    import jaml  # argsh disable=AG013
+    # jaml::get should be defined
+    declare -F jaml::get
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  rm -rf "${_tmp}"
+}
+
+@test "e2e: argsh lib remove + lockfile cleanup" {
+  _skip_e2e
+  local _tmp; _tmp="$(mktemp -d)"
+
+  # Add then remove
+  PATH_BASE="${_tmp}" argsh::lib add jaml >"${stdout}" 2>"${stderr}" || status=$?
+  assert "${status}" -eq 0
+  assert -f "${_tmp}/.argsh.lock"
+
+  PATH_BASE="${_tmp}" argsh::lib remove jaml >"${stdout}" 2>"${stderr}" || status=$?
+  assert "${status}" -eq 0
+  assert ! -d "${_tmp}/.argsh/libs/jaml"
+
+  # Lockfile should not have jaml entry anymore
+  if [[ -f "${_tmp}/.argsh.lock" ]]; then
+    local _has; _has="$(yq -r '.libs["argsh@jaml"] // "null"' "${_tmp}/.argsh.lock")"
+    [[ "${_has}" == "null" ]]
+  fi
+  rm -rf "${_tmp}"
+}
+
+@test "e2e: argsh lib add --global installs to global dir" {
+  _skip_e2e
+
+  local _global_jaml="${__ARGSH_GLOBAL_LIBS}/jaml"
+  local _backup=""
+
+  # Preserve any pre-existing global install
+  if [[ -d "${_global_jaml}" ]]; then
+    _backup="$(mktemp -d)"
+    mv "${_global_jaml}" "${_backup}/jaml"
+  fi
+
+  argsh::lib add --global jaml >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  assert -f "${_global_jaml}/jaml"
+  contains "installed" stderr
+
+  # Clean up and restore
+  rm -rf "${_global_jaml}"
+  if [[ -n "${_backup}" ]]; then
+    mv "${_backup}/jaml" "${_global_jaml}"
+    rm -rf "${_backup}"
+  fi
+}
+
+@test "e2e: argsh lib update re-fetches" {
+  _skip_e2e
+  local _tmp; _tmp="$(mktemp -d)"
+  cat > "${_tmp}/.argsh.yaml" << 'YAML'
+libs:
+  argsh@jaml: "0.1.1"
+YAML
+
+  PATH_BASE="${_tmp}" argsh::lib update >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  assert -f "${_tmp}/.argsh/libs/jaml/jaml"
   rm -rf "${_tmp}"
 }
