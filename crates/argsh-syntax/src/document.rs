@@ -1072,6 +1072,30 @@ f() {
         assert!(!func.args_entries.is_empty(), "should find args entries, got none");
         assert_eq!(func.args_entries[0].spec, "tests");
     }
+
+    #[test]
+    fn test_args_after_multiple_empty_array_inits() {
+        // Regression: local -a kind=() event=() args=( was not recognized
+        let src = r#"
+f() {
+  local handler labels
+  local -a kind=() event=() args=(
+    'handler:!' "Handler function"
+    'kind|k:!'  "Resource kind"
+    'event|e'   "Watch event"
+  )
+  :args "Register binding" "${@}"
+}
+"#;
+        let doc = analyze(src);
+        assert_eq!(doc.functions.len(), 1);
+        let func = &doc.functions[0];
+        assert!(func.calls_args, "should detect :args call");
+        assert!(!func.args_entries.is_empty(), "should find args entries, got none");
+        assert_eq!(func.args_entries.len(), 3);
+        assert_eq!(func.args_entries[0].spec, "handler:!");
+        assert_eq!(func.args_entries[1].spec, "kind|k:!");
+    }
 }
 
 #[cfg(test)]
