@@ -96,7 +96,7 @@ pub(crate) fn fetch_token(
     basic_auth: Option<&str>,
     registry: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
-    let mut req = agent
+    let req = agent
         .get(&challenge.realm)
         .set("Accept", "application/json")
         .query("service", &challenge.service)
@@ -111,8 +111,25 @@ pub(crate) fn fetch_token(
             None
         }
     });
+    // Try with credentials first, fall back to anonymous if rejected (403/401).
+    // Expired or invalid Docker credentials should not block public pulls.
     if let Some(cred) = send_creds {
-        req = req.set("Authorization", &format!("Basic {}", cred));
+        let authed_req = req.clone()
+            .set("Authorization", &format!("Basic {}", cred));
+        match authed_req.call() {
+            Ok(res) => {
+                let body: HashMap<String, serde_json::Value> = res.into_json()?;
+                if let Some(tok) = body.get("token").or_else(|| body.get("access_token"))
+                    .and_then(|v| v.as_str())
+                {
+                    return Ok(tok.to_string());
+                }
+            }
+            Err(ureq::Error::Status(401 | 403, _)) => {
+                // Credentials rejected — retry anonymous below
+            }
+            Err(e) => return Err(e.into()),
+        }
     }
 
     let body: HashMap<String, serde_json::Value> = req.call()?.into_json()?;

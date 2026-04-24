@@ -359,9 +359,24 @@ argsh::lib::resolve() {
 argsh::lib::_curl_fallback() {
   local _name="${1}" _tag="${2}" _dest="${3}"
   local _normalized_tag="${_tag#v}"
-  local _url="https://github.com/arg-sh/libs/releases/download/${_name}%2Fv${_normalized_tag}/${_name}.tar.gz"
+  # Release tag format: <name>/v<version>, asset: <name>-<version>.tar.gz
+  local _url="https://github.com/arg-sh/libs/releases/download/${_name}%2Fv${_normalized_tag}/${_name}-${_normalized_tag}.tar.gz"
   if [[ "${_tag}" == "latest" ]]; then
-    _url="https://github.com/arg-sh/libs/releases/latest/download/${_name}.tar.gz"
+    # Per-lib releases: query GitHub API for latest release matching <name>/v*
+    local _latest_tag
+    # Use GITHUB_TOKEN/GH_TOKEN if available (avoids 60/hr anonymous rate limit)
+    local -a _curl_args=(-fsSL)
+    if [[ -n "${GITHUB_TOKEN:-${GH_TOKEN:-}}" ]]; then
+      _curl_args+=(-H "Authorization: token ${GITHUB_TOKEN:-${GH_TOKEN}}")
+    fi
+    _latest_tag="$(curl "${_curl_args[@]}" "https://api.github.com/repos/arg-sh/libs/releases?per_page=100" \
+      | grep -o "\"tag_name\": *\"${_name}/v[^\"]*\"" | head -1 | sed 's/.*"\('"${_name}"'\/v[^"]*\)".*/\1/')" || _latest_tag=""
+    if [[ -z "${_latest_tag}" ]]; then
+      echo "argsh: no release found for ${_name}" >&2
+      return 1
+    fi
+    _normalized_tag="${_latest_tag#*/v}"
+    _url="https://github.com/arg-sh/libs/releases/download/${_name}%2Fv${_normalized_tag}/${_name}-${_normalized_tag}.tar.gz"
   fi
   local _tmpfile; _tmpfile="$(mktemp)"
   if ! curl -fsSL "${_url}" -o "${_tmpfile}"; then
@@ -428,6 +443,10 @@ argsh::lib::_curl_fallback() {
 # @internal
 argsh::lib::_write_lock_entry() {
   local _key="${1}" _ref="${2}" _digest="${3}"
+  if ! command -v yq &>/dev/null; then
+    echo "argsh: warning: yq not found — lockfile not updated" >&2
+    return 0
+  fi
   local _dir="${PATH_BASE:-.}"
   local _lock="${_dir}/.argsh.lock"
 
@@ -445,6 +464,7 @@ argsh::lib::_remove_lock_entry() {
   local _dir="${PATH_BASE:-.}"
   local _lock="${_dir}/.argsh.lock"
   [[ -f "${_lock}" ]] || return 0
+  command -v yq &>/dev/null || return 0
   yq -i "del(.libs.\"${_key}\")" "${_lock}"
 }
 

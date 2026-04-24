@@ -135,13 +135,19 @@ jobs:
           docker run --rm \
             -v "${{ github.workspace }}:/workspace" -w /workspace \
             -e ARGSH_PURE_BASH_TEST=1 \
+            -e GITHUB_TOKEN \
             ${{ env.CI_IMAGE }} test libraries/
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Test (native builtins)
         run: |
           docker run --rm \
             -v "${{ github.workspace }}:/workspace" -w /workspace \
             -e ARGSH_BUILTIN_TEST=1 \
+            -e GITHUB_TOKEN \
             ${{ env.CI_IMAGE }} test libraries/
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # ---------------------------------------------------------------------------
   # Lint — shellcheck + argsh-lint on the argsh libraries.
