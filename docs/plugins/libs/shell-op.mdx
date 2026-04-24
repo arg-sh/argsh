@@ -124,8 +124,31 @@ shell-op::cron "*/5 * * * *" cron::tick
 shell-op::run --startup startup::init "${@}"
 ```
 
+## Docker
+
+Pre-built base image with argsh + shell-op:
+
+```dockerfile
+# Bake hooks into image
+FROM ghcr.io/arg-sh/libs/shell-op:latest
+COPY hooks/ /hooks/
+```
+
+Or mount hooks via ConfigMap for GitOps workflows:
+
+```yaml
+# kustomization.yaml
+configMapGenerator:
+- name: my-operator-hooks
+  files:
+  - hooks/watch-pods.sh
+```
+
+See the [example hook](https://github.com/arg-sh/libs/blob/main/shell-op/example) for a complete working script.
+
 ## Source
 
 - Repository: [github.com/arg-sh/libs](https://github.com/arg-sh/libs)
+- Docker: `ghcr.io/arg-sh/libs/shell-op:latest`
 - Install: `argsh lib add shell-op`
 - Import: `import shell-op`
