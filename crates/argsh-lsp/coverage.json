@@ -37,9 +37,9 @@
     },
     {
       "file": "crates/argsh-lsp/src/format.rs",
-      "percent_covered": "97.30",
-      "covered_lines": "180",
-      "total_lines": "185",
+      "percent_covered": "97.56",
+      "covered_lines": "200",
+      "total_lines": "205",
       "excluded_lines": "0"
     },
     {
@@ -162,12 +162,12 @@
       "excluded_lines": "0"
     }
   ],
-  "percent_covered": "81.27",
-  "covered_lines": 6549,
-  "total_lines": 8058,
+  "percent_covered": "81.32",
+  "covered_lines": 6569,
+  "total_lines": 8078,
   "excluded_lines": 0,
   "percent_low": 25,
   "percent_high": 75,
   "command": "cargo-test+llvm-cov",
-  "date": "2026-04-23 18:28:35"
+  "date": "2026-04-24 12:59:14"
 }
