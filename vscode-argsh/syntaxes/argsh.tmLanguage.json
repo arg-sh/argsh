@@ -84,8 +84,8 @@
           }
         },
         {
-          "comment": "Type modifier :~type",
-          "match": "(:~)(int|float|file|boolean|string|stdin|\\w+)\\b",
+          "comment": "Type modifier :~type (may follow other modifiers like :^~file, :!~int)",
+          "match": "(~)(int|float|file|boolean|string|stdin|\\w+)\\b",
           "captures": {
             "1": { "name": "punctuation.separator.type.argsh" },
             "2": { "name": "storage.type.argsh" }
@@ -96,7 +96,7 @@
           "match": "(:)(!)",
           "captures": {
             "1": { "name": "punctuation.separator.modifier.argsh" },
-            "2": { "name": "keyword.operator.required.argsh" }
+            "2": { "name": "invalid.illegal.required.argsh" }
           }
         },
         {

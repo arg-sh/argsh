@@ -44,10 +44,18 @@ pub fn format_document(content: &str) -> Vec<TextEdit> {
 }
 
 /// Check if a line opens an args=( or usage=( array (multi-line).
+/// Handles cases like `local -a kind=() event=() args=(` where earlier
+/// array inits have closing parens but args=( is still open.
 fn is_array_open(line: &str, name: &str) -> bool {
     let trimmed = line.trim();
     let needle = format!("{}=(", name);
-    trimmed.contains(&needle) && !trimmed.contains(')')
+    if let Some(pos) = trimmed.find(&needle) {
+        // Check there's no closing ')' after the args=( opening
+        let after = &trimmed[pos + needle.len()..];
+        !after.contains(')')
+    } else {
+        false
+    }
 }
 
 /// Format array entries -- align specs and descriptions.
@@ -274,4 +282,25 @@ mod tests {
         // Both entries should still have their content
         assert!(result_lines[3].contains("serve"), "serve entry preserved");
         assert!(result_lines[4].contains("build"), "build entry preserved");
+    }
+
+    #[test]
+    fn test_format_args_after_empty_array_inits() {
+        // local -a kind=() event=() args=( — formatter should recognize args=( as open
+        let input = "#!/usr/bin/env bash\nf() {\n  local -a kind=() event=() args=(\n    'handler:!' \"Handler function\"\n    'kind|k:!'  \"Resource kind\"\n  )\n}\n";
+        let edits = format_document(input);
+        let lines: Vec<&str> = input.lines().collect();
+        let mut result_lines: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
+        for edit in &edits {
+            let line = edit.range.start.line as usize;
+            if line < result_lines.len() {
+                result_lines[line] = edit.new_text.clone();
+            }
+        }
+        assert!(result_lines[3].contains("handler"), "handler entry found");
+        assert!(result_lines[4].contains("kind"), "kind entry found");
+        // Descriptions should be aligned
+        let col3 = result_lines[3].find('"').unwrap();
+        let col4 = result_lines[4].find('"').unwrap();
+        assert_eq!(col3, col4, "descriptions should be aligned at same column");
     }
