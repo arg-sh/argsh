@@ -1,0 +1,131 @@
+---
+description: 'Declarative shell-operator hooks for argsh.'
+---
+
+# shell-op
+
+Plugin library for writing [shell-operator](https://github.com/flant/shell-operator) hooks with clean, typed functions.
+
+Install: `argsh lib add shell-op`
+
+## shell-op::on
+
+Register a Kubernetes watch binding. Flags `-k` and `-e` are repeatable.
+
+```bash
+# Watch pods
+shell-op::on pod::handle -k v1/Pod -e Added -e Modified -e Deleted
+
+# Multiple kinds auto-group
+shell-op::on mesh::handle -k Pod -k Service -e Added
+
+# Full options
+shell-op::on deploy::handle \
+  -k apps/v1/Deployment \
+  -e Added -e Modified \
+  -l "app=web,tier=frontend" \
+  -f '.metadata.name' \
+  -n production \
+  -g my-group \
+  -q slow \
+  -r 1h \
+  --no-sync
+```
+
+| Flag | Description |
+|---|---|
+| `-k, --kind` | Resource kind with optional apiVersion (`v1/Pod`) |
+| `-e, --event` | Watch event: `Added`, `Modified`, `Deleted` |
+| `-l, --labels` | Label selector (`key=val,...`) |
+| `-f, --filter` | jq filter expression |
+| `-n, --namespace` | Namespace to watch |
+| `-g, --group` | Group key for batching |
+| `-q, --queue` | Named queue for parallel execution |
+| `-r, --resync` | Resynchronization period (`1h`, `30m`) |
+| `--no-sync` | Skip Synchronization on startup |
+
+### Handler signature
+
+Handlers are argsh functions — declare `local` for the fields you need:
+
+```bash
+pod::handle() {
+  local event kind name namespace
+  :args "Handle pod events" "${@}"
+
+  case "${event}" in
+    "Synchronization") echo "Sync: ${name}" ;;
+    *) echo "Pod ${namespace}/${name} was ${event}" ;;
+  esac
+}
+```
+
+Fields (in order): `event`, `kind`, `name`, `namespace`, `type`, `binding`, `watchEvent`, `ctx`.
+
+## shell-op::cron
+
+Register a schedule binding.
+
+```bash
+shell-op::cron "*/5 * * * *" cron::tick
+shell-op::cron "0 * * * *" hourly::report --queue slow --allow-failure
+shell-op::cron "*/5 * * * *" snap::check --include-snapshots pod::handle
+```
+
+| Flag | Description |
+|---|---|
+| `-q, --queue` | Named queue for parallel execution |
+| `-i, --include-snapshots` | Include snapshots from a named k8s binding |
+| `--allow-failure` | Ignore hook execution errors |
+
+Cron handlers receive: `event` (`Schedule`), `binding`, `ctx`.
+
+## shell-op::run
+
+Main entry point — handles `--config` and dispatches events.
+
+```bash
+shell-op::run "${@}"
+shell-op::run --startup my::init "${@}"
+shell-op::run --startup my::init --order 10 "${@}"
+```
+
+| Flag | Description |
+|---|---|
+| `-s, --startup` | Startup handler function |
+| `-o, --order` | Startup execution order (default: 1) |
+| `--config` | Print shell-operator JSON config |
+
+## Full example
+
+```bash
+#!/usr/bin/env bash
+source argsh
+import shell-op
+
+pod::handle() {
+  local event name namespace
+  :args "Handle pod events" "${@}"
+  echo "Pod ${namespace}/${name} was ${event}"
+}
+
+cron::tick() {
+  local event
+  :args "Cron tick" "${@}"
+  echo "Tick: ${event}"
+}
+
+startup::init() {
+  echo "Operator started"
+}
+
+shell-op::on pod::handle -k v1/Pod -e Added -e Modified -e Deleted
+shell-op::cron "*/5 * * * *" cron::tick
+shell-op::run --startup startup::init "${@}"
+```
+
+## Source
+
+- Repository: [github.com/arg-sh/libs](https://github.com/arg-sh/libs)
+- Install: `argsh lib add shell-op`
+- Import: `import shell-op`
