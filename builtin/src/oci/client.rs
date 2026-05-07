@@ -59,6 +59,11 @@ impl OciClient {
 
     // -- internal helpers ---------------------------------------------------
 
+    /// Return the host-only portion of the registry (e.g. "ghcr.io").
+    fn registry_host(&self) -> &str {
+        self.registry.split('/').next().unwrap_or(&self.registry)
+    }
+
     /// Build a full URL under `/v2/<namespace>/<name>/...`.
     /// Registry may include a namespace path (e.g. "ghcr.io/arg-sh/libs").
     fn url(&self, path: &str) -> String {
@@ -85,12 +90,11 @@ impl OciClient {
             Ok(_) => Ok(()),
             Err(ref e) => {
                 if let Some(challenge) = AuthChallenge::from_ureq_error(e) {
-                    let host = self.registry.split('/').next().unwrap_or(&self.registry);
                     let tok = auth::fetch_token(
                         &self.agent,
                         &challenge,
                         self.basic_auth.as_deref(),
-                        host,
+                        self.registry_host(),
                     )?;
                     self.token = Some(tok);
                     Ok(())
@@ -129,12 +133,11 @@ impl OciClient {
             Ok(res) => return Ok(res),
             Err(ref e) => {
                 if let Some(challenge) = AuthChallenge::from_ureq_error(e) {
-                    let host = self.registry.split('/').next().unwrap_or(&self.registry);
                     let tok = auth::fetch_token(
                         &self.agent,
                         &challenge,
                         self.basic_auth.as_deref(),
-                        host,
+                        self.registry_host(),
                     )?;
                     self.token = Some(tok);
                 } else {
@@ -251,12 +254,11 @@ impl OciClient {
                         challenge.scope = format!("{prefix}:push,{actions}");
                     }
                 }
-                let host = self.registry.split('/').next().unwrap_or(&self.registry);
                 let tok = auth::fetch_token(
                     &self.agent,
                     &challenge,
                     self.basic_auth.as_deref(),
-                    host,
+                    self.registry_host(),
                 )?;
                 self.token = Some(tok.clone());
                 no_redir.post(&upload_url)
@@ -264,6 +266,11 @@ impl OciClient {
                     .set("Content-Length", "0")
                     .call()
                     .map_err(|e| -> BoxErr { format!("push_blob: POST retry failed: {e}").into() })?
+            },
+            Err(ureq::Error::Status(code, r)) if (300..400).contains(&code) => {
+                // Follow 3xx redirect — some registries redirect uploads to
+                // a different storage backend.
+                r
             },
             Err(ureq::Error::Status(code, _)) => {
                 return Err(format!("push_blob: POST upload failed with status {code}").into());
@@ -279,8 +286,7 @@ impl OciClient {
         let put_url = if location.starts_with("http") {
             location
         } else {
-            let host = self.registry.split('/').next().unwrap_or(&self.registry);
-            format!("https://{}{}", host, location)
+            format!("https://{}{}", self.registry_host(), location)
         };
 
         // Append digest query parameter.
