@@ -990,7 +990,7 @@ argsh::lib::publish() {
   fi
 
   # Validate version format (semver: x.y.z with optional pre-release suffix)
-  if [[ ! "${_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
+  if [[ ! "${_version}" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[a-zA-Z0-9.]+)?$ ]]; then
     echo "argsh lib publish: version '${_version}' is not valid semver (expected x.y.z)" >&2
     return 1
   fi
