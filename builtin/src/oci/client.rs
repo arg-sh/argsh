@@ -26,6 +26,28 @@ pub struct Manifest {
     pub layers: Vec<Descriptor>,
 }
 
+/// Default connect timeout in seconds (overridable via ARGSH_OCI_CONNECT_TIMEOUT).
+const DEFAULT_CONNECT_TIMEOUT: u64 = 10;
+/// Default read/write timeout in seconds (overridable via ARGSH_OCI_IO_TIMEOUT).
+const DEFAULT_IO_TIMEOUT: u64 = 30;
+
+fn oci_timeout(env_var: &str, default: u64) -> std::time::Duration {
+    std::time::Duration::from_secs(
+        std::env::var(env_var).ok().and_then(|v| v.parse().ok()).unwrap_or(default),
+    )
+}
+
+fn build_agent(follow_redirects: bool) -> ureq::Agent {
+    let mut builder = ureq::AgentBuilder::new()
+        .timeout_connect(oci_timeout("ARGSH_OCI_CONNECT_TIMEOUT", DEFAULT_CONNECT_TIMEOUT))
+        .timeout_read(oci_timeout("ARGSH_OCI_IO_TIMEOUT", DEFAULT_IO_TIMEOUT))
+        .timeout_write(oci_timeout("ARGSH_OCI_IO_TIMEOUT", DEFAULT_IO_TIMEOUT));
+    if !follow_redirects {
+        builder = builder.redirects(0);
+    }
+    builder.build()
+}
+
 /// Sync OCI distribution client (pull + push).
 pub struct OciClient {
     agent: ureq::Agent,
@@ -47,8 +69,9 @@ impl OciClient {
         // Use host-only for Docker auth lookup (e.g. "ghcr.io" not "ghcr.io/arg-sh/libs")
         let host = registry.split('/').next().unwrap_or(registry);
         let basic_auth = auth::docker_basic_auth(host);
+        let agent = build_agent(true);
         Ok(Self {
-            agent: ureq::Agent::new(),
+            agent,
             registry: registry.to_string(),
             name: name.to_string(),
             reference: reference.to_string(),
@@ -85,7 +108,7 @@ impl OciClient {
         }
         // Use a no-redirect agent for the auth probe — GHCR redirects with
         // URL-encoded paths (%2F) that cause 404s when followed.
-        let no_redir = ureq::AgentBuilder::new().redirects(0).build();
+        let no_redir = build_agent(false);
         match no_redir.get(url).call() {
             Ok(_) => Ok(()),
             Err(ref e) => {
@@ -225,7 +248,7 @@ impl OciClient {
 
         // Initiate upload. Use a no-redirect agent because GHCR redirects
         // with URL-encoded paths (%2F) that break on the final request.
-        let no_redir = ureq::AgentBuilder::new().redirects(0).build();
+        let no_redir = build_agent(false);
         let upload_url = self.url("blobs/uploads/");
 
         // POST to initiate upload. Handle 401 challenge inline since GHCR
