@@ -244,7 +244,7 @@ impl OciClient {
                 // Extract push-scoped challenge from 401 and retry
                 let www_auth = r.header("www-authenticate").map(|s| s.to_string());
                 let challenge = www_auth.as_deref()
-                    .and_then(|h| AuthChallenge::from_header(h))
+                    .and_then(AuthChallenge::from_header)
                     .ok_or("push_blob: 401 but no www-authenticate challenge")?;
                 // GHCR may return pull-only scope even for POST — add push
                 // only when the server-provided scope does not already include it.
