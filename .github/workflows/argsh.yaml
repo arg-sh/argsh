@@ -525,6 +525,45 @@ jobs:
           name: vsix-${{ matrix.platform }}
           path: argsh-${{ matrix.platform }}.vsix
 
+  # ---------------------------------------------------------------------------
+  # Regenerate — auto-commit coverage + minified files on main.
+  # Keeps generated files in sync without requiring feature branches to
+  # commit them (which causes merge conflicts).
+  # ---------------------------------------------------------------------------
+  regenerate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    needs: [test, lint, coverage, minify]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Direnv
+        uses: HatsuneMiku3939/direnv-action@v1
+      - name: Regenerate coverage + minified
+        run: |
+          argsh coverage builtin
+          argsh coverage minifier
+          argsh coverage shdoc
+          argsh coverage lsp
+          argsh minify libraries -t argsh.min.tmpl -o argsh.min.sh
+        env:
+          GIT_COMMIT_SHA: ${{ github.sha }}
+          GIT_VERSION: ${{ github.ref_name }}
+      - name: Commit if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add argsh.min.sh builtin/coverage.json minifier/coverage.json \
+                  shdoc/coverage.json crates/argsh-lsp/coverage.json
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: regenerate coverage + minified files [skip ci]"
+            git push
+          fi
+
   release:
     runs-on: ubuntu-latest
     permissions:
