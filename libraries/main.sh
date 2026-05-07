@@ -290,12 +290,6 @@ argsh::builtins() { argsh::builtin "${@}"; }
 # @description Default OCI registry for argsh official libs.
 declare -g __ARGSH_LIB_REGISTRY="${ARGSH_LIB_REGISTRY:-ghcr.io/arg-sh/libs}"
 
-# @description Read a simple scalar value from a YAML file by dot-path.
-# Supports top-level and one level of nesting (e.g. "defaults.path_libs").
-# @arg $1 string Dot-separated key path
-# @arg $2 string File path
-# @stdout The value (empty string if not found)
-# @internal
 # @description Strip quotes, inline comments, and trailing whitespace from a YAML value.
 # @internal
 argsh::lib::_yaml_clean() {
@@ -310,6 +304,12 @@ argsh::lib::_yaml_clean() {
   echo "${_v}"
 }
 
+# @description Read a simple scalar value from a YAML file by dot-path.
+# Supports top-level and one level of nesting (e.g. "defaults.path_libs").
+# @arg $1 string Dot-separated key path
+# @arg $2 string File path
+# @stdout The value (empty string if not found)
+# @internal
 argsh::lib::_yaml_get() {
   local _path="${1}" _file="${2}"
   [[ -f "${_file}" ]] || return 0

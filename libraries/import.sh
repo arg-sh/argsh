@@ -146,15 +146,20 @@ import::_libs_dir() {
   fi
   local _base="${PATH_BASE:-.}"
   if [[ -f "${_base}/.argsh.yaml" ]]; then
-    local _custom="" _line
+    local _custom="" _line _in_defaults=0
     while IFS= read -r _line || [[ -n "${_line}" ]]; do
-      [[ "${_line}" =~ ^[[:space:]]+path_libs:[[:space:]]+(.*) ]] || continue
-      _custom="${BASH_REMATCH[1]}"
-      _custom="${_custom%\"}" ; _custom="${_custom#\"}"
-      _custom="${_custom%\'}" ; _custom="${_custom#\'}"
-      _custom="${_custom%%[[:space:]]\#*}"
-      _custom="${_custom%"${_custom##*[![:space:]]}"}"
-      break
+      [[ -n "${_line}" && "${_line}" != \#* ]] || continue
+      if [[ "${_line}" =~ ^defaults:[[:space:]]*$ ]]; then _in_defaults=1; continue; fi
+      if (( _in_defaults )); then
+        [[ "${_line}" =~ ^[[:space:]] ]] || break
+        [[ "${_line}" =~ ^[[:space:]]+path_libs:[[:space:]]+(.*) ]] || continue
+        _custom="${BASH_REMATCH[1]}"
+        _custom="${_custom%\"}" ; _custom="${_custom#\"}"
+        _custom="${_custom%\'}" ; _custom="${_custom#\'}"
+        _custom="${_custom%%[[:space:]]\#*}"
+        _custom="${_custom%"${_custom##*[![:space:]]}"}"
+        break
+      fi
     done < "${_base}/.argsh.yaml"
     if [[ -n "${_custom}" ]]; then
       if [[ "${_custom:0:1}" == "/" ]]; then
