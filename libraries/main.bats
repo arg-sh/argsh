@@ -809,12 +809,12 @@ EOF
 # ── argsh lib::* (top-level) ───────────────────────────
 
 @test "argsh::main dispatches top-level lib commands" {
-  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
-  local _tmp
+  local _tmp=""
   _tmp="$(mktemp -d)"
   trap 'rm -rf "${_tmp}"' RETURN
 
   PATH_BASE="${_tmp}" argsh::main list >"${stdout}" 2>"${stderr}" || status=$?
+  rm -rf "${_tmp}"
 
   assert "${status}" -eq 0
   contains "No libraries installed" stdout
