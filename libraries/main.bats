@@ -946,7 +946,7 @@ YAML
   assert -f "${_tmp}/.argsh/libs/jaml/argsh-plugin.yml"
   contains "installed" stderr
   # Verify plugin metadata has a valid semver version
-  local _ver; _ver="$(yq -r '.version' "${_tmp}/.argsh/libs/jaml/argsh-plugin.yml")"
+  local _ver; _ver="$(grep '^version:' "${_tmp}/.argsh/libs/jaml/argsh-plugin.yml" | sed "s/^version:[[:space:]]*//; s/[\"']//g; s/\r$//")"
   [[ "${_ver}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
   rm -rf "${_tmp}"
 }
@@ -1042,8 +1042,7 @@ YAML
 
   # Lockfile should not have jaml entry anymore
   if [[ -f "${_tmp}/.argsh.lock" ]]; then
-    local _has; _has="$(yq -r '.libs["argsh@jaml"] // "null"' "${_tmp}/.argsh.lock")"
-    assert "${_has}" == "null"
+    ! grep -q 'argsh@jaml' "${_tmp}/.argsh.lock"
   fi
   rm -rf "${_tmp}"
 }
