@@ -946,7 +946,7 @@ YAML
   assert -f "${_tmp}/.argsh/libs/jaml/argsh-plugin.yml"
   contains "installed" stderr
   # Verify plugin metadata has a valid semver version
-  local _ver; _ver="$(grep '^version:' "${_tmp}/.argsh/libs/jaml/argsh-plugin.yml" | sed 's/^version:[[:space:]]*//')"
+  local _ver; _ver="$(grep '^version:' "${_tmp}/.argsh/libs/jaml/argsh-plugin.yml" | sed "s/^version:[[:space:]]*//; s/[\"']//g; s/\r$//")"
   [[ "${_ver}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
   rm -rf "${_tmp}"
 }

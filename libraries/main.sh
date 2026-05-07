@@ -294,6 +294,8 @@ declare -g __ARGSH_LIB_REGISTRY="${ARGSH_LIB_REGISTRY:-ghcr.io/arg-sh/libs}"
 # @internal
 argsh::lib::_yaml_clean() {
   local _v="${1}"
+  # Trim leading whitespace
+  _v="${_v#"${_v%%[![:space:]]*}"}"
   # Strip quotes
   _v="${_v%\"}" ; _v="${_v#\"}"
   _v="${_v%\'}" ; _v="${_v#\'}"
@@ -843,9 +845,13 @@ argsh::lib::install() {
   if [[ -f "${_dir}/.argsh.lock" ]]; then
     local _lib _oci_ref _failed=0
     # Read lockfile: parse "key" entries under libs, then read their ref sub-field
-    local _entry_key=""
+    local _entry_key="" _in_libs=0
     while IFS= read -r _line || [[ -n "${_line}" ]]; do
       [[ -n "${_line}" && "${_line}" != \#* ]] || continue
+      # Track libs: section
+      if [[ "${_line}" =~ ^libs:[[:space:]]*$ ]]; then _in_libs=1; continue; fi
+      if (( _in_libs )) && [[ "${_line}" =~ ^[^[:space:]] ]]; then break; fi
+      (( _in_libs )) || continue
       # Entry header (2-space indent)
       if [[ "${_line}" =~ ^[[:space:]][[:space:]]([^[:space:]:\"]+|\"[^\"]+\"):$ ]]; then
         _entry_key="${BASH_REMATCH[1]}"
