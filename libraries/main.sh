@@ -627,8 +627,6 @@ argsh::lib::_remove_lock_entry() {
   if (( _matched )); then mv "${_tmp}" "${_lock}"; else rm -f "${_tmp}"; fi
 }
 
-# @description Add a plugin library to the project.
-# @arg $1 string Lib reference (e.g. argsh@data, data, data@0.1.0)
 # @description Auto-install dependencies from a lib's argsh-plugin.yml.
 # Reads the `depends` list and adds any that aren't already installed.
 # @arg $1 string Path to the installed lib directory
@@ -659,8 +657,13 @@ argsh::lib::_install_deps() {
         _dep="${_dep%%[[:space:]]\#*}"
         _dep="${_dep%"${_dep##*[![:space:]]}"}"
         [[ -n "${_dep}" ]] || continue
-        # Extract dep name (without version) to check if installed
-        local _dep_name="${_dep%%@*}"
+        # Extract dep name (without provider/version) to check if installed
+        local _dep_name="${_dep}"
+        # Strip version: name@version or provider@name@version
+        _dep_name="${_dep_name%@[0-9v]*}"
+        _dep_name="${_dep_name%@latest}"
+        # Strip provider prefix: provider@name -> name
+        [[ "${_dep_name}" != *@* ]] || _dep_name="${_dep_name#*@}"
         if [[ -d "${_lib_dir}/${_dep_name}" ]]; then
           continue
         fi
