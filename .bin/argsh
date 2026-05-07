@@ -910,19 +910,22 @@ _ci() {
   _lint -m
   _coverage
 
+  local -a _gen_files=(
+    argsh.min.sh
+    builtin/coverage.json
+    minifier/coverage.json
+    shdoc/coverage.json
+    crates/argsh-lsp/coverage.json
+  )
+
   if (( commit )); then
-    git -C "${PATH_BASE}" add -A
+    git -C "${PATH_BASE}" add "${_gen_files[@]}"
     git -C "${PATH_BASE}" diff --cached --quiet || \
       git -C "${PATH_BASE}" commit -m "${message}" --no-gpg-sign
   else
     # Verify generated files are in sync — fail if out of date
     local _changed
-    _changed="$(git -C "${PATH_BASE}" diff --name-only -- \
-      argsh.min.sh \
-      builtin/coverage.json \
-      minifier/coverage.json \
-      shdoc/coverage.json \
-      crates/argsh-lsp/coverage.json)"
+    _changed="$(git -C "${PATH_BASE}" diff --name-only -- "${_gen_files[@]}")"
     if [[ -n "${_changed}" ]]; then
       echo "" >&2
       echo "Generated files are out of date:" >&2
