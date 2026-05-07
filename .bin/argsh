@@ -879,15 +879,22 @@ _coverage() {
 ### ci (minify + lint + coverage + commit)
 ###
 _ci() {
+  local commit=0
   local message="regenerate files"
   local -a args=(
-    'message|m' "Commit message"
+    'commit|c:+' "Commit regenerated files (default: verify only)"
+    'message|m'  "Commit message (requires --commit)"
   )
-  :args "Minify, lint, coverage, then commit regenerated files" "${@}"
+  :args "Minify, lint, coverage, then verify (or commit) regenerated files" "${@}"
 
-  if [[ -n "$(git -C "${PATH_BASE}" status --porcelain)" ]]; then
+  # Check for uncommitted changes, excluding auto-generated files
+  local _dirty
+  _dirty="$(git -C "${PATH_BASE}" status --porcelain \
+    -- . ':!argsh.min.sh' ':!builtin/coverage.json' ':!minifier/coverage.json' \
+          ':!shdoc/coverage.json' ':!crates/argsh-lsp/coverage.json')"
+  if [[ -n "${_dirty}" ]]; then
     echo "Warning: repository has uncommitted changes." >&2
-    git -C "${PATH_BASE}" status --short >&2
+    echo "${_dirty}" >&2
     echo >&2
     if [[ -t 0 ]]; then
       read -rp "Continue anyway? [y/N] " answer
@@ -903,8 +910,34 @@ _ci() {
   _lint -m
   _coverage
 
-  git -C "${PATH_BASE}" add -A
-  git -C "${PATH_BASE}" commit -m "${message}" --no-gpg-sign
+  local -a _gen_files=(
+    argsh.min.sh
+    builtin/coverage.json
+    minifier/coverage.json
+    shdoc/coverage.json
+    crates/argsh-lsp/coverage.json
+  )
+
+  if (( commit )); then
+    git -C "${PATH_BASE}" add "${_gen_files[@]}"
+    git -C "${PATH_BASE}" diff --cached --quiet || \
+      git -C "${PATH_BASE}" commit -m "${message}" --no-gpg-sign
+  else
+    # Verify generated files are in sync — fail if out of date
+    # Ignore date fields in coverage.json (changes every run)
+    local _changed
+    _changed="$(git -C "${PATH_BASE}" diff \
+      --ignore-matching-lines='^  "date":' \
+      --name-only -- "${_gen_files[@]}")"
+    if [[ -n "${_changed}" ]]; then
+      echo "" >&2
+      echo "Generated files are out of date:" >&2
+      echo "${_changed}" | sed 's/^/  /' >&2
+      echo "" >&2
+      echo "Run 'argsh ci --commit' to regenerate and commit, or commit them manually." >&2
+      return 1
+    fi
+  fi
 }
 
 ###
@@ -1027,7 +1060,7 @@ _main() {
   local -a usage
   usage=(
     -                           "Commands"
-    'ci|all:-_ci'               "Minify, lint, coverage, commit regenerated files"
+    'ci|all:-_ci'               "Minify, lint, coverage, verify regenerated files"
     'build:-_build'             "Build release binaries [all|builtin|minifier]"
     'lint:-_lint'               "Run linters [all|argsh|builtin|minifier]"
     'test:-_test'               "Run tests [all|argsh|builtin|minifier]"
