@@ -927,7 +927,7 @@ _ci() {
     # Ignore date fields in coverage.json (changes every run)
     local _changed
     _changed="$(git -C "${PATH_BASE}" diff \
-      --ignore-matching-lines='"date":' \
+      --ignore-matching-lines='^  "date":' \
       --name-only -- "${_gen_files[@]}")"
     if [[ -n "${_changed}" ]]; then
       echo "" >&2
