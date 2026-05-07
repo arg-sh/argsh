@@ -114,6 +114,12 @@ declare -gi ARGSH_BUILTIN="${ARGSH_BUILTIN:-0}"
   contains "test" stdout
   contains "coverage" stdout
   contains "docs" stdout
+  contains "add" stdout
+  contains "remove" stdout
+  contains "list" stdout
+  contains "install" stdout
+  contains "update" stdout
+  contains "publish" stdout
   contains "builtin" stdout
   contains "status" stdout
 }
@@ -800,21 +806,32 @@ EOF
   contains "argsh builtin" stdout
 }
 
-# ── argsh lib ───────────────────────────────────────────
+# ── argsh lib::* (top-level) ───────────────────────────
 
-@test "argsh::lib: list shows empty when no libs installed" {
+@test "argsh::main dispatches top-level lib commands" {
+  local _tmp
+  _tmp="$(mktemp -d)"
+
+  PATH_BASE="${_tmp}" argsh::main list >"${stdout}" 2>"${stderr}" || status=$?
+  rm -rf "${_tmp}"
+
+  assert "${status}" -eq 0
+  contains "No libraries installed" stdout
+}
+
+@test "argsh::lib::list: shows empty when no libs installed" {
   if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
   local _tmp
   _tmp="$(mktemp -d)"
 
-  PATH_BASE="${_tmp}" argsh::lib list >"${stdout}" 2>"${stderr}" || status=$?
+  PATH_BASE="${_tmp}" argsh::lib::list >"${stdout}" 2>"${stderr}" || status=$?
 
   assert "${status}" -eq 0
   contains "No libraries installed" stdout
   rm -rf "${_tmp}"
 }
 
-@test "argsh::lib: add installs to .argsh/libs/" {
+@test "argsh::lib::add installs to .argsh/libs/" {
   if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
   local _tmp
   _tmp="$(mktemp -d)"
@@ -854,7 +871,7 @@ EOF
   }
   export -f curl
 
-  PATH_BASE="${_tmp}" argsh::lib add data >"${stdout}" 2>"${stderr}" || status=$?
+  PATH_BASE="${_tmp}" argsh::lib::add data >"${stdout}" 2>"${stderr}" || status=$?
 
   assert "${status}" -eq 0
   assert -f "${_tmp}/.argsh/libs/data/data.sh"
@@ -862,14 +879,14 @@ EOF
   rm -rf "${_tmp}"
 }
 
-@test "argsh::lib: remove deletes lib directory" {
+@test "argsh::lib::remove deletes lib directory" {
   if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
   local _tmp
   _tmp="$(mktemp -d)"
   mkdir -p "${_tmp}/.argsh/libs/data"
   echo "placeholder" > "${_tmp}/.argsh/libs/data/data.sh"
 
-  PATH_BASE="${_tmp}" argsh::lib remove data >"${stdout}" 2>"${stderr}" || status=$?
+  PATH_BASE="${_tmp}" argsh::lib::remove data >"${stdout}" 2>"${stderr}" || status=$?
 
   assert "${status}" -eq 0
   assert ! -d "${_tmp}/.argsh/libs/data"
@@ -877,7 +894,7 @@ EOF
   rm -rf "${_tmp}"
 }
 
-@test "argsh::lib: list shows installed libs" {
+@test "argsh::lib::list shows installed libs" {
   if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
   local _tmp
   _tmp="$(mktemp -d)"
@@ -887,7 +904,7 @@ name: data
 version: 0.1.0
 YAML
 
-  PATH_BASE="${_tmp}" argsh::lib list >"${stdout}" 2>"${stderr}" || status=$?
+  PATH_BASE="${_tmp}" argsh::lib::list >"${stdout}" 2>"${stderr}" || status=$?
 
   assert "${status}" -eq 0
   contains "data" stdout
@@ -922,7 +939,7 @@ YAML
 @test "e2e: argsh lib add jaml (from GitHub releases)" {
   local _tmp; _tmp="$(mktemp -d)"
 
-  PATH_BASE="${_tmp}" argsh::lib add jaml >"${stdout}" 2>"${stderr}" || status=$?
+  PATH_BASE="${_tmp}" argsh::lib::add jaml >"${stdout}" 2>"${stderr}" || status=$?
 
   assert "${status}" -eq 0
   assert -f "${_tmp}/.argsh/libs/jaml/jaml"
@@ -937,7 +954,7 @@ YAML
 @test "e2e: argsh lib add jaml@0.1.1 (pinned version)" {
   local _tmp; _tmp="$(mktemp -d)"
 
-  PATH_BASE="${_tmp}" argsh::lib add jaml@0.1.1 >"${stdout}" 2>"${stderr}" || status=$?
+  PATH_BASE="${_tmp}" argsh::lib::add jaml@0.1.1 >"${stdout}" 2>"${stderr}" || status=$?
 
   assert "${status}" -eq 0
   assert -f "${_tmp}/.argsh/libs/jaml/jaml"
@@ -947,7 +964,7 @@ YAML
 @test "e2e: argsh lib add creates .argsh.lock" {
   local _tmp; _tmp="$(mktemp -d)"
 
-  PATH_BASE="${_tmp}" argsh::lib add jaml >"${stdout}" 2>"${stderr}" || status=$?
+  PATH_BASE="${_tmp}" argsh::lib::add jaml >"${stdout}" 2>"${stderr}" || status=$?
 
   assert "${status}" -eq 0
   assert -f "${_tmp}/.argsh.lock"
@@ -964,7 +981,7 @@ libs:
   argsh@jaml: "0.1.1"
 YAML
 
-  PATH_BASE="${_tmp}" argsh::lib install >"${stdout}" 2>"${stderr}" || status=$?
+  PATH_BASE="${_tmp}" argsh::lib::install >"${stdout}" 2>"${stderr}" || status=$?
 
   assert "${status}" -eq 0
   assert -f "${_tmp}/.argsh/libs/jaml/jaml"
@@ -975,7 +992,7 @@ YAML
   local _tmp; _tmp="$(mktemp -d)"
 
   # First add to create lockfile
-  PATH_BASE="${_tmp}" argsh::lib add jaml >"${stdout}" 2>"${stderr}" || status=$?
+  PATH_BASE="${_tmp}" argsh::lib::add jaml >"${stdout}" 2>"${stderr}" || status=$?
   assert "${status}" -eq 0
   assert -f "${_tmp}/.argsh.lock"
 
@@ -984,7 +1001,7 @@ YAML
   assert ! -d "${_tmp}/.argsh/libs/jaml"
 
   # Reinstall from lockfile
-  PATH_BASE="${_tmp}" argsh::lib install >"${stdout}" 2>"${stderr}" || status=$?
+  PATH_BASE="${_tmp}" argsh::lib::install >"${stdout}" 2>"${stderr}" || status=$?
 
   assert "${status}" -eq 0
   assert -f "${_tmp}/.argsh/libs/jaml/jaml"
@@ -995,7 +1012,7 @@ YAML
   local _tmp; _tmp="$(mktemp -d)"
 
   # Install jaml
-  PATH_BASE="${_tmp}" argsh::lib add jaml >"${stdout}" 2>"${stderr}" || status=$?
+  PATH_BASE="${_tmp}" argsh::lib::add jaml >"${stdout}" 2>"${stderr}" || status=$?
   assert "${status}" -eq 0
 
   # Import and use it
@@ -1015,11 +1032,11 @@ YAML
   local _tmp; _tmp="$(mktemp -d)"
 
   # Add then remove
-  PATH_BASE="${_tmp}" argsh::lib add jaml >"${stdout}" 2>"${stderr}" || status=$?
+  PATH_BASE="${_tmp}" argsh::lib::add jaml >"${stdout}" 2>"${stderr}" || status=$?
   assert "${status}" -eq 0
   assert -f "${_tmp}/.argsh.lock"
 
-  PATH_BASE="${_tmp}" argsh::lib remove jaml >"${stdout}" 2>"${stderr}" || status=$?
+  PATH_BASE="${_tmp}" argsh::lib::remove jaml >"${stdout}" 2>"${stderr}" || status=$?
   assert "${status}" -eq 0
   assert ! -d "${_tmp}/.argsh/libs/jaml"
 
@@ -1042,7 +1059,7 @@ YAML
     mv "${_global_jaml}" "${_backup}/jaml"
   fi
 
-  argsh::lib add --global jaml >"${stdout}" 2>"${stderr}" || status=$?
+  argsh::lib::add --global jaml >"${stdout}" 2>"${stderr}" || status=$?
 
   # Check result before cleanup
   local _ok=0
@@ -1066,7 +1083,7 @@ libs:
   argsh@jaml: "0.1.1"
 YAML
 
-  PATH_BASE="${_tmp}" argsh::lib update >"${stdout}" 2>"${stderr}" || status=$?
+  PATH_BASE="${_tmp}" argsh::lib::update >"${stdout}" 2>"${stderr}" || status=$?
 
   assert "${status}" -eq 0
   assert -f "${_tmp}/.argsh/libs/jaml/jaml"

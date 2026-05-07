@@ -792,29 +792,6 @@ argsh::lib::publish() {
   echo "  digest: ${__LIB_PUSH_DIGEST:-unknown}" >&2
 }
 
-# @description Manage plugin libraries.
-# @arg $1 string Subcommand: add, list, remove, install, update, publish
-argsh::lib() {
-  case "${1:-}" in
-    add)     shift; argsh::lib::add "${@}" ;;
-    list|ls) shift; argsh::lib::list "${@}" ;;
-    remove)  shift; argsh::lib::remove "${@}" ;;
-    install) shift; argsh::lib::install ;;
-    update)  shift; argsh::lib::update ;;
-    publish) shift; argsh::lib::publish "${@}" ;;
-    "")
-      argsh::lib::list
-      echo ""
-      echo "Usage: argsh lib [add|list|remove|install|update|publish] [--global]"
-      ;;
-    *)
-      echo "argsh: unknown lib subcommand: ${1}" >&2
-      echo "Usage: argsh lib [add|list|remove|install|update|publish] [--global]" >&2
-      return 1
-      ;;
-  esac
-}
-
 # @description Discover search directories for scripts and tests.
 # Uses PATH_TESTS (semicolon-separated), then common locations under PATH_BASE.
 # @set _search_dirs array Directories to search (deduplicated)
@@ -1320,9 +1297,15 @@ argsh::main() {
     'test:-argsh::test'          "Run tests"
     'coverage:-argsh::coverage'  "Generate coverage report for your Bash scripts"
     'docs:-argsh::docs'          "Generate documentation"
+    '-'                          "Libraries"
+    'add:-argsh::lib::add'       "Add a library"
+    'remove:-argsh::lib::remove' "Remove a library"
+    'list:-argsh::lib::list'     "List installed libraries"
+    'install:-argsh::lib::install' "Install libraries from lockfile"
+    'update:-argsh::lib::update' "Update installed libraries"
+    'publish:-argsh::lib::publish' "Publish a library to a registry"
     '-'                          "Runtime"
     'builtin:-argsh::builtin'    "Manage native builtins (.so)"
-    'lib:-argsh::lib'            "Manage plugin libraries"
     'status:-argsh::_status_cmd' "Show argsh runtime status"
   )
   :usage "Enhance your Bash scripting by promoting structure and maintainability,
