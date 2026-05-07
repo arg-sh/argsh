@@ -296,11 +296,13 @@ argsh::lib::_yaml_clean() {
   local _v="${1}"
   # Trim leading whitespace
   _v="${_v#"${_v%%[![:space:]]*}"}"
+  # Strip inline comments only for unquoted values (before removing quotes)
+  if [[ "${_v}" != \"* && "${_v}" != \'* ]]; then
+    _v="${_v%%[[:space:]]\#*}"
+  fi
   # Strip quotes
   _v="${_v%\"}" ; _v="${_v#\"}"
   _v="${_v%\'}" ; _v="${_v#\'}"
-  # Strip inline comments (unquoted # preceded by whitespace)
-  _v="${_v%%[[:space:]]\#*}"
   # Trim trailing whitespace
   _v="${_v%"${_v##*[![:space:]]}"}"
   echo "${_v}"
@@ -744,9 +746,24 @@ argsh::lib::add() {
         fi
       done < "${_dir}/.argsh.yaml" > "${_tmp_yaml}"
       mv "${_tmp_yaml}" "${_dir}/.argsh.yaml"
+    elif grep -q '^libs:' "${_dir}/.argsh.yaml" 2>/dev/null; then
+      # Insert within existing libs section
+      local _tmp_yaml; _tmp_yaml="$(mktemp "${_dir}/.argsh.yaml.XXXXXX")"
+      local _in_libs=0 _inserted=0
+      while IFS= read -r _yline || [[ -n "${_yline}" ]]; do
+        printf '%s\n' "${_yline}"
+        if [[ "${_yline}" =~ ^libs:[[:space:]]*$ ]]; then _in_libs=1; fi
+        if (( _in_libs && ! _inserted )); then
+          if [[ "${_yline}" =~ ^libs: ]] || [[ "${_yline}" =~ ^[[:space:]] ]]; then :; else
+            printf '  %s: "%s"\n' "${_entry}" "${_version:-latest}"
+            _inserted=1
+          fi
+        fi
+      done < "${_dir}/.argsh.yaml" > "${_tmp_yaml}"
+      (( _inserted )) || printf '  %s: "%s"\n' "${_entry}" "${_version:-latest}" >> "${_tmp_yaml}"
+      mv "${_tmp_yaml}" "${_dir}/.argsh.yaml"
     else
-      grep -q '^libs:' "${_dir}/.argsh.yaml" 2>/dev/null || echo "libs:" >> "${_dir}/.argsh.yaml"
-      echo "  ${_entry}: \"${_version:-latest}\"" >> "${_dir}/.argsh.yaml"
+      printf '\nlibs:\n  %s: "%s"\n' "${_entry}" "${_version:-latest}" >> "${_dir}/.argsh.yaml"
     fi
   fi
 
