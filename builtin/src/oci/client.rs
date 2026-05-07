@@ -47,8 +47,13 @@ impl OciClient {
         // Use host-only for Docker auth lookup (e.g. "ghcr.io" not "ghcr.io/arg-sh/libs")
         let host = registry.split('/').next().unwrap_or(registry);
         let basic_auth = auth::docker_basic_auth(host);
+        let agent = ureq::AgentBuilder::new()
+            .timeout_connect(std::time::Duration::from_secs(10))
+            .timeout_read(std::time::Duration::from_secs(30))
+            .timeout_write(std::time::Duration::from_secs(30))
+            .build();
         Ok(Self {
-            agent: ureq::Agent::new(),
+            agent,
             registry: registry.to_string(),
             name: name.to_string(),
             reference: reference.to_string(),
@@ -85,7 +90,12 @@ impl OciClient {
         }
         // Use a no-redirect agent for the auth probe — GHCR redirects with
         // URL-encoded paths (%2F) that cause 404s when followed.
-        let no_redir = ureq::AgentBuilder::new().redirects(0).build();
+        let no_redir = ureq::AgentBuilder::new()
+            .redirects(0)
+            .timeout_connect(std::time::Duration::from_secs(10))
+            .timeout_read(std::time::Duration::from_secs(30))
+            .timeout_write(std::time::Duration::from_secs(30))
+            .build();
         match no_redir.get(url).call() {
             Ok(_) => Ok(()),
             Err(ref e) => {
@@ -225,7 +235,12 @@ impl OciClient {
 
         // Initiate upload. Use a no-redirect agent because GHCR redirects
         // with URL-encoded paths (%2F) that break on the final request.
-        let no_redir = ureq::AgentBuilder::new().redirects(0).build();
+        let no_redir = ureq::AgentBuilder::new()
+            .redirects(0)
+            .timeout_connect(std::time::Duration::from_secs(10))
+            .timeout_read(std::time::Duration::from_secs(30))
+            .timeout_write(std::time::Duration::from_secs(30))
+            .build();
         let upload_url = self.url("blobs/uploads/");
 
         // POST to initiate upload. Handle 401 challenge inline since GHCR
