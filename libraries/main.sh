@@ -302,14 +302,21 @@ argsh::lib::_semver_cmp() {
   IFS='.' read -r _maj2 _min2 _pat2 <<< "${_v2%%[-+]*}"
   : "${_maj1:=0}" "${_min1:=0}" "${_pat1:=0}"
   : "${_maj2:=0}" "${_min2:=0}" "${_pat2:=0}"
-  local _n1=$(( _maj1 * 1000000 + _min1 * 1000 + _pat1 ))
-  local _n2=$(( _maj2 * 1000000 + _min2 * 1000 + _pat2 ))
+  # Component-wise comparison (avoids overflow with large version numbers)
+  local _r=0
+  if [[ ${_maj1} -gt ${_maj2} ]]; then _r=1
+  elif [[ ${_maj1} -lt ${_maj2} ]]; then _r=-1
+  elif [[ ${_min1} -gt ${_min2} ]]; then _r=1
+  elif [[ ${_min1} -lt ${_min2} ]]; then _r=-1
+  elif [[ ${_pat1} -gt ${_pat2} ]]; then _r=1
+  elif [[ ${_pat1} -lt ${_pat2} ]]; then _r=-1
+  fi
   case "${_op}" in
-    ge) [[ ${_n1} -ge ${_n2} ]] ;;
-    gt) [[ ${_n1} -gt ${_n2} ]] ;;
-    le) [[ ${_n1} -le ${_n2} ]] ;;
-    lt) [[ ${_n1} -lt ${_n2} ]] ;;
-    eq) [[ ${_n1} -eq ${_n2} ]] ;;
+    ge) [[ ${_r} -ge 0 ]] ;;
+    gt) [[ ${_r} -gt 0 ]] ;;
+    le) [[ ${_r} -le 0 ]] ;;
+    lt) [[ ${_r} -lt 0 ]] ;;
+    eq) [[ ${_r} -eq 0 ]] ;;
     *)  return 1 ;;
   esac
 }
@@ -335,11 +342,17 @@ argsh::lib::_semver_satisfies() {
     "<"*)  _op="lt"; _target="${_constraint#<}" ;;
     "="*)  _op="eq"; _target="${_constraint#=}" ;;
     "^"*)
-      # Caret: >=target, <next major
+      # Caret: ^0.y.z means >=0.y.z <0.(y+1).0; ^x.y.z (x>0) means >=x.y.z <(x+1).0.0
       _target="${_constraint#^}"
-      local _maj="${_target%%.*}"
-      argsh::lib::_semver_cmp "${_ver}" "ge" "${_target}" && \
-        argsh::lib::_semver_cmp "${_ver}" "lt" "$(( _maj + 1 )).0.0"
+      local _maj="${_target%%.*}" _rest="${_target#*.}"
+      local _min="${_rest%%.*}"
+      if [[ "${_maj}" == "0" ]]; then
+        argsh::lib::_semver_cmp "${_ver}" "ge" "${_target}" && \
+          argsh::lib::_semver_cmp "${_ver}" "lt" "0.$(( _min + 1 )).0"
+      else
+        argsh::lib::_semver_cmp "${_ver}" "ge" "${_target}" && \
+          argsh::lib::_semver_cmp "${_ver}" "lt" "$(( _maj + 1 )).0.0"
+      fi
       return
       ;;
     "~"*)

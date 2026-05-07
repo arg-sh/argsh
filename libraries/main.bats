@@ -1136,6 +1136,9 @@ YAML
   argsh::lib::_semver_satisfies "1.2.0" "^1.2.0"
   ! argsh::lib::_semver_satisfies "2.0.0" "^1.2.0"
   ! argsh::lib::_semver_satisfies "1.1.9" "^1.2.0"
+  # ^0.2.3 means >=0.2.3 <0.3.0 (0.x special case)
+  argsh::lib::_semver_satisfies "0.2.5" "^0.2.3"
+  ! argsh::lib::_semver_satisfies "0.3.0" "^0.2.3"
   # ~1.2.0 means >=1.2.0 <1.3.0
   argsh::lib::_semver_satisfies "1.2.5" "~1.2.0"
   ! argsh::lib::_semver_satisfies "1.3.0" "~1.2.0"
