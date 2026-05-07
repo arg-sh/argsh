@@ -251,11 +251,12 @@ impl OciClient {
                         challenge.scope = format!("{prefix}:push,{actions}");
                     }
                 }
+                let host = self.registry.split('/').next().unwrap_or(&self.registry);
                 let tok = auth::fetch_token(
                     &self.agent,
                     &challenge,
                     self.basic_auth.as_deref(),
-                    &self.registry.split('/').next().unwrap_or(&self.registry),
+                    host,
                 )?;
                 self.token = Some(tok.clone());
                 no_redir.post(&upload_url)
