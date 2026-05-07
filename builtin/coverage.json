@@ -102,7 +102,7 @@
       "file": "builtin/src/oci/client.rs",
       "percent_covered": "0.00",
       "covered_lines": "0",
-      "total_lines": "246",
+      "total_lines": "247",
       "excluded_lines": "0"
     },
     {
@@ -113,12 +113,12 @@
       "excluded_lines": "0"
     }
   ],
-  "percent_covered": "76.10",
+  "percent_covered": "76.08",
   "covered_lines": 2828,
-  "total_lines": 3716,
+  "total_lines": 3717,
   "excluded_lines": 229,
   "percent_low": 25,
   "percent_high": 75,
   "command": "bats+llvm-cov",
-  "date": "2026-05-07 19:34:08"
+  "date": "2026-05-07 19:49:25"
 }
