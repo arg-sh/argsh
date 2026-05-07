@@ -26,9 +26,9 @@ pub struct Manifest {
     pub layers: Vec<Descriptor>,
 }
 
-/// Default connect timeout in seconds (overrideable via ARGSH_OCI_CONNECT_TIMEOUT).
+/// Default connect timeout in seconds (overridable via ARGSH_OCI_CONNECT_TIMEOUT).
 const DEFAULT_CONNECT_TIMEOUT: u64 = 10;
-/// Default read/write timeout in seconds (overrideable via ARGSH_OCI_IO_TIMEOUT).
+/// Default read/write timeout in seconds (overridable via ARGSH_OCI_IO_TIMEOUT).
 const DEFAULT_IO_TIMEOUT: u64 = 30;
 
 fn oci_timeout(env_var: &str, default: u64) -> std::time::Duration {
