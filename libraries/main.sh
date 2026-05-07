@@ -630,6 +630,7 @@ argsh::lib::_remove_lock_entry() {
 # @description Add a plugin library to the project.
 # @arg $1 string Lib reference (e.g. argsh@data, data, data@0.1.0)
 # @arg --global Install to global libs directory instead of project-local
+# @arg --expect-digest string Expected OCI digest for integrity verification
 # @example
 #   argsh lib add data
 #   argsh lib add argsh@data
@@ -640,7 +641,7 @@ argsh::lib::add() {
   while [[ "${1:-}" == --* ]]; do
     case "${1}" in
       --global) _global=1; shift ;;
-      --expect-digest) shift; _expect_digest="${1:-}"; shift ;;
+      --expect-digest) shift; [[ -n "${1:-}" && "${1:-}" != --* ]] || { echo "argsh lib add: --expect-digest requires a value" >&2; return 1; }; _expect_digest="${1}"; shift ;;
       *) echo "argsh lib add: unknown option: ${1}" >&2; return 1 ;;
     esac
   done
@@ -684,6 +685,7 @@ argsh::lib::add() {
   local _dest="${_lib_dir}/${_name}"
 
   echo "argsh: downloading ${_name} (${_tag})..." >&2
+  __LIB_PULL_DIGEST=""
 
   mkdir -p "${_lib_dir}"
   local _tmp_dest _tmpfile=""
