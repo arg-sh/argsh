@@ -114,6 +114,12 @@ declare -gi ARGSH_BUILTIN="${ARGSH_BUILTIN:-0}"
   contains "test" stdout
   contains "coverage" stdout
   contains "docs" stdout
+  contains "add" stdout
+  contains "remove" stdout
+  contains "list" stdout
+  contains "install" stdout
+  contains "update" stdout
+  contains "publish" stdout
   contains "builtin" stdout
   contains "status" stdout
 }
@@ -800,7 +806,29 @@ EOF
   contains "argsh builtin" stdout
 }
 
-# ── argsh lib ───────────────────────────────────────────
+# ── argsh lib (top-level) ──────────────────────────────
+
+@test "argsh::main dispatches top-level lib commands" {
+  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
+  local _tmp
+  _tmp="$(mktemp -d)"
+
+  PATH_BASE="${_tmp}" argsh::main list >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains "No libraries installed" stdout
+}
+
+@test "argsh::lib: backward compat dispatcher still works" {
+  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
+  local _tmp
+  _tmp="$(mktemp -d)"
+
+  PATH_BASE="${_tmp}" argsh::lib list >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains "No libraries installed" stdout
+}
 
 @test "argsh::lib: list shows empty when no libs installed" {
   if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi

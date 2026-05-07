@@ -805,7 +805,7 @@ argsh::lib() {
     "")
       argsh::lib::list
       echo ""
-      echo "Usage: argsh lib [add|list|remove|install|update|publish] [--global]"
+      echo "Usage: argsh [add|list|remove|install|update|publish] [--global]"
       ;;
     *)
       echo "argsh: unknown lib subcommand: ${1}" >&2
@@ -1320,9 +1320,15 @@ argsh::main() {
     'test:-argsh::test'          "Run tests"
     'coverage:-argsh::coverage'  "Generate coverage report for your Bash scripts"
     'docs:-argsh::docs'          "Generate documentation"
+    '-'                          "Libraries"
+    'add:-argsh::lib::add'       "Add a library"
+    'remove:-argsh::lib::remove' "Remove a library"
+    'list:-argsh::lib::list'     "List installed libraries"
+    'install:-argsh::lib::install' "Install libraries from lockfile"
+    'update:-argsh::lib::update' "Update installed libraries"
+    'publish:-argsh::lib::publish' "Publish a library to a registry"
     '-'                          "Runtime"
     'builtin:-argsh::builtin'    "Manage native builtins (.so)"
-    'lib:-argsh::lib'            "Manage plugin libraries"
     'status:-argsh::_status_cmd' "Show argsh runtime status"
   )
   :usage "Enhance your Bash scripting by promoting structure and maintainability,
