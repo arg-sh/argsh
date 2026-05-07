@@ -243,9 +243,14 @@ impl OciClient {
                 let challenge = www_auth.as_deref()
                     .and_then(|h| AuthChallenge::from_header(h))
                     .ok_or("push_blob: 401 but no www-authenticate challenge")?;
-                // GHCR returns pull scope even for POST — override to push,pull
+                // GHCR may return pull-only scope even for POST — add push
+                // only when the server-provided scope does not already include it.
                 let mut challenge = challenge;
-                challenge.scope = challenge.scope.replace(":pull", ":push,pull");
+                if let Some((prefix, actions)) = challenge.scope.rsplit_once(':') {
+                    if !actions.split(',').any(|a| a.trim() == "push") {
+                        challenge.scope = format!("{prefix}:push,{actions}");
+                    }
+                }
                 let tok = auth::fetch_token(
                     &self.agent,
                     &challenge,
@@ -253,19 +258,15 @@ impl OciClient {
                     &self.registry.split('/').next().unwrap_or(&self.registry),
                 )?;
                 self.token = Some(tok.clone());
-                match no_redir.post(&upload_url)
+                no_redir.post(&upload_url)
                     .set("Authorization", &format!("Bearer {}", tok))
                     .set("Content-Length", "0")
                     .call()
-                {
-                    Ok(r) => r,
-                    Err(ureq::Error::Status(_code, r)) => {
-                        r
-                    },
-                    Err(e) => return Err(format!("push_blob: POST retry failed: {e}").into()),
-                }
+                    .map_err(|e| -> BoxErr { format!("push_blob: POST retry failed: {e}").into() })?
             },
-            Err(ureq::Error::Status(_, r)) => r,
+            Err(ureq::Error::Status(code, _)) => {
+                return Err(format!("push_blob: POST upload failed with status {code}").into());
+            },
             Err(e) => return Err(format!("push_blob: POST upload failed: {e}").into()),
         };
 
@@ -273,11 +274,12 @@ impl OciClient {
             .ok_or("push_blob: no Location header from POST")?
             .to_string();
 
-        // Resolve relative Location against registry.
+        // Resolve relative Location against registry host.
         let put_url = if location.starts_with("http") {
             location
         } else {
-            format!("https://{}{}", self.registry, location)
+            let host = self.registry.split('/').next().unwrap_or(&self.registry);
+            format!("https://{}{}", host, location)
         };
 
         // Append digest query parameter.
@@ -288,16 +290,12 @@ impl OciClient {
             .ok_or("push_blob: no auth token after POST")?;
 
         // Monolithic PUT with full blob body (no-redirect to avoid GHCR URL encoding).
-        match no_redir.put(&put_url)
+        no_redir.put(&put_url)
             .set("Authorization", &format!("Bearer {}", tok))
             .set("Content-Type", "application/octet-stream")
             .set("Content-Length", &data.len().to_string())
             .send_bytes(data)
-        {
-            Ok(_) => {},
-            Err(ureq::Error::Status(code, _)) if code == 201 || code == 202 => {},
-            Err(e) => return Err(format!("push_blob: PUT upload failed: {e}").into()),
-        }
+            .map_err(|e| -> BoxErr { format!("push_blob: PUT upload failed: {e}").into() })?;
 
         Ok(digest)
     }
