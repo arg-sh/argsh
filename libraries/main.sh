@@ -989,6 +989,22 @@ argsh::lib::publish() {
     return 1
   fi
 
+  # Validate version format (semver-like: digits.digits.digits with optional pre-release)
+  if [[ ! "${_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+    echo "argsh lib publish: version '${_version}' is not valid semver (expected x.y.z)" >&2
+    return 1
+  fi
+
+  # Warn about common files that shouldn't be published
+  local _warned=0
+  for _f in .git .github node_modules target; do
+    if [[ -e "${_f}" ]]; then
+      (( _warned )) || echo "argsh lib publish: warning — directory contains files that may not belong in a package:" >&2
+      echo "  ${_f}" >&2
+      _warned=1
+    fi
+  done
+
   # Determine registry
   if [[ -z "${_registry}" ]]; then
     _registry="${__ARGSH_LIB_REGISTRY}"
