@@ -831,7 +831,7 @@ EOF
   rm -rf "${_tmp}"
 }
 
-@test "argsh::lib: add installs to .argsh/libs/" {
+@test "argsh::lib::add installs to .argsh/libs/" {
   if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
   local _tmp
   _tmp="$(mktemp -d)"
@@ -879,7 +879,7 @@ EOF
   rm -rf "${_tmp}"
 }
 
-@test "argsh::lib: remove deletes lib directory" {
+@test "argsh::lib::remove deletes lib directory" {
   if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
   local _tmp
   _tmp="$(mktemp -d)"
@@ -894,7 +894,7 @@ EOF
   rm -rf "${_tmp}"
 }
 
-@test "argsh::lib: list shows installed libs" {
+@test "argsh::lib::list shows installed libs" {
   if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
   local _tmp
   _tmp="$(mktemp -d)"

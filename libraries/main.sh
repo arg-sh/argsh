@@ -792,9 +792,6 @@ argsh::lib::publish() {
   echo "  digest: ${__LIB_PUSH_DIGEST:-unknown}" >&2
 }
 
-# @description Manage plugin libraries.
-# @arg $1 string Subcommand: add, list, remove, install, update, publish
-
 # @description Discover search directories for scripts and tests.
 # Uses PATH_TESTS (semicolon-separated), then common locations under PATH_BASE.
 # @set _search_dirs array Directories to search (deduplicated)
