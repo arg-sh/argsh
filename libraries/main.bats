@@ -1091,6 +1091,31 @@ YAML
   contains "digest mismatch" stderr
 }
 
+@test "argsh::lib::publish rejects invalid semver" {
+  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
+  local _tmp; _tmp="$(mktemp -d)"
+  cat > "${_tmp}/argsh-plugin.yml" << 'YAML'
+name: testlib
+version: bad-version
+YAML
+  lib::push() { :; }
+  (cd "${_tmp}" && argsh::lib::publish) >"${stdout}" 2>"${stderr}" || status=$?
+  rm -rf "${_tmp}"
+
+  assert "${status}" -ne 0
+  contains "not valid semver" stderr
+}
+
+@test "argsh::lib::publish rejects missing manifest" {
+  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
+  local _tmp; _tmp="$(mktemp -d)"
+  (cd "${_tmp}" && argsh::lib::publish) >"${stdout}" 2>"${stderr}" || status=$?
+  rm -rf "${_tmp}"
+
+  assert "${status}" -ne 0
+  contains "no argsh-plugin.yml" stderr
+}
+
 @test "e2e: argsh lib update re-fetches" {
   local _tmp; _tmp="$(mktemp -d)"
   cat > "${_tmp}/.argsh.yaml" << 'YAML'
