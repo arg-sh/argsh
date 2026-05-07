@@ -812,6 +812,7 @@ EOF
   if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
   local _tmp
   _tmp="$(mktemp -d)"
+  trap 'rm -rf "${_tmp}"' RETURN
 
   PATH_BASE="${_tmp}" argsh::main list >"${stdout}" 2>"${stderr}" || status=$?
 
