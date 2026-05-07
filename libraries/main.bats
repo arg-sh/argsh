@@ -1116,6 +1116,49 @@ YAML
   contains "no argsh-plugin.yml" stderr
 }
 
+@test "argsh::lib::_install_deps installs missing dependencies" {
+  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
+  local _tmp; _tmp="$(mktemp -d)"
+  mkdir -p "${_tmp}/.argsh/libs/mylib"
+  cat > "${_tmp}/.argsh/libs/mylib/argsh-plugin.yml" << 'YAML'
+name: mylib
+version: 1.0.0
+depends:
+  - depA
+  - depB@0.2.0
+YAML
+  # Pre-install depA so only depB should be added
+  mkdir -p "${_tmp}/.argsh/libs/depA"
+
+  # Stub add to track calls
+  local -a _added=()
+  argsh::lib::add() { _added+=("$*"); mkdir -p "${_tmp}/.argsh/libs/${*##* }"; }
+
+  PATH_BASE="${_tmp}" argsh::lib::_install_deps "${_tmp}/.argsh/libs/mylib" 0 >"${stdout}" 2>"${stderr}" || status=$?
+  rm -rf "${_tmp}"
+
+  assert "${status}" -eq 0
+  # depA already installed, should NOT be added
+  [[ "${_added[*]}" != *"depA"* ]]
+  # depB should be added
+  [[ "${_added[*]}" == *"depB@0.2.0"* ]]
+}
+
+@test "argsh::lib::_install_deps skips when no depends section" {
+  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
+  local _tmp; _tmp="$(mktemp -d)"
+  mkdir -p "${_tmp}/.argsh/libs/mylib"
+  cat > "${_tmp}/.argsh/libs/mylib/argsh-plugin.yml" << 'YAML'
+name: mylib
+version: 1.0.0
+YAML
+
+  PATH_BASE="${_tmp}" argsh::lib::_install_deps "${_tmp}/.argsh/libs/mylib" 0 >"${stdout}" 2>"${stderr}" || status=$?
+  rm -rf "${_tmp}"
+
+  assert "${status}" -eq 0
+}
+
 @test "e2e: argsh lib update re-fetches" {
   local _tmp; _tmp="$(mktemp -d)"
   cat > "${_tmp}/.argsh.yaml" << 'YAML'
