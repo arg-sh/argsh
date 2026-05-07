@@ -43,6 +43,7 @@ impl OciClient {
     /// let mut c = OciClient::new("ghcr.io", "arg-sh/libs/data", "0.1.0")?;
     /// ```
     pub fn new(registry: &str, name: &str, reference: &str) -> Result<Self, BoxErr> {
+        let registry = registry.trim_end_matches('/');
         // Use host-only for Docker auth lookup (e.g. "ghcr.io" not "ghcr.io/arg-sh/libs")
         let host = registry.split('/').next().unwrap_or(registry);
         let basic_auth = auth::docker_basic_auth(host);
@@ -226,13 +227,12 @@ impl OciClient {
 
         // POST to initiate upload. Handle 401 challenge inline since GHCR
         // only returns push-scoped challenges on POST, not GET.
-        let tok_header = self.token.as_ref()
-            .map(|t| format!("Bearer {}", t))
-            .or_else(|| self.basic_auth.as_ref().map(|b| format!("Basic {}", b)))
-            .unwrap_or_default();
+        let mut post_req = no_redir.post(&upload_url);
+        if let Some(tok) = &self.token {
+            post_req = post_req.set("Authorization", &format!("Bearer {}", tok));
+        }
 
-        let res = match no_redir.post(&upload_url)
-            .set("Authorization", &tok_header)
+        let res = match post_req
             .set("Content-Length", "0")
             .call()
         {
