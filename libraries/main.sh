@@ -607,7 +607,7 @@ argsh::lib::_remove_lock_entry() {
   local _lock="${_dir}/.argsh.lock"
   [[ -f "${_lock}" ]] || return 0
   # Remove the entry block: the key line + indented lines below it
-  local _tmp _in_entry=0 _matched=0
+  local _tmp _line _in_entry=0 _matched=0
   _tmp="$(mktemp "${_lock}.XXXXXX")"
   while IFS= read -r _line || [[ -n "${_line}" ]]; do
     local _stripped="${_line#"${_line%%[![:space:]]*}"}"
