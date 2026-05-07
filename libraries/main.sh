@@ -641,7 +641,7 @@ argsh::lib::add() {
     case "${1}" in
       --global) _global=1; shift ;;
       --expect-digest) shift; _expect_digest="${1:-}"; shift ;;
-      *) break ;;
+      *) echo "argsh lib add: unknown option: ${1}" >&2; return 1 ;;
     esac
   done
 
@@ -711,8 +711,10 @@ argsh::lib::add() {
   fi
 
   # Verify digest if expected (lockfile installs)
-  if [[ -n "${_expect_digest}" && -n "${__LIB_PULL_DIGEST:-}" ]]; then
-    if [[ "${__LIB_PULL_DIGEST}" != "${_expect_digest}" ]]; then
+  if [[ -n "${_expect_digest}" ]]; then
+    if [[ -z "${__LIB_PULL_DIGEST:-}" ]]; then
+      echo "argsh: warning: digest verification unavailable (no OCI digest from pull)" >&2
+    elif [[ "${__LIB_PULL_DIGEST}" != "${_expect_digest}" ]]; then
       echo "argsh: digest mismatch for ${_name}" >&2
       echo "  expected: ${_expect_digest}" >&2
       echo "  got:      ${__LIB_PULL_DIGEST}" >&2
