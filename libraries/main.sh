@@ -290,6 +290,90 @@ argsh::builtins() { argsh::builtin "${@}"; }
 # @description Default OCI registry for argsh official libs.
 declare -g __ARGSH_LIB_REGISTRY="${ARGSH_LIB_REGISTRY:-ghcr.io/arg-sh/libs}"
 
+# @description Compare two semver versions. Returns 0 if $1 op $2 is true.
+# @arg $1 string Version (e.g. "0.8.4")
+# @arg $2 string Operator: "ge" (>=), "gt" (>), "le" (<=), "lt" (<), "eq" (==)
+# @arg $3 string Version to compare against
+# @internal
+argsh::lib::_semver_cmp() {
+  local _v1="${1}" _op="${2}" _v2="${3}"
+  local _maj1 _min1 _pat1 _maj2 _min2 _pat2
+  IFS='.' read -r _maj1 _min1 _pat1 <<< "${_v1%%[-+]*}"
+  IFS='.' read -r _maj2 _min2 _pat2 <<< "${_v2%%[-+]*}"
+  : "${_maj1:=0}" "${_min1:=0}" "${_pat1:=0}"
+  : "${_maj2:=0}" "${_min2:=0}" "${_pat2:=0}"
+  local _n1=$(( _maj1 * 1000000 + _min1 * 1000 + _pat1 ))
+  local _n2=$(( _maj2 * 1000000 + _min2 * 1000 + _pat2 ))
+  case "${_op}" in
+    ge) [[ ${_n1} -ge ${_n2} ]] ;;
+    gt) [[ ${_n1} -gt ${_n2} ]] ;;
+    le) [[ ${_n1} -le ${_n2} ]] ;;
+    lt) [[ ${_n1} -lt ${_n2} ]] ;;
+    eq) [[ ${_n1} -eq ${_n2} ]] ;;
+    *)  return 1 ;;
+  esac
+}
+
+# @description Check if a version satisfies a constraint string.
+# Supports: >=x.y.z, >x.y.z, <=x.y.z, <x.y.z, =x.y.z, ^x.y.z, ~x.y.z, x.y.z (exact)
+# @arg $1 string Actual version
+# @arg $2 string Constraint (e.g. ">=0.9.0", "^1.2.0")
+# @return 0 if satisfied, 1 otherwise
+# @internal
+argsh::lib::_semver_satisfies() {
+  local _ver="${1}" _constraint="${2}"
+  # Strip leading v prefix
+  _ver="${_ver#v}"
+  _constraint="${_constraint#v}"
+
+  # Parse operator and target version
+  local _op="" _target=""
+  case "${_constraint}" in
+    ">="*) _op="ge"; _target="${_constraint#>=}" ;;
+    ">"*)  _op="gt"; _target="${_constraint#>}" ;;
+    "<="*) _op="le"; _target="${_constraint#<=}" ;;
+    "<"*)  _op="lt"; _target="${_constraint#<}" ;;
+    "="*)  _op="eq"; _target="${_constraint#=}" ;;
+    "^"*)
+      # Caret: >=target, <next major
+      _target="${_constraint#^}"
+      local _maj="${_target%%.*}"
+      argsh::lib::_semver_cmp "${_ver}" "ge" "${_target}" && \
+        argsh::lib::_semver_cmp "${_ver}" "lt" "$(( _maj + 1 )).0.0"
+      return
+      ;;
+    "~"*)
+      # Tilde: >=target, <next minor
+      _target="${_constraint#\~}"
+      local _maj="${_target%%.*}" _rest="${_target#*.}"
+      local _min="${_rest%%.*}"
+      argsh::lib::_semver_cmp "${_ver}" "ge" "${_target}" && \
+        argsh::lib::_semver_cmp "${_ver}" "lt" "${_maj}.$(( _min + 1 )).0"
+      return
+      ;;
+    *) _op="eq"; _target="${_constraint}" ;;
+  esac
+  _target="${_target#v}"
+  argsh::lib::_semver_cmp "${_ver}" "${_op}" "${_target}"
+}
+
+# @description Check requires.argsh constraint from a plugin manifest.
+# Warns (but does not fail) if the installed argsh version doesn't satisfy.
+# @arg $1 string Path to the installed lib directory
+# @internal
+argsh::lib::_check_requires() {
+  local _dest="${1}"
+  [[ -f "${_dest}/argsh-plugin.yml" ]] || return 0
+  local _req
+  _req="$(argsh::lib::_yaml_get "requires.argsh" "${_dest}/argsh-plugin.yml")"
+  [[ -n "${_req}" ]] || return 0
+  local _current="${ARGSH_VERSION:-}"
+  [[ -n "${_current}" && "${_current}" =~ ^[0-9] ]] || return 0
+  if ! argsh::lib::_semver_satisfies "${_current}" "${_req}"; then
+    echo "argsh: warning: library requires argsh ${_req} but current version is ${_current}" >&2
+  fi
+}
+
 # @description Strip quotes, inline comments, and trailing whitespace from a YAML value.
 # @internal
 argsh::lib::_yaml_clean() {
@@ -742,6 +826,9 @@ argsh::lib::add() {
   fi
 
   echo "argsh: installed ${_name} to ${_dest}" >&2
+
+  # Check argsh version requirement from plugin manifest
+  argsh::lib::_check_requires "${_dest}"
 
   # Skip manifest/lockfile updates for global installs
   if (( _global )); then
