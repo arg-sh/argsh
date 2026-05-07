@@ -719,6 +719,15 @@ module.exports = {
           },
           className: "homepage-sidebar-item",
         },
+        {
+          type: "doc",
+          id: "plugins/libs/shell-op",
+          label: "shell-op",
+          customProps: {
+            sidebar_icon: "document-text-solid",
+          },
+          className: "homepage-sidebar-item",
+        },
       ],
     },
   ],
