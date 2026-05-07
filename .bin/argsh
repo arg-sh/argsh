@@ -924,8 +924,11 @@ _ci() {
       git -C "${PATH_BASE}" commit -m "${message}" --no-gpg-sign
   else
     # Verify generated files are in sync — fail if out of date
+    # Ignore date fields in coverage.json (changes every run)
     local _changed
-    _changed="$(git -C "${PATH_BASE}" diff --name-only -- "${_gen_files[@]}")"
+    _changed="$(git -C "${PATH_BASE}" diff \
+      --ignore-matching-lines='"date":' \
+      --name-only -- "${_gen_files[@]}")"
     if [[ -n "${_changed}" ]]; then
       echo "" >&2
       echo "Generated files are out of date:" >&2
