@@ -43,7 +43,10 @@ impl OciClient {
     /// let mut c = OciClient::new("ghcr.io", "arg-sh/libs/data", "0.1.0")?;
     /// ```
     pub fn new(registry: &str, name: &str, reference: &str) -> Result<Self, BoxErr> {
-        let basic_auth = auth::docker_basic_auth(registry);
+        let registry = registry.trim_end_matches('/');
+        // Use host-only for Docker auth lookup (e.g. "ghcr.io" not "ghcr.io/arg-sh/libs")
+        let host = registry.split('/').next().unwrap_or(registry);
+        let basic_auth = auth::docker_basic_auth(host);
         Ok(Self {
             agent: ureq::Agent::new(),
             registry: registry.to_string(),
@@ -56,9 +59,22 @@ impl OciClient {
 
     // -- internal helpers ---------------------------------------------------
 
-    /// Build a full URL under `/v2/<name>/...`.
+    /// Return the host-only portion of the registry (e.g. "ghcr.io").
+    fn registry_host(&self) -> &str {
+        self.registry.split('/').next().unwrap_or(&self.registry)
+    }
+
+    /// Build a full URL under `/v2/<namespace>/<name>/...`.
+    /// Registry may include a namespace path (e.g. "ghcr.io/arg-sh/libs").
     fn url(&self, path: &str) -> String {
-        format!("https://{}/v2/{}/{}", self.registry, self.name, path)
+        let (host, ns) = match self.registry.find('/') {
+            Some(pos) => (&self.registry[..pos], Some(&self.registry[pos + 1..])),
+            None => (self.registry.as_str(), None),
+        };
+        match ns {
+            Some(ns) => format!("https://{}/v2/{}/{}/{}", host, ns, self.name, path),
+            None => format!("https://{}/v2/{}/{}", host, self.name, path),
+        }
     }
 
     /// Ensure we have a valid token with the required scope.
@@ -67,8 +83,10 @@ impl OciClient {
         if self.token.is_some() {
             return Ok(());
         }
-        // Probe to get the 401 challenge.
-        match self.agent.get(url).call() {
+        // Use a no-redirect agent for the auth probe — GHCR redirects with
+        // URL-encoded paths (%2F) that cause 404s when followed.
+        let no_redir = ureq::AgentBuilder::new().redirects(0).build();
+        match no_redir.get(url).call() {
             Ok(_) => Ok(()),
             Err(ref e) => {
                 if let Some(challenge) = AuthChallenge::from_ureq_error(e) {
@@ -76,7 +94,7 @@ impl OciClient {
                         &self.agent,
                         &challenge,
                         self.basic_auth.as_deref(),
-                        &self.registry,
+                        self.registry_host(),
                     )?;
                     self.token = Some(tok);
                     Ok(())
@@ -119,7 +137,7 @@ impl OciClient {
                         &self.agent,
                         &challenge,
                         self.basic_auth.as_deref(),
-                        &self.registry,
+                        self.registry_host(),
                     )?;
                     self.token = Some(tok);
                 } else {
@@ -205,37 +223,86 @@ impl OciClient {
             }
         }
 
-        // Initiate upload.
+        // Initiate upload. Use a no-redirect agent because GHCR redirects
+        // with URL-encoded paths (%2F) that break on the final request.
+        let no_redir = ureq::AgentBuilder::new().redirects(0).build();
         let upload_url = self.url("blobs/uploads/");
-        self.ensure_auth(&upload_url)?;
-        let tok = self.token.clone()
-            .ok_or("push_blob: no auth token available after ensure_auth")?;
-        let res = self.agent.post(&upload_url)
-            .set("Authorization", &format!("Bearer {}", tok))
+
+        // POST to initiate upload. Handle 401 challenge inline since GHCR
+        // only returns push-scoped challenges on POST, not GET.
+        let mut post_req = no_redir.post(&upload_url);
+        if let Some(tok) = &self.token {
+            post_req = post_req.set("Authorization", &format!("Bearer {}", tok));
+        }
+
+        let res = match post_req
             .set("Content-Length", "0")
-            .call()?;
+            .call()
+        {
+            Ok(r) => r,
+            Err(ureq::Error::Status(401, r)) => {
+                // Extract push-scoped challenge from 401 and retry
+                let www_auth = r.header("www-authenticate").map(|s| s.to_string());
+                let challenge = www_auth.as_deref()
+                    .and_then(AuthChallenge::from_header)
+                    .ok_or("push_blob: 401 but no www-authenticate challenge")?;
+                // GHCR may return pull-only scope even for POST — add push
+                // only when the server-provided scope does not already include it.
+                let mut challenge = challenge;
+                if let Some((prefix, actions)) = challenge.scope.rsplit_once(':') {
+                    if !actions.split(',').any(|a| a.trim() == "push") {
+                        challenge.scope = format!("{prefix}:push,{actions}");
+                    }
+                }
+                let tok = auth::fetch_token(
+                    &self.agent,
+                    &challenge,
+                    self.basic_auth.as_deref(),
+                    self.registry_host(),
+                )?;
+                self.token = Some(tok.clone());
+                no_redir.post(&upload_url)
+                    .set("Authorization", &format!("Bearer {}", tok))
+                    .set("Content-Length", "0")
+                    .call()
+                    .map_err(|e| -> BoxErr { format!("push_blob: POST retry failed: {e}").into() })?
+            },
+            Err(ureq::Error::Status(code, r)) if (300..400).contains(&code) => {
+                // Follow 3xx redirect — some registries redirect uploads to
+                // a different storage backend.
+                r
+            },
+            Err(ureq::Error::Status(code, _)) => {
+                return Err(format!("push_blob: POST upload failed with status {code}").into());
+            },
+            Err(e) => return Err(format!("push_blob: POST upload failed: {e}").into()),
+        };
 
         let location = res.header("Location")
             .ok_or("push_blob: no Location header from POST")?
             .to_string();
 
-        // Resolve relative Location against registry.
+        // Resolve relative Location against registry host.
         let put_url = if location.starts_with("http") {
             location
         } else {
-            format!("https://{}{}", self.registry, location)
+            format!("https://{}{}", self.registry_host(), location)
         };
 
         // Append digest query parameter.
         let separator = if put_url.contains('?') { "&" } else { "?" };
         let put_url = format!("{}{}digest={}", put_url, separator, digest);
 
-        // Monolithic PUT with full blob body.
-        self.agent.put(&put_url)
+        let tok = self.token.clone()
+            .ok_or("push_blob: no auth token after POST")?;
+
+        // Monolithic PUT with full blob body (no-redirect to avoid GHCR URL encoding).
+        no_redir.put(&put_url)
             .set("Authorization", &format!("Bearer {}", tok))
             .set("Content-Type", "application/octet-stream")
             .set("Content-Length", &data.len().to_string())
-            .send_bytes(data)?;
+            .send_bytes(data)
+            .map_err(|e| -> BoxErr { format!("push_blob: PUT upload failed: {e}").into() })?;
 
         Ok(digest)
     }
