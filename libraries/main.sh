@@ -296,6 +296,20 @@ declare -g __ARGSH_LIB_REGISTRY="${ARGSH_LIB_REGISTRY:-ghcr.io/arg-sh/libs}"
 # @arg $2 string File path
 # @stdout The value (empty string if not found)
 # @internal
+# @description Strip quotes, inline comments, and trailing whitespace from a YAML value.
+# @internal
+argsh::lib::_yaml_clean() {
+  local _v="${1}"
+  # Strip quotes
+  _v="${_v%\"}" ; _v="${_v#\"}"
+  _v="${_v%\'}" ; _v="${_v#\'}"
+  # Strip inline comments (unquoted # preceded by whitespace)
+  _v="${_v%%[[:space:]]\#*}"
+  # Trim trailing whitespace
+  _v="${_v%"${_v##*[![:space:]]}"}"
+  echo "${_v}"
+}
+
 argsh::lib::_yaml_get() {
   local _path="${1}" _file="${2}"
   [[ -f "${_file}" ]] || return 0
@@ -306,29 +320,21 @@ argsh::lib::_yaml_get() {
   else
     _key1="${_path}"
   fi
-  local _line _in_section=0 _indent=""
+  local _line _in_section=0
   while IFS= read -r _line || [[ -n "${_line}" ]]; do
-    # Skip comments and empty lines
     [[ -n "${_line}" ]] || continue
     [[ "${_line}" != \#* ]] || continue
     if [[ -z "${_key2}" && "${_line}" =~ ^${_key1}:[[:space:]]+(.*) ]]; then
-      local _val="${BASH_REMATCH[1]}"
-      _val="${_val%\"}" ; _val="${_val#\"}"
-      _val="${_val%\'}" ; _val="${_val#\'}"
-      echo "${_val}"
+      argsh::lib::_yaml_clean "${BASH_REMATCH[1]}"
       return 0
     elif [[ -n "${_key2}" ]]; then
-      # Nested: find section, then key within it
       if [[ "${_line}" =~ ^${_key1}:[[:space:]]*$ ]]; then
         _in_section=1; continue
       fi
       if (( _in_section )); then
         [[ "${_line}" =~ ^[[:space:]] ]] || break
         if [[ "${_line}" =~ ^[[:space:]]+${_key2}:[[:space:]]+(.*) ]]; then
-          local _val="${BASH_REMATCH[1]}"
-          _val="${_val%\"}" ; _val="${_val#\"}"
-          _val="${_val%\'}" ; _val="${_val#\'}"
-          echo "${_val}"
+          argsh::lib::_yaml_clean "${BASH_REMATCH[1]}"
           return 0
         fi
       fi
@@ -355,11 +361,9 @@ argsh::lib::_yaml_entries() {
       [[ "${_line}" =~ ^[[:space:]] ]] || break
       # "  key: value" or "  key:" (nested)
       if [[ "${_line}" =~ ^[[:space:]]+([^[:space:]:]+):[[:space:]]*(.*) ]]; then
-        local _k="${BASH_REMATCH[1]}" _v="${BASH_REMATCH[2]}"
+        local _k="${BASH_REMATCH[1]}"
         _k="${_k%\"}" ; _k="${_k#\"}"
-        _v="${_v%\"}" ; _v="${_v#\"}"
-        _v="${_v%\'}" ; _v="${_v#\'}"
-        echo "${_k}=${_v}"
+        echo "${_k}=$(argsh::lib::_yaml_clean "${BASH_REMATCH[2]}")"
       fi
     fi
   done < "${_file}"
@@ -467,8 +471,7 @@ argsh::lib::resolve() {
             [[ "${_line}" =~ ^[[:space:]]{4,} ]] || { _in_provider=0; continue; }
             local _stripped="${_line#"${_line%%[![:space:]]*}"}"
             if [[ "${_stripped}" =~ ^endpoint:[[:space:]]+(.*) ]]; then
-              _registry="${BASH_REMATCH[1]}"
-              _registry="${_registry%\"}" ; _registry="${_registry#\"}"
+              _registry="$(argsh::lib::_yaml_clean "${BASH_REMATCH[1]}")"
               break
             fi
           fi
@@ -601,7 +604,7 @@ argsh::lib::_remove_lock_entry() {
   [[ -f "${_lock}" ]] || return 0
   # Remove the entry block: the key line + indented lines below it
   local _tmp _in_entry=0 _matched=0
-  _tmp="$(mktemp)"
+  _tmp="$(mktemp "${_lock}.XXXXXX")"
   while IFS= read -r _line || [[ -n "${_line}" ]]; do
     local _stripped="${_line#"${_line%%[![:space:]]*}"}"
     local _ek="${_stripped%%:*}"
@@ -728,10 +731,17 @@ argsh::lib::add() {
     local _entry="${_ref}"
     [[ "${_ref}" == *@* ]] || _entry="argsh@${_ref}"
     # Add or update lib entry
-    # Update or append lib entry in .argsh.yaml
-    if grep -q "^  ${_entry}:" "${_dir}/.argsh.yaml" 2>/dev/null || \
-       grep -q "^  \"${_entry}\":" "${_dir}/.argsh.yaml" 2>/dev/null; then
-      sed -i "s|^\(  \"\{0,1\}${_entry}\"\{0,1\}:\).*|\1 \"${_version:-latest}\"|" "${_dir}/.argsh.yaml" 2>/dev/null || true
+    # Update or append lib entry in .argsh.yaml (portable, no sed -i)
+    if grep -q "^  \"\{0,1\}${_entry}\"\{0,1\}:" "${_dir}/.argsh.yaml" 2>/dev/null; then
+      local _tmp_yaml; _tmp_yaml="$(mktemp "${_dir}/.argsh.yaml.XXXXXX")"
+      while IFS= read -r _yline || [[ -n "${_yline}" ]]; do
+        if [[ "${_yline}" =~ ^[[:space:]]+\"?${_entry}\"?: ]]; then
+          printf '  %s: "%s"\n' "${_entry}" "${_version:-latest}"
+        else
+          printf '%s\n' "${_yline}"
+        fi
+      done < "${_dir}/.argsh.yaml" > "${_tmp_yaml}"
+      mv "${_tmp_yaml}" "${_dir}/.argsh.yaml"
     else
       grep -q '^libs:' "${_dir}/.argsh.yaml" 2>/dev/null || echo "libs:" >> "${_dir}/.argsh.yaml"
       echo "  ${_entry}: \"${_version:-latest}\"" >> "${_dir}/.argsh.yaml"

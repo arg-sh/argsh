@@ -145,9 +145,17 @@ import::_libs_dir() {
     return
   fi
   local _base="${PATH_BASE:-.}"
-  if [[ -f "${_base}/.argsh.yaml" ]] && command -v yq &>/dev/null; then
-    local _custom
-    _custom="$(yq -r '.defaults.path_libs // ""' "${_base}/.argsh.yaml" 2>/dev/null)" || _custom=""
+  if [[ -f "${_base}/.argsh.yaml" ]]; then
+    local _custom="" _line
+    while IFS= read -r _line || [[ -n "${_line}" ]]; do
+      [[ "${_line}" =~ ^[[:space:]]+path_libs:[[:space:]]+(.*) ]] || continue
+      _custom="${BASH_REMATCH[1]}"
+      _custom="${_custom%\"}" ; _custom="${_custom#\"}"
+      _custom="${_custom%\'}" ; _custom="${_custom#\'}"
+      _custom="${_custom%%[[:space:]]\#*}"
+      _custom="${_custom%"${_custom##*[![:space:]]}"}"
+      break
+    done < "${_base}/.argsh.yaml"
     if [[ -n "${_custom}" ]]; then
       if [[ "${_custom:0:1}" == "/" ]]; then
         __ARGSH_LIBS_DIR="${_custom}"
