@@ -794,26 +794,6 @@ argsh::lib::publish() {
 
 # @description Manage plugin libraries.
 # @arg $1 string Subcommand: add, list, remove, install, update, publish
-argsh::lib() {
-  case "${1:-}" in
-    add)     shift; argsh::lib::add "${@}" ;;
-    list|ls) shift; argsh::lib::list "${@}" ;;
-    remove)  shift; argsh::lib::remove "${@}" ;;
-    install) shift; argsh::lib::install ;;
-    update)  shift; argsh::lib::update ;;
-    publish) shift; argsh::lib::publish "${@}" ;;
-    "")
-      argsh::lib::list
-      echo ""
-      echo "Usage: argsh [add|list|remove|install|update|publish] [--global]"
-      ;;
-    *)
-      echo "argsh: unknown lib subcommand: ${1}" >&2
-      echo "Usage: argsh lib [add|list|remove|install|update|publish] [--global]" >&2
-      return 1
-      ;;
-  esac
-}
 
 # @description Discover search directories for scripts and tests.
 # Uses PATH_TESTS (semicolon-separated), then common locations under PATH_BASE.
