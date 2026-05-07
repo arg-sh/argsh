@@ -594,7 +594,7 @@ declare -gi ARGSH_BUILTIN="${ARGSH_BUILTIN:-0}"
   ! command grep -q "DOCKER_FORWARD:" "${stdout}"
 }
 
-@test "argsh::lint: missing argsh-lint with --only-argsh errors" {
+@test "argsh::lint: missing argsh-lint with --only-argsh falls back to docker" {
   if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
   local _tmp
   _tmp="$(mktemp -d)"
@@ -603,16 +603,17 @@ declare -gi ARGSH_BUILTIN="${ARGSH_BUILTIN:-0}"
   shellcheck() { :; }
   export -f shellcheck
   # Simulate shellcheck installed, argsh-lint not present.
-  binary::exists() { [[ "${1}" == "shellcheck" ]]; }
+  binary::exists() { [[ "${1}" == "shellcheck" ]] || [[ "${1}" == "docker" ]]; }
+  argsh::_docker_forward() { echo "DOCKER_FORWARD: $*"; return 0; }
 
   (argsh::lint --only-argsh "${_tmp}/a.sh") >"${stdout}" 2>"${stderr}" || status=$?
   rm -rf "${_tmp}"
 
-  assert "${status}" -ne 0
-  contains "argsh-lint binary not found" stderr
+  assert "${status}" -eq 0
+  contains "DOCKER_FORWARD: lint --only-argsh" stdout
 }
 
-@test "argsh::lint: missing argsh-lint without flags silently skips it" {
+@test "argsh::lint: missing argsh-lint without flags falls back to docker" {
   if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
   local _tmp
   _tmp="$(mktemp -d)"
@@ -620,13 +621,14 @@ declare -gi ARGSH_BUILTIN="${ARGSH_BUILTIN:-0}"
 
   shellcheck() { echo "SHELLCHECK: $*"; }
   export -f shellcheck
-  binary::exists() { [[ "${1}" == "shellcheck" ]]; }
+  binary::exists() { [[ "${1}" == "shellcheck" ]] || [[ "${1}" == "docker" ]]; }
+  argsh::_docker_forward() { echo "DOCKER_FORWARD: $*"; return 0; }
 
   (argsh::lint "${_tmp}/a.sh") >"${stdout}" 2>"${stderr}" || status=$?
   rm -rf "${_tmp}"
 
   assert "${status}" -eq 0
-  contains "SHELLCHECK:" stdout
+  contains "DOCKER_FORWARD: lint" stdout
 }
 
 @test "argsh::lint: shellcheck failure propagates non-zero exit" {

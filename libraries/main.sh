@@ -1111,10 +1111,14 @@ argsh::lint() {
     echo "argsh lint: --only-argsh and --only-shellcheck are mutually exclusive" >&2
     return 2
   fi
-  # Require shellcheck only when we actually need it — otherwise a caller
-  # that runs `argsh lint --only-argsh` must not be forced to install it or
-  # fall back to Docker.
+  # Fall back to Docker when a required tool is missing locally:
+  # - shellcheck is needed unless --only-argsh
+  # - argsh-lint is needed unless --only-shellcheck
   if (( ! only_argsh )) && ! binary::exists shellcheck 2>/dev/null; then
+    argsh::_docker_forward lint "${@}"
+    return
+  fi
+  if (( ! only_shellcheck )) && ! binary::exists argsh-lint 2>/dev/null; then
     argsh::_docker_forward lint "${@}"
     return
   fi
@@ -1192,19 +1196,14 @@ argsh::lint() {
       shellcheck "${_file}" || _rc=1
     done
   fi
-  # argsh-lint — static analysis of argsh-specific constructs (AG001-AG013).
-  # If the binary isn't on PATH we skip silently unless the user explicitly
-  # asked for it, matching the shellcheck auto-install behavior used above.
+  # argsh-lint — static analysis of argsh-specific constructs (AG001-AG015).
+  # The docker fallback above guarantees argsh-lint is available when we reach
+  # here (unless --only-shellcheck was passed).
   if (( ! only_shellcheck )); then
-    if binary::exists argsh-lint 2>/dev/null; then
-      for _file in "${_expanded[@]}"; do
-        echo "argsh-lint ${_file}" >&2
-        argsh-lint "${_file}" || _rc=1
-      done
-    elif (( only_argsh )); then
-      echo "argsh lint: argsh-lint binary not found on PATH" >&2
-      return 1
-    fi
+    for _file in "${_expanded[@]}"; do
+      echo "argsh-lint ${_file}" >&2
+      argsh-lint "${_file}" || _rc=1
+    done
   fi
   return "${_rc}"
 }
