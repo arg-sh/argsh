@@ -1075,6 +1075,22 @@ YAML
   contains "installed" stderr
 }
 
+@test "e2e: argsh lib add --expect-digest rejects mismatch" {
+  local _tmp; _tmp="$(mktemp -d)"
+
+  # Install jaml first to get the real digest, then try with a wrong one
+  PATH_BASE="${_tmp}" argsh::lib::add jaml >"${stdout}" 2>"${stderr}" || status=$?
+  assert "${status}" -eq 0
+
+  # Remove and reinstall with wrong expected digest
+  rm -rf "${_tmp}/.argsh/libs/jaml"
+  PATH_BASE="${_tmp}" argsh::lib::add --expect-digest "sha256:0000000000000000" jaml >"${stdout}" 2>"${stderr}" || status=$?
+  rm -rf "${_tmp}"
+
+  assert "${status}" -ne 0
+  contains "digest mismatch" stderr
+}
+
 @test "e2e: argsh lib update re-fetches" {
   local _tmp; _tmp="$(mktemp -d)"
   cat > "${_tmp}/.argsh.yaml" << 'YAML'

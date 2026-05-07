@@ -630,16 +630,21 @@ argsh::lib::_remove_lock_entry() {
 # @description Add a plugin library to the project.
 # @arg $1 string Lib reference (e.g. argsh@data, data, data@0.1.0)
 # @arg --global Install to global libs directory instead of project-local
+# @arg --expect-digest string Expected OCI digest for integrity verification
 # @example
 #   argsh lib add data
 #   argsh lib add argsh@data
 #   argsh lib add --global data
 # @internal
 argsh::lib::add() {
-  local _global=0
-  if [[ "${1:-}" == "--global" ]]; then
-    _global=1; shift
-  fi
+  local _global=0 _expect_digest=""
+  while [[ "${1:-}" == --* ]]; do
+    case "${1}" in
+      --global) _global=1; shift ;;
+      --expect-digest) shift; [[ -n "${1:-}" && "${1:-}" != --* ]] || { echo "argsh lib add: --expect-digest requires a value" >&2; return 1; }; _expect_digest="${1}"; shift ;;
+      *) echo "argsh lib add: unknown option: ${1}" >&2; return 1 ;;
+    esac
+  done
 
   local _ref="${1:-}"
   [[ -n "${_ref}" ]] || { echo "argsh lib add: specify a library (e.g. argsh@data)" >&2; return 1; }
@@ -680,6 +685,7 @@ argsh::lib::add() {
   local _dest="${_lib_dir}/${_name}"
 
   echo "argsh: downloading ${_name} (${_tag})..." >&2
+  __LIB_PULL_DIGEST=""
 
   mkdir -p "${_lib_dir}"
   local _tmp_dest _tmpfile=""
@@ -704,6 +710,19 @@ argsh::lib::add() {
     argsh::lib::_curl_fallback "${_name}" "${_tag}" "${_tmp_dest}" || {
       rm -rf "${_tmp_dest}"; return 1
     }
+  fi
+
+  # Verify digest if expected (lockfile installs)
+  if [[ -n "${_expect_digest}" ]]; then
+    if [[ -z "${__LIB_PULL_DIGEST:-}" ]]; then
+      echo "argsh: warning: digest verification unavailable (no OCI digest from pull)" >&2
+    elif [[ "${__LIB_PULL_DIGEST}" != "${_expect_digest}" ]]; then
+      echo "argsh: digest mismatch for ${_name}" >&2
+      echo "  expected: ${_expect_digest}" >&2
+      echo "  got:      ${__LIB_PULL_DIGEST}" >&2
+      rm -rf "${_tmp_dest}"
+      return 1
+    fi
   fi
 
   # Atomic install: swap old aside, rename new in, then remove old
@@ -861,8 +880,8 @@ argsh::lib::install() {
   # Prefer lockfile for reproducible installs
   if [[ -f "${_dir}/.argsh.lock" ]]; then
     local _lib _oci_ref _failed=0
-    # Read lockfile: parse "key" entries under libs, then read their ref sub-field
-    local _entry_key="" _in_libs=0
+    # Read lockfile: parse "key" entries under libs, read ref + digest sub-fields
+    local _entry_key="" _entry_digest="" _in_libs=0
     while IFS= read -r _line || [[ -n "${_line}" ]]; do
       [[ -n "${_line}" && "${_line}" != \#* ]] || continue
       # Track libs: section
@@ -873,7 +892,13 @@ argsh::lib::install() {
       if [[ "${_line}" =~ ^[[:space:]][[:space:]]([^[:space:]:\"]+|\"[^\"]+\"):$ ]]; then
         _entry_key="${BASH_REMATCH[1]}"
         _entry_key="${_entry_key%\"}" ; _entry_key="${_entry_key#\"}"
+        _entry_digest=""
         continue
+      fi
+      # digest field (4-space indent)
+      if [[ -n "${_entry_key}" && "${_line}" =~ ^[[:space:]]{4,}digest:[[:space:]]+(.*) ]]; then
+        _entry_digest="${BASH_REMATCH[1]}"
+        _entry_digest="${_entry_digest%\"}" ; _entry_digest="${_entry_digest#\"}"
       fi
       # ref field (4-space indent)
       if [[ -n "${_entry_key}" && "${_line}" =~ ^[[:space:]]{4,}ref:[[:space:]]+(.*) ]]; then
@@ -883,7 +908,9 @@ argsh::lib::install() {
         local _tag="${_oci_ref##*:}"
         local _ref="${_entry_key}"
         [[ -z "${_tag}" || "${_tag}" == "${_oci_ref}" ]] || _ref="${_entry_key}@${_tag}"
-        argsh::lib::add "${_ref}" || { echo "argsh: failed to install ${_entry_key}" >&2; _failed=1; }
+        local -a _add_args=()
+        [[ -z "${_entry_digest}" ]] || _add_args+=(--expect-digest "${_entry_digest}")
+        argsh::lib::add "${_add_args[@]}" "${_ref}" || { echo "argsh: failed to install ${_entry_key}" >&2; _failed=1; }
         _entry_key=""
       fi
     done < "${_dir}/.argsh.lock"
