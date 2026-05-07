@@ -290,6 +290,123 @@ argsh::builtins() { argsh::builtin "${@}"; }
 # @description Default OCI registry for argsh official libs.
 declare -g __ARGSH_LIB_REGISTRY="${ARGSH_LIB_REGISTRY:-ghcr.io/arg-sh/libs}"
 
+# @description Read a simple scalar value from a YAML file by dot-path.
+# Supports top-level and one level of nesting (e.g. "defaults.path_libs").
+# @arg $1 string Dot-separated key path
+# @arg $2 string File path
+# @stdout The value (empty string if not found)
+# @internal
+argsh::lib::_yaml_get() {
+  local _path="${1}" _file="${2}"
+  [[ -f "${_file}" ]] || return 0
+  local _key1 _key2=""
+  if [[ "${_path}" == *.* ]]; then
+    _key1="${_path%%.*}"
+    _key2="${_path#*.}"
+  else
+    _key1="${_path}"
+  fi
+  local _line _in_section=0 _indent=""
+  while IFS= read -r _line || [[ -n "${_line}" ]]; do
+    # Skip comments and empty lines
+    [[ -n "${_line}" ]] || continue
+    [[ "${_line}" != \#* ]] || continue
+    if [[ -z "${_key2}" && "${_line}" =~ ^${_key1}:[[:space:]]+(.*) ]]; then
+      local _val="${BASH_REMATCH[1]}"
+      _val="${_val%\"}" ; _val="${_val#\"}"
+      _val="${_val%\'}" ; _val="${_val#\'}"
+      echo "${_val}"
+      return 0
+    elif [[ -n "${_key2}" ]]; then
+      # Nested: find section, then key within it
+      if [[ "${_line}" =~ ^${_key1}:[[:space:]]*$ ]]; then
+        _in_section=1; continue
+      fi
+      if (( _in_section )); then
+        [[ "${_line}" =~ ^[[:space:]] ]] || break
+        if [[ "${_line}" =~ ^[[:space:]]+${_key2}:[[:space:]]+(.*) ]]; then
+          local _val="${BASH_REMATCH[1]}"
+          _val="${_val%\"}" ; _val="${_val#\"}"
+          _val="${_val%\'}" ; _val="${_val#\'}"
+          echo "${_val}"
+          return 0
+        fi
+      fi
+    fi
+  done < "${_file}"
+}
+
+# @description Read entries from a YAML map section as key=value lines.
+# @arg $1 string Section name (e.g. "libs")
+# @arg $2 string File path
+# @stdout Lines of "key=value" (value may be a scalar or nested)
+# @internal
+argsh::lib::_yaml_entries() {
+  local _section="${1}" _file="${2}"
+  [[ -f "${_file}" ]] || return 0
+  local _line _in_section=0
+  while IFS= read -r _line || [[ -n "${_line}" ]]; do
+    [[ -n "${_line}" ]] || continue
+    [[ "${_line}" != \#* ]] || continue
+    if [[ "${_line}" =~ ^${_section}:[[:space:]]*$ ]]; then
+      _in_section=1; continue
+    fi
+    if (( _in_section )); then
+      [[ "${_line}" =~ ^[[:space:]] ]] || break
+      # "  key: value" or "  key:" (nested)
+      if [[ "${_line}" =~ ^[[:space:]]+([^[:space:]:]+):[[:space:]]*(.*) ]]; then
+        local _k="${BASH_REMATCH[1]}" _v="${BASH_REMATCH[2]}"
+        _k="${_k%\"}" ; _k="${_k#\"}"
+        _v="${_v%\"}" ; _v="${_v#\"}"
+        _v="${_v%\'}" ; _v="${_v#\'}"
+        echo "${_k}=${_v}"
+      fi
+    fi
+  done < "${_file}"
+}
+
+# @description Read a nested value from a lockfile entry.
+# Lockfile format has two-level nesting: libs.<key>.ref and libs.<key>.digest
+# @arg $1 string Entry key (e.g. "argsh@jaml")
+# @arg $2 string Field name (e.g. "ref" or "digest")
+# @arg $3 string File path
+# @stdout The value
+# @internal
+argsh::lib::_lock_get() {
+  local _entry="${1}" _field="${2}" _file="${3}"
+  [[ -f "${_file}" ]] || return 0
+  local _line _in_libs=0 _in_entry=0
+  while IFS= read -r _line || [[ -n "${_line}" ]]; do
+    [[ -n "${_line}" ]] || continue
+    [[ "${_line}" != \#* ]] || continue
+    if [[ "${_line}" =~ ^libs:[[:space:]]*$ ]]; then
+      _in_libs=1; continue
+    fi
+    if (( _in_libs )); then
+      [[ "${_line}" =~ ^[[:space:]] ]] || break
+      # Entry header: "  argsh@jaml:" or "  \"argsh@jaml\":"
+      local _stripped="${_line#"${_line%%[![:space:]]*}"}"
+      local _ek="${_stripped%%:*}"
+      _ek="${_ek%\"}" ; _ek="${_ek#\"}"
+      if [[ "${_ek}" == "${_entry}" ]]; then
+        _in_entry=1; continue
+      fi
+      if (( _in_entry )); then
+        # Next entry or end
+        if [[ "${_line}" =~ ^[[:space:]][[:space:]][^[:space:]] ]]; then
+          break
+        fi
+        if [[ "${_stripped}" =~ ^${_field}:[[:space:]]+(.*) ]]; then
+          local _val="${BASH_REMATCH[1]}"
+          _val="${_val%\"}" ; _val="${_val#\"}"
+          echo "${_val}"
+          return 0
+        fi
+      fi
+    fi
+  done < "${_file}"
+}
+
 # @description Global libs directory (XDG-compliant user-wide install).
 declare -gr __ARGSH_GLOBAL_LIBS="${XDG_DATA_HOME:-${HOME}/.local/share}/argsh/libs"
 
@@ -301,7 +418,7 @@ argsh::lib::dir() {
   local _dir="${PATH_BASE:-.}"
   if [[ -f "${_dir}/.argsh.yaml" ]]; then
     local _custom
-    _custom="$(yq -r '.defaults.path_libs // ""' "${_dir}/.argsh.yaml" 2>/dev/null)" || _custom=""
+    _custom="$(argsh::lib::_yaml_get "defaults.path_libs" "${_dir}/.argsh.yaml")"
     if [[ -n "${_custom}" ]]; then
       if [[ "${_custom:0:1}" == "/" ]]; then echo "${_custom}"; else echo "${_dir}/${_custom}"; fi
       return
@@ -326,7 +443,7 @@ argsh::lib::resolve() {
     _name="${_ref}"
   fi
 
-  # Validate provider name (prevent yq expression injection)
+  # Validate provider name
   if [[ ! "${_provider}" =~ ^[a-zA-Z0-9_-]+$ ]]; then
     echo "argsh: invalid provider name: ${_provider}" >&2
     return 1
@@ -335,11 +452,28 @@ argsh::lib::resolve() {
   if [[ "${_provider}" == "argsh" ]]; then
     _registry="${__ARGSH_LIB_REGISTRY}"
   else
-    # Look up in .argsh.yaml
+    # Look up in .argsh.yaml registries section
     local _dir="${PATH_BASE:-.}"
     if [[ -f "${_dir}/.argsh.yaml" ]]; then
-      # shellcheck disable=SC2016
-      _registry="$(yq -r --arg p "${_provider}" '.registries[$p].endpoint // ""' "${_dir}/.argsh.yaml" 2>/dev/null)" || _registry=""
+      # Read the registries.<provider> subsection for endpoint
+      local _line _in_registries=0 _in_provider=0
+      while IFS= read -r _line || [[ -n "${_line}" ]]; do
+        [[ -n "${_line}" && "${_line}" != \#* ]] || continue
+        if [[ "${_line}" =~ ^registries:[[:space:]]*$ ]]; then _in_registries=1; continue; fi
+        if (( _in_registries )); then
+          [[ "${_line}" =~ ^[[:space:]] ]] || break
+          if [[ "${_line}" =~ ^[[:space:]]+${_provider}:[[:space:]]*$ ]]; then _in_provider=1; continue; fi
+          if (( _in_provider )); then
+            [[ "${_line}" =~ ^[[:space:]]{4,} ]] || { _in_provider=0; continue; }
+            local _stripped="${_line#"${_line%%[![:space:]]*}"}"
+            if [[ "${_stripped}" =~ ^endpoint:[[:space:]]+(.*) ]]; then
+              _registry="${BASH_REMATCH[1]}"
+              _registry="${_registry%\"}" ; _registry="${_registry#\"}"
+              break
+            fi
+          fi
+        fi
+      done < "${_dir}/.argsh.yaml"
     fi
     if [[ -z "${_registry}" ]]; then
       echo "argsh: unknown registry provider: ${_provider}" >&2
@@ -443,17 +577,18 @@ argsh::lib::_curl_fallback() {
 # @internal
 argsh::lib::_write_lock_entry() {
   local _key="${1}" _ref="${2}" _digest="${3}"
-  if ! command -v yq &>/dev/null; then
-    echo "argsh: warning: yq not found — lockfile not updated" >&2
-    return 0
-  fi
   local _dir="${PATH_BASE:-.}"
   local _lock="${_dir}/.argsh.lock"
 
   if [[ ! -f "${_lock}" ]]; then
     printf '%s\n' "# auto-generated by argsh — do not edit" "libs:" > "${_lock}"
   fi
-  yq -i ".libs.\"${_key}\".ref = \"${_ref}\" | .libs.\"${_key}\".digest = \"${_digest}\"" "${_lock}"
+
+  # Remove existing entry (if any), then append the new one
+  argsh::lib::_remove_lock_entry "${_key}"
+  # Ensure "libs:" section exists
+  grep -q '^libs:' "${_lock}" 2>/dev/null || echo "libs:" >> "${_lock}"
+  printf '  "%s":\n    ref: %s\n    digest: %s\n' "${_key}" "${_ref}" "${_digest}" >> "${_lock}"
 }
 
 # @description Remove a lockfile entry from .argsh.lock.
@@ -464,8 +599,25 @@ argsh::lib::_remove_lock_entry() {
   local _dir="${PATH_BASE:-.}"
   local _lock="${_dir}/.argsh.lock"
   [[ -f "${_lock}" ]] || return 0
-  command -v yq &>/dev/null || return 0
-  yq -i "del(.libs.\"${_key}\")" "${_lock}"
+  # Remove the entry block: the key line + indented lines below it
+  local _tmp _in_entry=0 _matched=0
+  _tmp="$(mktemp)"
+  while IFS= read -r _line || [[ -n "${_line}" ]]; do
+    local _stripped="${_line#"${_line%%[![:space:]]*}"}"
+    local _ek="${_stripped%%:*}"
+    _ek="${_ek%\"}" ; _ek="${_ek#\"}"
+    # Match entry header (2-space indent): '  "key":' or '  key:'
+    if [[ "${_line}" =~ ^[[:space:]][[:space:]][^[:space:]] && "${_ek}" == "${_key}" ]]; then
+      _in_entry=1; _matched=1; continue
+    fi
+    if (( _in_entry )); then
+      # Sub-fields are 4+ spaces indented
+      if [[ "${_line}" =~ ^[[:space:]]{4,} ]]; then continue; fi
+      _in_entry=0
+    fi
+    printf '%s\n' "${_line}"
+  done < "${_lock}" > "${_tmp}"
+  if (( _matched )); then mv "${_tmp}" "${_lock}"; else rm -f "${_tmp}"; fi
 }
 
 # @description Add a plugin library to the project.
@@ -576,7 +728,14 @@ argsh::lib::add() {
     local _entry="${_ref}"
     [[ "${_ref}" == *@* ]] || _entry="argsh@${_ref}"
     # Add or update lib entry
-    yq -i ".libs.\"${_entry}\" = \"${_version:-latest}\"" "${_dir}/.argsh.yaml" 2>/dev/null || true
+    # Update or append lib entry in .argsh.yaml
+    if grep -q "^  ${_entry}:" "${_dir}/.argsh.yaml" 2>/dev/null || \
+       grep -q "^  \"${_entry}\":" "${_dir}/.argsh.yaml" 2>/dev/null; then
+      sed -i "s|^\(  \"\{0,1\}${_entry}\"\{0,1\}:\).*|\1 \"${_version:-latest}\"|" "${_dir}/.argsh.yaml" 2>/dev/null || true
+    else
+      grep -q '^libs:' "${_dir}/.argsh.yaml" 2>/dev/null || echo "libs:" >> "${_dir}/.argsh.yaml"
+      echo "  ${_entry}: \"${_version:-latest}\"" >> "${_dir}/.argsh.yaml"
+    fi
   fi
 
   # Write lockfile entry
@@ -614,7 +773,8 @@ argsh::lib::list() {
     local _name _version="?"
     _name="$(basename "${_d}")"
     if [[ -f "${_d}/argsh-plugin.yml" ]]; then
-      _version="$(yq -r '.version // "?"' "${_d}/argsh-plugin.yml" 2>/dev/null)" || _version="?"
+      _version="$(argsh::lib::_yaml_get "version" "${_d}/argsh-plugin.yml")"
+      [[ -n "${_version}" ]] || _version="?"
     fi
     echo "${_name} (${_version})"
   done
@@ -669,24 +829,31 @@ argsh::lib::remove() {
 argsh::lib::install() {
   local _dir="${PATH_BASE:-.}"
 
-  command -v yq &>/dev/null || {
-    echo "argsh: yq is required for lib install (https://github.com/mikefarah/yq)" >&2
-    return 1
-  }
-
   # Prefer lockfile for reproducible installs
   if [[ -f "${_dir}/.argsh.lock" ]]; then
     local _lib _oci_ref _failed=0
-    while IFS='=' read -r _lib _oci_ref; do
-      [[ -n "${_lib}" ]] || continue
-      _oci_ref="${_oci_ref//\"/}"
-      echo "Installing ${_lib} (locked: ${_oci_ref})..."
-      # Extract version tag from OCI ref (registry/name:tag → tag)
-      local _tag="${_oci_ref##*:}"
-      local _ref="${_lib}"
-      [[ -z "${_tag}" || "${_tag}" == "${_oci_ref}" ]] || _ref="${_lib}@${_tag}"
-      argsh::lib::add "${_ref}" || { echo "argsh: failed to install ${_lib}" >&2; _failed=1; }
-    done < <(yq -r '.libs // {} | to_entries[] | .key + "=" + .value.ref' "${_dir}/.argsh.lock" 2>/dev/null)
+    # Read lockfile: parse "key" entries under libs, then read their ref sub-field
+    local _entry_key=""
+    while IFS= read -r _line || [[ -n "${_line}" ]]; do
+      [[ -n "${_line}" && "${_line}" != \#* ]] || continue
+      # Entry header (2-space indent)
+      if [[ "${_line}" =~ ^[[:space:]][[:space:]]([^[:space:]:\"]+|\"[^\"]+\"):$ ]]; then
+        _entry_key="${BASH_REMATCH[1]}"
+        _entry_key="${_entry_key%\"}" ; _entry_key="${_entry_key#\"}"
+        continue
+      fi
+      # ref field (4-space indent)
+      if [[ -n "${_entry_key}" && "${_line}" =~ ^[[:space:]]{4,}ref:[[:space:]]+(.*) ]]; then
+        _oci_ref="${BASH_REMATCH[1]}"
+        _oci_ref="${_oci_ref%\"}" ; _oci_ref="${_oci_ref#\"}"
+        echo "Installing ${_entry_key} (locked: ${_oci_ref})..."
+        local _tag="${_oci_ref##*:}"
+        local _ref="${_entry_key}"
+        [[ -z "${_tag}" || "${_tag}" == "${_oci_ref}" ]] || _ref="${_entry_key}@${_tag}"
+        argsh::lib::add "${_ref}" || { echo "argsh: failed to install ${_entry_key}" >&2; _failed=1; }
+        _entry_key=""
+      fi
+    done < "${_dir}/.argsh.lock"
     return "${_failed}"
   fi
 
@@ -695,24 +862,16 @@ argsh::lib::install() {
     return 1
   fi
 
-  command -v yq &>/dev/null || {
-    echo "argsh: yq is required for lib install (https://github.com/mikefarah/yq)" >&2
-    return 1
-  }
-
   local _lib _version _ref _failed=0
   while IFS='=' read -r _lib _version; do
     [[ -n "${_lib}" ]] || continue
-    _version="${_version//\"/}"
     _version="${_version#^}"  # strip semver range prefix (v1: exact match only)
     _version="${_version#~}"
-    # v1: semver ranges not resolved — uses stripped version as exact tag
     echo "Installing ${_lib} (${_version})..." >&2
-    # Append version if available and not a range
     _ref="${_lib}"
     [[ -z "${_version}" || "${_version}" == "latest" ]] || _ref="${_lib}@${_version}"
     argsh::lib::add "${_ref}" || { echo "argsh: failed to install ${_lib}" >&2; _failed=1; }
-  done < <(yq -r '.libs // {} | to_entries[] | .key + "=" + (.value | tostring)' "${_dir}/.argsh.yaml" 2>/dev/null)
+  done < <(argsh::lib::_yaml_entries "libs" "${_dir}/.argsh.yaml")
   return "${_failed}"
 }
 
@@ -732,7 +891,7 @@ argsh::lib::update() {
     [[ -n "${_lib}" ]] || continue
     echo "Updating ${_lib}..."
     argsh::lib::add "${_lib}" || { echo "argsh: failed to update ${_lib}" >&2; _failed=1; }
-  done < <(yq -r '.libs // {} | to_entries[] | .key + "=" + .value' "${_dir}/.argsh.yaml" 2>/dev/null)
+  done < <(argsh::lib::_yaml_entries "libs" "${_dir}/.argsh.yaml")
   return "${_failed}"
 }
 
@@ -757,8 +916,8 @@ argsh::lib::publish() {
   fi
 
   local _name _version
-  _name="$(yq -r '.name // ""' argsh-plugin.yml)"
-  _version="$(yq -r '.version // ""' argsh-plugin.yml)"
+  _name="$(argsh::lib::_yaml_get "name" argsh-plugin.yml)"
+  _version="$(argsh::lib::_yaml_get "version" argsh-plugin.yml)"
   if [[ -z "${_name}" || -z "${_version}" ]]; then
     echo "argsh lib publish: argsh-plugin.yml must have 'name' and 'version' fields" >&2
     return 1
