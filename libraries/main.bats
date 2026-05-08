@@ -1207,6 +1207,51 @@ YAML
   contains "no argsh-plugin.yml" stderr
 }
 
+@test "argsh::lib::_semver_satisfies: basic constraints" {
+  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
+  argsh::lib::_semver_satisfies "1.2.3" ">=1.0.0"
+  argsh::lib::_semver_satisfies "1.2.3" ">=1.2.3"
+  ! argsh::lib::_semver_satisfies "0.9.0" ">=1.0.0"
+  argsh::lib::_semver_satisfies "1.2.3" ">1.2.2"
+  ! argsh::lib::_semver_satisfies "1.2.3" ">1.2.3"
+  argsh::lib::_semver_satisfies "1.2.3" "<=1.2.3"
+  argsh::lib::_semver_satisfies "1.2.3" "<1.3.0"
+  argsh::lib::_semver_satisfies "1.2.3" "=1.2.3"
+  ! argsh::lib::_semver_satisfies "1.2.3" "=1.2.4"
+}
+
+@test "argsh::lib::_semver_satisfies: caret and tilde" {
+  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
+  # ^1.2.0 means >=1.2.0 <2.0.0
+  argsh::lib::_semver_satisfies "1.5.0" "^1.2.0"
+  argsh::lib::_semver_satisfies "1.2.0" "^1.2.0"
+  ! argsh::lib::_semver_satisfies "2.0.0" "^1.2.0"
+  ! argsh::lib::_semver_satisfies "1.1.9" "^1.2.0"
+  # ^0.2.3 means >=0.2.3 <0.3.0 (0.x special case)
+  argsh::lib::_semver_satisfies "0.2.5" "^0.2.3"
+  ! argsh::lib::_semver_satisfies "0.3.0" "^0.2.3"
+  # ~1.2.0 means >=1.2.0 <1.3.0
+  argsh::lib::_semver_satisfies "1.2.5" "~1.2.0"
+  ! argsh::lib::_semver_satisfies "1.3.0" "~1.2.0"
+}
+
+@test "argsh::lib::_check_requires warns on version mismatch" {
+  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
+  local _tmp; _tmp="$(mktemp -d)"
+  mkdir -p "${_tmp}/mylib"
+  cat > "${_tmp}/mylib/argsh-plugin.yml" << 'YAML'
+name: mylib
+version: 1.0.0
+requires:
+  argsh: ">=99.0.0"
+YAML
+  ARGSH_VERSION="0.8.4" argsh::lib::_check_requires "${_tmp}/mylib" >"${stdout}" 2>"${stderr}" || true
+  rm -rf "${_tmp}"
+
+  contains "warning" stderr
+  contains "requires argsh" stderr
+}
+
 @test "e2e: argsh lib update re-fetches" {
   local _tmp; _tmp="$(mktemp -d)"
   cat > "${_tmp}/.argsh.yaml" << 'YAML'
