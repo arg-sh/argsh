@@ -501,6 +501,98 @@ fn no_resolve_flag_still_runs_diagnostics() {
 }
 
 #[test]
+fn wiki_link_flag_appends_diagnostic_url() {
+    let path = tmpfile(
+        "bad.sh",
+        "main() {\n\
+           local -a args=(\n\
+             'missing|m' \"x\"\n\
+           )\n\
+           :args \"T\" \"${@}\"\n\
+         }\n",
+    );
+    // -W 1 should show wiki link for the first occurrence of each code.
+    let (stdout, _stderr, code) = run(&["-W", "1", path.as_str()], None);
+    assert_eq!(code, 1);
+    assert!(stdout.contains("AG004"), "stdout: {}", stdout);
+    assert!(
+        stdout.contains("For more information:"),
+        "wiki link header missing: {}",
+        stdout
+    );
+    assert!(
+        stdout.contains("https://arg.sh/diagnostics/ag004"),
+        "wiki link URL missing: {}",
+        stdout
+    );
+}
+
+#[test]
+fn wiki_link_long_flag_works() {
+    let path = tmpfile(
+        "bad.sh",
+        "main() {\n\
+           local -a args=(\n\
+             'missing|m' \"x\"\n\
+           )\n\
+           :args \"T\" \"${@}\"\n\
+         }\n",
+    );
+    let (stdout, _stderr, code) = run(&["--wiki-link-count=1", path.as_str()], None);
+    assert_eq!(code, 1);
+    assert!(
+        stdout.contains("https://arg.sh/diagnostics/ag004"),
+        "wiki link URL missing: {}",
+        stdout
+    );
+}
+
+#[test]
+fn wiki_link_zero_shows_no_links() {
+    let path = tmpfile(
+        "bad.sh",
+        "main() {\n\
+           local -a args=(\n\
+             'missing|m' \"x\"\n\
+           )\n\
+           :args \"T\" \"${@}\"\n\
+         }\n",
+    );
+    let (stdout, _stderr, code) = run(&["-W", "0", path.as_str()], None);
+    assert_eq!(code, 1);
+    assert!(stdout.contains("AG004"), "stdout: {}", stdout);
+    assert!(
+        !stdout.contains("For more information:"),
+        "wiki link should not appear with -W 0: {}",
+        stdout
+    );
+}
+
+#[test]
+fn wiki_link_limits_per_code() {
+    // Two diagnostics with the same code (AG004). -W 1 should show the link only once.
+    let path = tmpfile(
+        "bad.sh",
+        "#!/usr/bin/env argsh\n\
+         main() {\n\
+           local -a args=(\n\
+             'missing|m' \"x\"\n\
+             'other|o'   \"y\"\n\
+           )\n\
+           :args \"T\" \"${@}\"\n\
+         }\n",
+    );
+    let (stdout, _stderr, code) = run(&["-W", "1", path.as_str()], None);
+    assert_eq!(code, 1);
+    let link_count = stdout.matches("https://arg.sh/diagnostics/ag004").count();
+    assert_eq!(
+        link_count, 1,
+        "expected exactly 1 wiki link, got {}: {}",
+        link_count, stdout
+    );
+}
+
+#[test]
 fn suppression_comment_silences_diagnostic() {
     // `# argsh disable-file=AG004` must suppress the AG004 diagnostic
     // (regression: suppression support works end-to-end in the CLI too,
