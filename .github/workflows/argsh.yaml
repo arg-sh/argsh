@@ -91,6 +91,7 @@ jobs:
           load: true
           provenance: false
           platforms: linux/amd64
+          target: debian
           tags: ${{ env.CI_IMAGE }}
           cache-from: type=gha,scope=build-amd64
           build-args: |
@@ -369,11 +370,20 @@ jobs:
           path: .
       - name: Prepare
         run: chmod +x argsh.min.sh
-      - name: Docker metadata
+      - name: Docker metadata (Debian)
         uses: docker/metadata-action@v6
         id: metadata
         with:
           images: ghcr.io/${{ github.repository }}
+          tags: ${{ startsWith(github.ref, 'refs/tags/v')
+            && format('type=match,pattern=v(.*),group=1,value={0}', github.ref_name)
+            || 'type=sha,format=long' }}
+      - name: Docker metadata (Alpine)
+        uses: docker/metadata-action@v6
+        id: metadata-alpine
+        with:
+          images: ghcr.io/${{ github.repository }}
+          flavor: suffix=-alpine
           tags: ${{ startsWith(github.ref, 'refs/tags/v')
             && format('type=match,pattern=v(.*),group=1,value={0}', github.ref_name)
             || 'type=sha,format=long' }}
@@ -402,15 +412,29 @@ jobs:
             ${{ env.CI_IMAGE }} test libraries/ .docker/test/
       # Multi-platform build + push with the final argsh.min.sh embedded.
       # Rust stages are cache hits from the build job.
-      - name: Build and push Docker image
+      - name: Build and push Docker image (Debian)
         uses: docker/build-push-action@v7
         with:
           context: .
           push: ${{ startsWith(github.ref, 'refs/tags/v') }}
           provenance: false
           platforms: linux/amd64,linux/arm64
+          target: debian
           tags: ${{ steps.metadata.outputs.tags }}
           labels: ${{ steps.metadata.outputs.labels }}
+          cache-from: |
+            type=gha,scope=build-amd64
+            type=gha,scope=build-arm64
+      - name: Build and push Docker image (Alpine)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: ${{ startsWith(github.ref, 'refs/tags/v') }}
+          provenance: false
+          platforms: linux/amd64,linux/arm64
+          target: alpine
+          tags: ${{ steps.metadata-alpine.outputs.tags }}
+          labels: ${{ steps.metadata-alpine.outputs.labels }}
           cache-from: |
             type=gha,scope=build-amd64
             type=gha,scope=build-arm64
