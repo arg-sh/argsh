@@ -381,7 +381,9 @@ argsh::lib::_check_requires() {
   _req="$(argsh::lib::_yaml_get "requires.argsh" "${_dest}/argsh-plugin.yml")"
   [[ -n "${_req}" ]] || return 0
   local _current="${ARGSH_VERSION:-}"
-  [[ -n "${_current}" && "${_current}" =~ ^[0-9] ]] || return 0
+  _current="${_current#v}"
+  _current="${_current%%-*}"  # strip pre-release/build suffix (e.g. 0.10.0-6-g31a07da-dirty)
+  [[ "${_current}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 0
   if ! argsh::lib::_semver_satisfies "${_current}" "${_req}"; then
     echo "argsh: warning: library requires argsh ${_req} but current version is ${_current}" >&2
   fi
