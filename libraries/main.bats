@@ -1075,6 +1075,34 @@ YAML
   contains "installed" stderr
 }
 
+@test "e2e: argsh lib add --global writes to global lockfile" {
+  local _global_jaml="${__ARGSH_GLOBAL_LIBS}/jaml"
+  local _global_lock="${__ARGSH_GLOBAL_LIBS}/.argsh-global.lock"
+  local _backup=""
+
+  # Backup existing global jaml if present
+  if [[ -d "${_global_jaml}" ]]; then
+    _backup="$(mktemp -d)"
+    mv "${_global_jaml}" "${_backup}/jaml"
+  fi
+
+  local _ok=0
+  argsh::lib::add --global jaml >"${stdout}" 2>"${stderr}" || status=$?
+  if [[ "${status}" -eq 0 && -f "${_global_lock}" ]]; then
+    grep -q "argsh@jaml" "${_global_lock}" && _ok=1
+  fi
+
+  # Cleanup
+  rm -rf "${_global_jaml}"
+  if [[ -n "${_backup}" ]]; then
+    mv "${_backup}/jaml" "${_global_jaml}" 2>/dev/null || true
+    rm -rf "${_backup}"
+  fi
+
+  assert "${_ok}" -eq 1
+  contains "installed" stderr
+}
+
 @test "e2e: argsh lib add --expect-digest rejects mismatch" {
   local _tmp; _tmp="$(mktemp -d)"
 
@@ -1128,4 +1156,121 @@ YAML
   assert "${status}" -eq 0
   assert -f "${_tmp}/.argsh/libs/jaml/jaml"
   rm -rf "${_tmp}"
+}
+
+# ---------------------------------------------------------------------------
+# argsh::lib::search tests
+# ---------------------------------------------------------------------------
+
+@test "argsh::lib::search: parses releases and lists libraries" {
+  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
+  curl() {
+    echo '[{"tag_name":"jaml/v0.2.0"},{"tag_name":"jaml/v0.1.1"},{"tag_name":"data/v1.0.0"},{"tag_name":"utils/v0.3.0"}]'
+  }
+  export -f curl
+
+  argsh::lib::search >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains "Available libraries:" stdout
+  contains "jaml \\(0\.2\.0\\)" stdout
+  contains "data \\(1\.0\.0\\)" stdout
+  contains "utils \\(0\.3\.0\\)" stdout
+}
+
+@test "argsh::lib::search: shows latest version only (first occurrence)" {
+  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
+  curl() {
+    echo '[{"tag_name":"jaml/v0.2.0"},{"tag_name":"jaml/v0.1.1"},{"tag_name":"jaml/v0.1.0"}]'
+  }
+  export -f curl
+
+  argsh::lib::search >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains "jaml \\(0\.2\.0\\)" stdout
+  # Older versions should not appear as separate entries
+  ! command grep -q "0.1.1" "${stdout}"
+  ! command grep -q "0.1.0" "${stdout}"
+}
+
+@test "argsh::lib::search: filters by name" {
+  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
+  curl() {
+    echo '[{"tag_name":"jaml/v0.2.0"},{"tag_name":"data/v1.0.0"},{"tag_name":"utils/v0.3.0"}]'
+  }
+  export -f curl
+
+  argsh::lib::search jaml >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains "jaml \\(0\.2\.0\\)" stdout
+  ! command grep -q "data" "${stdout}"
+  ! command grep -q "utils" "${stdout}"
+}
+
+@test "argsh::lib::search: no match shows message" {
+  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
+  curl() {
+    echo '[{"tag_name":"jaml/v0.2.0"}]'
+  }
+  export -f curl
+
+  argsh::lib::search nonexistent >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains "No libraries found matching" stdout
+}
+
+@test "argsh::lib::search: curl failure returns error" {
+  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
+  curl() { return 1; }
+  export -f curl
+
+  argsh::lib::search >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 1
+  contains "failed to query GitHub API" stderr
+}
+
+@test "argsh::lib::search: uses GITHUB_TOKEN for auth" {
+  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
+  curl() {
+    # Capture all args to verify auth header is passed
+    echo "CURL_ARGS: $*" >&2
+    echo '[{"tag_name":"jaml/v0.1.0"}]'
+  }
+  export -f curl
+
+  GITHUB_TOKEN="test-token-123" argsh::lib::search >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains "Authorization: token test-token-123" stderr
+  contains "jaml \\(0\.1\.0\\)" stdout
+}
+
+@test "argsh::main --help lists search subcommand" {
+  (argsh::main --help) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains "search" stdout
+}
+
+@test "argsh::main dispatches search to argsh::lib::search" {
+  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
+  argsh::lib::search() { echo "dispatched-to-search: $*"; }
+
+  (argsh::main search myfilter) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains "dispatched-to-search: myfilter" stdout
+}
+
+@test "e2e: argsh search lists real libraries from GitHub" {
+  argsh::lib::search >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains "Available libraries:" stdout
+  contains "jaml" stdout
 }
