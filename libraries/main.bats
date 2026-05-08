@@ -227,6 +227,33 @@ declare -gi ARGSH_BUILTIN="${ARGSH_BUILTIN:-0}"
   contains "test-ver" stdout
 }
 
+@test "shebang: --version derives from git when ARGSH_VERSION unset" {
+  # Unset ARGSH_VERSION so the git-describe fallback triggers
+  (
+    unset ARGSH_VERSION
+    # Re-source main.sh to trigger the fallback logic
+    source "${BATS_TEST_DIRNAME}/main.sh"
+    argsh::shebang --version
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  # Must not say "unknown" — git describe should have produced a tag/hash
+  ! command grep -q "unknown" "${stdout}"
+  contains "argsh " stdout
+}
+
+@test "argsh::status outputs version from git when ARGSH_VERSION unset" {
+  (
+    unset ARGSH_VERSION
+    source "${BATS_TEST_DIRNAME}/main.sh"
+    ARGSH_BUILTIN=0 argsh::status
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  ! command grep -q "argsh unknown" "${stdout}"
+  contains "argsh " stdout
+}
+
 # ---------------------------------------------------------------------------
 # Subcommand handler tests — verify dispatch reaches the handler and that
 # discover_files is available (regression: https://... was
