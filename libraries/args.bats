@@ -2935,3 +2935,35 @@ source "${PATH_FIXTURES}/fmt.sh"
   assert "${status}" -eq 0
   contains 'port=8080' stdout
 }
+
+# -----------------------------------------------------------------------------
+# Issue #133: :! on positional fields should not trigger "missing required flag"
+
+@test "attrs: positional with required modifier does not error as missing flag" {
+  (
+    local name
+    local -a args=(
+      'name:!' "A required positional"
+    )
+    :args "Positional required test" "hello"
+    echo "name=${name}"
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains 'name=hello' stdout
+}
+
+@test "attrs: error: positional with required modifier still errors when missing" {
+  (
+    local name
+    local -a args=(
+      'name:!' "A required positional"
+    )
+    :args "Positional required test"
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 2
+  is_empty stdout
+  contains "missing required argument" stderr
+}

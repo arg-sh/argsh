@@ -659,7 +659,9 @@ if ! (( ARGSH_BUILTIN )); then
     fi
 
     # is it required? was it matched?
-    if (( attrs[6] )) && [[ -z ${match[${args[i]}]:-} ]]; then
+    # skip positionals (no '|' means no flag aliases) — they are validated
+    # by position, not by flag lookup
+    if (( attrs[6] )) && [[ ${args[i]} == *"|"* ]] && [[ -z ${match[${args[i]}]:-} ]]; then
       :args::error_usage "missing required flag: ${args[i]/|*}"
     fi
   done
