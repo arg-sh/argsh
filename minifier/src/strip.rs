@@ -22,11 +22,6 @@ static RE_IMPORT_DEF: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[ \t]*import\(\)\s*\{.+\}\s*$").unwrap());
 static RE_SET_PIPEFAIL: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[ \t]*set -euo pipefail").unwrap());
-/// Matches a shebang `#!/` that appears mid-line (after a non-newline char).
-/// This happens when files are concatenated without trailing newlines,
-/// producing lines like `}#!/usr/bin/env bash`.
-static RE_MIDLINE_SHEBANG: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(.)#!/").unwrap());
 static RE_HEREDOC: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"<<-?\s*['"]?(\w+)['"]?"#).unwrap());
 
@@ -72,6 +67,108 @@ fn heredoc_outside_quotes(line: &str) -> Option<String> {
     None
 }
 
+/// Split mid-line shebangs (`}#!/...`) onto their own lines, but only when
+/// the `#!/` appears outside of quoted strings. This prevents mangling
+/// patterns like `'^#!/.*(ba)?sh'` inside single-quoted regexes (issue #76).
+fn split_midline_shebangs(input: &str) -> String {
+    // Work line-by-line to handle heredocs correctly — heredoc content is
+    // passed through without quote tracking (quotes inside are literal).
+    let mut result = String::with_capacity(input.len());
+    let mut heredoc_delim: Option<String> = None;
+
+    for line in input.split_inclusive('\n') {
+        // Inside heredoc — pass through verbatim
+        if let Some(ref delim) = heredoc_delim {
+            result.push_str(line);
+            if line.trim_end_matches('\n').trim() == delim.as_str() {
+                heredoc_delim = None;
+            }
+            continue;
+        }
+
+        // Check for heredoc start on this line (reuse the module-level function)
+        if let Some(delim) = heredoc_outside_quotes(line.trim_end_matches('\n')) {
+            heredoc_delim = Some(delim);
+        }
+
+        // Process this line character by character for quote-aware shebang splitting
+        split_line_shebangs(line, &mut result);
+    }
+    result
+}
+
+/// Process a single line for mid-line shebang splitting, respecting quotes.
+fn split_line_shebangs(line: &str, result: &mut String) {
+    let mut in_single = false;
+    let mut in_double = false;
+    let mut in_comment = false;
+    let chars: Vec<char> = line.chars().collect();
+    let len = chars.len();
+
+    let mut i = 0;
+    while i < len {
+        let ch = chars[i];
+
+        // Newline — just pass through
+        if ch == '\n' {
+            in_comment = false;
+            result.push(ch);
+            i += 1;
+            continue;
+        }
+
+        // Inside a comment, skip quote tracking (e.g. "# don't")
+        if in_comment {
+            result.push(ch);
+            i += 1;
+            continue;
+        }
+
+        // Detect comment start outside quotes — # only starts a comment at a
+        // word boundary (after whitespace or BOL), not mid-word like foo#bar
+        // or in parameter expansions like ${#var}
+        let at_word_start = i == 0 || matches!(chars[i - 1], ' ' | '\t' | ';' | '\n');
+        if !in_single && !in_double && ch == '#' && at_word_start
+            && !(i + 1 < len && chars[i + 1] == '!' && i + 2 < len && chars[i + 2] == '/')
+        {
+            in_comment = true;
+            result.push(ch);
+            i += 1;
+            continue;
+        }
+
+        // Count preceding backslashes for escape detection
+        let is_escaped = if !in_single {
+            let mut b = 0;
+            let mut j = i;
+            while j > 0 && chars[j - 1] == '\\' { b += 1; j -= 1; }
+            b % 2 == 1
+        } else {
+            false // backslash is literal inside single quotes
+        };
+
+        // Track quotes (backslash is literal inside single quotes)
+        if ch == '\'' && !in_double && (in_single || !is_escaped) {
+            in_single = !in_single;
+        } else if ch == '"' && !in_single && !is_escaped {
+            in_double = !in_double;
+        }
+
+        // Detect #!/ outside quotes — split onto new line
+        if !in_single && !in_double
+            && ch == '#'
+            && i + 1 < len && chars[i + 1] == '!'
+            && i + 2 < len && chars[i + 2] == '/'
+            && i > 0 && chars[i - 1] != '\n'
+        {
+            result.push('\n');
+        }
+
+        result.push(ch);
+        i += 1;
+    }
+}
+
 /// Strip lines from input, returning only lines that survive.
 ///
 /// Pre-processes input to split mid-line shebangs caused by file
@@ -79,8 +176,9 @@ fn heredoc_outside_quotes(line: &str) -> Option<String> {
 /// Preserves heredoc content verbatim (comments, imports, blank lines inside
 /// heredocs are kept).
 pub fn strip_lines(input: &str) -> Vec<String> {
-    // Split mid-line shebangs onto their own lines so they get stripped
-    let normalized = RE_MIDLINE_SHEBANG.replace_all(input, "$1\n#!/");
+    // Split mid-line shebangs onto their own lines so they get stripped.
+    // Only replace outside of quoted strings to avoid mangling patterns like '^#!/'
+    let normalized = split_midline_shebangs(input);
     let mut result = Vec::new();
     let mut heredoc_delim: Option<String> = None;
 
@@ -191,6 +289,55 @@ mod tests {
                 "echo after",
             ]
         );
+    }
+
+    #[test]
+    fn shebang_inside_single_quotes_not_split() {
+        // Issue #76: '^#!/' inside single-quoted regex must not be treated as mid-line shebang
+        let input = "grep -qE '^#!/.*(ba)?sh([[:space:]]|$)|^#!/.*argsh'\necho after";
+        let result = strip_lines(input);
+        assert_eq!(
+            result,
+            vec![
+                "grep -qE '^#!/.*(ba)?sh([[:space:]]|$)|^#!/.*argsh'",
+                "echo after",
+            ]
+        );
+    }
+
+    #[test]
+    fn shebang_inside_double_quotes_not_split() {
+        let input = "echo \"^#!/bin/bash\"\necho after";
+        let result = strip_lines(input);
+        assert_eq!(
+            result,
+            vec!["echo \"^#!/bin/bash\"", "echo after"]
+        );
+    }
+
+    #[test]
+    fn comment_apostrophe_does_not_break_shebang_split() {
+        // Apostrophe in a comment must not toggle quote state
+        let input = "# don't break\n}#!/usr/bin/env bash\necho hello";
+        let result = strip_lines(input);
+        // Comment stripped, shebang split and stripped, code kept
+        assert_eq!(result, vec!["}", "echo hello"]);
+    }
+
+    #[test]
+    fn hash_in_parameter_expansion_not_comment() {
+        // ${#var} is string length, not a comment
+        let input = "echo ${#arr[@]}\n}#!/usr/bin/env bash\necho after";
+        let result = strip_lines(input);
+        assert_eq!(result, vec!["echo ${#arr[@]}", "}", "echo after"]);
+    }
+
+    #[test]
+    fn escaped_single_quote_outside_quotes() {
+        // \' outside quotes is a literal quote, not a string delimiter
+        let input = "echo \\'hello\\'\n}#!/usr/bin/env bash\necho after";
+        let result = strip_lines(input);
+        assert_eq!(result, vec!["echo \\'hello\\'", "}", "echo after"]);
     }
 
     #[test]
