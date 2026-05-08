@@ -5,13 +5,16 @@ sidebar_label: 'Overview'
 
 # Plugins
 
-argsh supports plugin libraries that extend its functionality beyond the core. Plugins are installed per-project and imported like any other library.
+argsh supports plugin libraries that extend its functionality beyond the core. Plugins are installed per-project and imported like any other library. No external dependencies (such as `yq`) are required — argsh parses YAML configuration files with built-in pure-Bash helpers.
 
 ## Quick start
 
 ```bash
+# Search for available plugins
+argsh search
+
 # Add a plugin
-argsh lib add jaml
+argsh add jaml
 
 # Use it
 import jaml
@@ -22,11 +25,12 @@ jaml::get config.yaml domain=.spec.cluster.domain
 
 ## How it works
 
-Plugins are distributed as OCI artifacts or GitHub release tarballs. They install to your project's `.argsh/libs/` directory and are resolved via the standard `import` system.
+Plugins are distributed as OCI artifacts or GitHub release tarballs. They install to your project's `.argsh/libs/` directory and are resolved via the standard `import` system. A lockfile (`.argsh.lock`) records the exact OCI ref and digest for each installed library, enabling reproducible installs.
 
 ```text
 myproject/
 ├── .argsh.yaml          # declares dependencies
+├── .argsh.lock          # pinned refs + digests (committed to VCS)
 ├── .argsh/
 │   └── libs/            # installed plugins (gitignored)
 │       └── jaml/
@@ -39,11 +43,52 @@ myproject/
 
 | Command | Description |
 | ------- | ----------- |
-| `argsh lib add <name>` | Install a plugin |
-| `argsh lib add <name>@<version>` | Install a specific version |
-| `argsh lib list` | List installed plugins |
-| `argsh lib remove <name>` | Remove a plugin |
-| `argsh lib install` | Install all from `.argsh.yaml` |
+| `argsh add <name>` | Install a plugin |
+| `argsh add <name>@<version>` | Install a specific version |
+| `argsh add --global <name>` | Install to the global libs directory with lockfile tracking |
+| `argsh search [filter]` | Search available plugins (substring match) |
+| `argsh list` | List installed plugins |
+| `argsh list --global` | List globally installed plugins |
+| `argsh remove <name>` | Remove a plugin |
+| `argsh remove --global <name>` | Remove a globally installed plugin |
+| `argsh install` | Install all from `.argsh.lock` (or `.argsh.yaml` if no lockfile) |
+| `argsh update` | Update all project libraries to latest versions |
+| `argsh update --global` | Update all globally installed libraries |
+| `argsh publish` | Publish the current directory as a plugin to an OCI registry |
+
+### `argsh search`
+
+Queries the GitHub API for releases from [arg-sh/libs](https://github.com/arg-sh/libs), grouped by library name with the latest version shown. An optional filter argument restricts output to matching names. Uses `GITHUB_TOKEN` / `GH_TOKEN` when available to avoid rate limits.
+
+```bash
+argsh search          # list all available plugins
+argsh search jaml     # filter by name substring
+```
+
+### `argsh add --global`
+
+Installs a plugin to the global libs directory (`${XDG_DATA_HOME:-~/.local/share}/argsh/libs`) instead of the project-local `.argsh/libs/`. Global installs are tracked in a separate lockfile at `~/.local/share/argsh/libs/.argsh-global.lock`.
+
+```bash
+argsh add --global jaml
+```
+
+### `argsh install`
+
+Installs all libraries from the lockfile (`.argsh.lock`). Each entry's OCI digest is verified during install — if a digest mismatch is detected, installation of that library fails. If no lockfile exists, falls back to reading `.argsh.yaml`.
+
+```bash
+argsh install
+```
+
+### `argsh update`
+
+Re-fetches every library at its latest version and updates the lockfile. With `--global`, updates all globally installed libraries instead.
+
+```bash
+argsh update            # update project libraries
+argsh update --global   # update global libraries
+```
 
 ## Project configuration
 
@@ -84,6 +129,6 @@ Core libraries (`is::`, `to::`, `string::`, `args`, etc.) ship with argsh and ar
 | | Core libraries | Plugins |
 | --- | --- | --- |
 | Location | `libraries/*.sh` | `.argsh/libs/` |
-| Install | Built-in | `argsh lib add` |
+| Install | Built-in | `argsh add` |
 | Docs | [Library Reference](/libraries/overview) | This section |
 | Source | [arg-sh/argsh](https://github.com/arg-sh/argsh) | [arg-sh/libs](https://github.com/arg-sh/libs) |
