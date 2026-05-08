@@ -1,0 +1,71 @@
+---
+description: "AG013: import could not be resolved"
+---
+
+# AG013: Import Could Not Be Resolved
+
+| Property | Value |
+|----------|-------|
+| Code | AG013 |
+| Severity | Warning |
+| Since | v0.1.0 |
+
+## Description
+
+An `import` statement references a module that the linter could not resolve
+to an actual file on disk. This means cross-file analysis (function lookup,
+AG007 resolution) will be incomplete for that import.
+
+The linter resolves imports relative to the file's directory, the project
+root, and any paths declared via `# argsh source=` directives.
+
+## Example
+
+This triggers AG013:
+
+```bash
+#!/usr/bin/env bash
+source argsh
+
+# highlight-next-line
+import nonexistent-module.sh
+
+main() {
+  echo "hello"
+}
+```
+
+## How to Fix
+
+Ensure the imported file exists at one of the searched paths:
+
+```bash
+#!/usr/bin/env bash
+source argsh
+
+import lib/utils.sh    # file exists at ./lib/utils.sh
+
+main() {
+  echo "hello"
+}
+```
+
+If the file is in a non-standard location, add a source directive:
+
+```bash
+# argsh source=vendor/
+import vendor-lib.sh
+```
+
+## How to Suppress
+
+```bash
+# argsh disable=AG013
+import nonexistent-module.sh
+```
+
+Or file-wide:
+
+```bash
+# argsh disable-file=AG013
+```

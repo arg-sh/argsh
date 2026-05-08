@@ -1,0 +1,76 @@
+---
+description: "AG007: usage target function not found"
+---
+
+# AG007: Usage Target Function Not Found
+
+| Property | Value |
+|----------|-------|
+| Code | AG007 |
+| Severity | Warning |
+| Since | v0.1.0 |
+
+## Description
+
+A `usage=()` entry references a subcommand whose target function cannot be
+found in the current file or resolved imports. The linter searches these
+namespaces in order:
+
+1. `<caller>::<cmd>` -- full caller prefix (e.g. `main::deploy`)
+2. `<last_segment>::<cmd>` -- last `::` segment of caller
+3. `argsh::<cmd>` -- framework namespace
+4. `<cmd>` -- bare function name
+
+If none resolve, this diagnostic fires.
+
+## Example
+
+This triggers AG007:
+
+```bash
+# highlight-next-line
+main() {
+  local -a usage=(
+    "deploy" "Deploy the app"
+  )
+  :usage "My CLI" "${@}"
+}
+
+# missing: main::deploy() { ... }
+```
+
+## How to Fix
+
+Define the target function or fix the command name:
+
+```bash
+main() {
+  local -a usage=(
+    "deploy" "Deploy the app"
+  )
+  :usage "My CLI" "${@}"
+}
+
+main::deploy() {
+  echo "Deploying..."
+}
+```
+
+If the function is in another file, make sure it is imported:
+
+```bash
+import deploy.sh
+```
+
+## How to Suppress
+
+```bash
+# argsh disable=AG007
+main() {
+```
+
+Or file-wide:
+
+```bash
+# argsh disable-file=AG007
+```

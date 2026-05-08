@@ -1,0 +1,59 @@
+---
+description: "AG002: usage entry missing description"
+---
+
+# AG002: Usage Entry Missing Description
+
+| Property | Value |
+|----------|-------|
+| Code | AG002 |
+| Severity | Error |
+| Since | v0.1.0 |
+
+## Description
+
+Every non-separator entry in the `usage=()` array must have a description
+string. The description is rendered in the command's `--help` output. An
+entry that is not a group separator but lacks a description is an error.
+
+## Example
+
+This triggers AG002:
+
+```bash
+main() {
+  local -a usage=(
+    # highlight-next-line
+    "deploy"            # missing description
+    "status" "Show current status"
+  )
+  :usage "My CLI" "${@}"
+}
+```
+
+## How to Fix
+
+Add a description string after each command name:
+
+```bash
+main() {
+  local -a usage=(
+    "deploy" "Deploy the application"
+    "status" "Show current status"
+  )
+  :usage "My CLI" "${@}"
+}
+```
+
+## How to Suppress
+
+```bash
+# argsh disable=AG002
+"deploy"
+```
+
+Or file-wide:
+
+```bash
+# argsh disable-file=AG002
+```

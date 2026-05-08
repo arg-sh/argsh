@@ -1,0 +1,60 @@
+---
+description: "AG004: missing local variable declaration"
+---
+
+# AG004: Missing Local Variable Declaration
+
+| Property | Value |
+|----------|-------|
+| Code | AG004 |
+| Severity | Warning |
+| Since | v0.1.0 |
+
+## Description
+
+An entry in the `args=()` array references a variable name that has no
+matching `local` declaration in the function. argsh's `:args` parser stores
+parsed values into local variables, so each field must have a corresponding
+`local <name>` declaration.
+
+## Example
+
+This triggers AG004:
+
+```bash
+my_func() {
+  # highlight-next-line
+  # missing: local name
+  local -a args=(
+    'name|n' "The name to greet"
+  )
+  :args "My function" "${@}"
+}
+```
+
+## How to Fix
+
+Add a `local` declaration for the variable:
+
+```bash
+my_func() {
+  local name
+  local -a args=(
+    'name|n' "The name to greet"
+  )
+  :args "My function" "${@}"
+}
+```
+
+## How to Suppress
+
+```bash
+# argsh disable=AG004
+'name|n' "The name to greet"
+```
+
+Or file-wide:
+
+```bash
+# argsh disable-file=AG004
+```

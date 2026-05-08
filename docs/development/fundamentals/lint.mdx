@@ -9,7 +9,7 @@ linter pipeline, which combines two complementary tools:
 
 1. **shellcheck** — general-purpose Bash linter (covers quoting, subshells,
    command substitution, POSIX portability, etc.).
-2. **argsh-lint** — argsh-specific static analysis (AG001–AG010, AG012–AG013;
+2. **argsh-lint** — argsh-specific static analysis (AG001–AG010, AG012–AG015;
    AG011 is reserved) for `:args` / `:usage` declarations, field specs,
    variable declarations, imports, and more.
 
@@ -55,18 +55,20 @@ shellcheck's `SC####`. The full list:
 
 | Code  | Meaning                                                        |
 |-------|----------------------------------------------------------------|
-| AG001 | `args` array entry missing description                         |
-| AG002 | `usage` array entry missing description                        |
-| AG003 | Invalid field specification (unknown modifier, parse error)    |
-| AG004 | Array entry has no matching `local <var>` declaration          |
-| AG005 | `args` array declared but `:args` never called                 |
-| AG006 | `usage` array declared but `:usage` never called               |
-| AG007 | `usage` target function cannot be resolved                     |
-| AG008 | Duplicate flag name in the same `args` array                   |
-| AG009 | Duplicate short alias in the same `args` array                 |
-| AG010 | Command resolves to a bare (non-namespaced) function           |
-| AG012 | Local variable shadows a parent scope's args field             |
-| AG013 | `import` could not be resolved                                 |
+| [AG001](../../diagnostics/ag001.mdx) | `args` array entry missing description                         |
+| [AG002](../../diagnostics/ag002.mdx) | `usage` array entry missing description                        |
+| [AG003](../../diagnostics/ag003.mdx) | Invalid field specification (unknown modifier, parse error)    |
+| [AG004](../../diagnostics/ag004.mdx) | Array entry has no matching `local <var>` declaration          |
+| [AG005](../../diagnostics/ag005.mdx) | `args` array declared but `:args` never called                 |
+| [AG006](../../diagnostics/ag006.mdx) | `usage` array declared but `:usage` never called               |
+| [AG007](../../diagnostics/ag007.mdx) | `usage` target function cannot be resolved                     |
+| [AG008](../../diagnostics/ag008.mdx) | Duplicate flag name in the same `args` array                   |
+| [AG009](../../diagnostics/ag009.mdx) | Duplicate short alias in the same `args` array                 |
+| [AG010](../../diagnostics/ag010.mdx) | Command resolves to a bare (non-namespaced) function           |
+| [AG012](../../diagnostics/ag012.mdx) | Local variable shadows a parent scope's args field             |
+| [AG013](../../diagnostics/ag013.mdx) | `import` could not be resolved                                 |
+| [AG014](../../diagnostics/ag014.mdx) | Inherited field missing `${var:-}` default pattern             |
+| [AG015](../../diagnostics/ag015.mdx) | `# argsh source=` path not found                               |
 
 ## Suppressing diagnostics
 
