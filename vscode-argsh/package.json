@@ -57,6 +57,12 @@
         "command": "argsh.exportJson",
         "title": "Export JSON",
         "category": "argsh"
+      },
+      {
+        "command": "argsh.commandTree.toggleBreakpoint",
+        "title": "Toggle Breakpoint on Entry",
+        "icon": "$(debug-breakpoint)",
+        "category": "argsh"
       }
     ],
     "keybindings": [
@@ -72,6 +78,18 @@
           "command": "argsh.showPreview",
           "when": "resourceLangId == shellscript",
           "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "argsh.commandTree.toggleBreakpoint",
+          "when": "view == argsh.commandTree && viewItem =~ /^argshCommand/",
+          "group": "inline"
+        },
+        {
+          "command": "argsh.commandTree.toggleBreakpoint",
+          "when": "view == argsh.commandTree && viewItem =~ /^argshCommand/",
+          "group": "debug"
         }
       ]
     },
