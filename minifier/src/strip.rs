@@ -125,8 +125,9 @@ fn split_line_shebangs(line: &str, result: &mut String) {
         }
 
         // Detect comment start outside quotes — # only starts a comment at a
-        // word boundary (after whitespace, BOL, or ;), not mid-word like foo#bar
-        let at_word_start = i == 0 || matches!(chars[i - 1], ' ' | '\t' | ';' | '{' | '(' | '\n');
+        // word boundary (after whitespace or BOL), not mid-word like foo#bar
+        // or in parameter expansions like ${#var}
+        let at_word_start = i == 0 || matches!(chars[i - 1], ' ' | '\t' | ';' | '\n');
         if !in_single && !in_double && ch == '#' && at_word_start
             && !(i + 1 < len && chars[i + 1] == '!' && i + 2 < len && chars[i + 2] == '/')
         {
@@ -321,6 +322,14 @@ mod tests {
         let result = strip_lines(input);
         // Comment stripped, shebang split and stripped, code kept
         assert_eq!(result, vec!["}", "echo hello"]);
+    }
+
+    #[test]
+    fn hash_in_parameter_expansion_not_comment() {
+        // ${#var} is string length, not a comment
+        let input = "echo ${#arr[@]}\n}#!/usr/bin/env bash\necho after";
+        let result = strip_lines(input);
+        assert_eq!(result, vec!["echo ${#arr[@]}", "}", "echo after"]);
     }
 
     #[test]
