@@ -549,7 +549,7 @@ jobs:
           argsh coverage minifier
           argsh coverage shdoc
           argsh coverage lsp
-          argsh minify libraries -t argsh.min.tmpl -o argsh.min.sh
+          argsh minify
         env:
           GIT_COMMIT_SHA: ${{ github.sha }}
           GIT_VERSION: ${{ github.ref_name }}
