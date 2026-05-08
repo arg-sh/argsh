@@ -1075,32 +1075,95 @@ YAML
   contains "installed" stderr
 }
 
-@test "e2e: argsh lib add --global writes to global lockfile" {
-  local _global_jaml="${__ARGSH_GLOBAL_LIBS}/jaml"
-  local _global_lock="${__ARGSH_GLOBAL_LIBS}/.argsh-global.lock"
-  local _backup=""
+@test "argsh::lib lockfile helpers support LOCK_FILE override" {
+  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
+  local _tmp
+  _tmp="$(mktemp -d)"
+  local _lock="${_tmp}/.argsh-global.lock"
 
-  # Backup existing global jaml if present
+  LOCK_FILE="${_lock}" argsh::lib::_write_lock_entry "argsh@mocklib" "ghcr.io/arg-sh/libs/mocklib:0.1.0" "sha256:abc123"
+
+  assert -f "${_lock}"
+  local _content
+  _content="$(cat "${_lock}")"
+  [[ "${_content}" == *"argsh@mocklib"* ]] || {
+    echo "lockfile missing argsh@mocklib entry" >&2; false
+  }
+  [[ "${_content}" == *"ref: ghcr.io/arg-sh/libs/mocklib:0.1.0"* ]] || {
+    echo "lockfile missing ref field" >&2; false
+  }
+  [[ "${_content}" == *"digest: sha256:abc123"* ]] || {
+    echo "lockfile missing digest field" >&2; false
+  }
+
+  LOCK_FILE="${_lock}" argsh::lib::_remove_lock_entry "argsh@mocklib"
+  _content="$(cat "${_lock}")"
+  [[ "${_content}" != *"argsh@mocklib"* ]] || {
+    echo "lockfile still contains argsh@mocklib after remove" >&2; false
+  }
+
+  assert ! -f ".argsh.lock"
+  rm -rf "${_tmp}"
+}
+
+@test "e2e: argsh lib add --global writes to global lockfile" {
+  local _global_lock="${__ARGSH_GLOBAL_LIBS}/.argsh-global.lock"
+  local _global_jaml="${__ARGSH_GLOBAL_LIBS}/jaml"
+  local _backup="" _lock_backup=""
+
+  # Backup existing global state
   if [[ -d "${_global_jaml}" ]]; then
     _backup="$(mktemp -d)"
     mv "${_global_jaml}" "${_backup}/jaml"
   fi
-
-  local _ok=0
-  argsh::lib::add --global jaml >"${stdout}" 2>"${stderr}" || status=$?
-  if [[ "${status}" -eq 0 && -f "${_global_lock}" ]]; then
-    grep -q "argsh@jaml" "${_global_lock}" && _ok=1
+  if [[ -f "${_global_lock}" ]]; then
+    _lock_backup="$(mktemp)"
+    cp "${_global_lock}" "${_lock_backup}"
   fi
 
-  # Cleanup
+  # Add globally
+  local _add_stderr; _add_stderr="$(mktemp)"
+  argsh::lib::add --global jaml >"${stdout}" 2>"${_add_stderr}" || status=$?
+
+  # Check results
+  local _ok=0 _has_entry=0 _has_ref=0 _has_digest=0
+  if [[ "${status:-0}" -eq 0 && -f "${_global_lock}" ]]; then
+    _ok=1
+    local _lc; _lc="$(cat "${_global_lock}")"
+    [[ "${_lc}" == *"argsh@jaml"* ]] && _has_entry=1
+    [[ "${_lc}" == *"ref:"* ]] && _has_ref=1
+    [[ "${_lc}" == *"digest:"* ]] && _has_digest=1
+  fi
+
+  # Test remove updates the lockfile
+  local _removed_ok=0
+  if (( _ok )); then
+    argsh::lib::remove --global jaml >"${stdout}" 2>"${stderr}" || true
+    local _lc2; _lc2="$(cat "${_global_lock}" 2>/dev/null)"
+    [[ "${_lc2}" != *"argsh@jaml"* ]] && _removed_ok=1
+  fi
+
+  # Restore backups
   rm -rf "${_global_jaml}"
   if [[ -n "${_backup}" ]]; then
     mv "${_backup}/jaml" "${_global_jaml}" 2>/dev/null || true
     rm -rf "${_backup}"
   fi
+  if [[ -n "${_lock_backup}" ]]; then
+    mv "${_lock_backup}" "${_global_lock}"
+  else
+    rm -f "${_global_lock}"
+  fi
 
   assert "${_ok}" -eq 1
-  contains "installed" stderr
+  assert "${_has_entry}" -eq 1
+  assert "${_has_ref}" -eq 1
+  assert "${_has_digest}" -eq 1
+  assert "${_removed_ok}" -eq 1
+  grep -q "installed" "${_add_stderr}" || {
+    echo "add stderr missing 'installed': $(cat "${_add_stderr}")" >&2; false
+  }
+  rm -f "${_add_stderr}"
 }
 
 @test "e2e: argsh lib add --expect-digest rejects mismatch" {
