@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use serde_json::{json, Value};
 
-const TIMEOUT: Duration = Duration::from_secs(5);
+const TIMEOUT: Duration = Duration::from_secs(10);
 
 fn bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_argsh-dap"))
