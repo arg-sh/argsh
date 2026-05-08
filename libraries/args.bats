@@ -2941,7 +2941,7 @@ source "${PATH_FIXTURES}/fmt.sh"
 
 @test "attrs: positional with required modifier does not error as missing flag" {
   (
-    local name
+    local name=""
     local -a args=(
       'name:!' "A required positional"
     )
