@@ -71,18 +71,45 @@ fn heredoc_outside_quotes(line: &str) -> Option<String> {
 /// the `#!/` appears outside of quoted strings. This prevents mangling
 /// patterns like `'^#!/.*(ba)?sh'` inside single-quoted regexes (issue #76).
 fn split_midline_shebangs(input: &str) -> String {
+    // Work line-by-line to handle heredocs correctly — heredoc content is
+    // passed through without quote tracking (quotes inside are literal).
     let mut result = String::with_capacity(input.len());
+    let mut heredoc_delim: Option<String> = None;
+
+    for line in input.split_inclusive('\n') {
+        // Inside heredoc — pass through verbatim
+        if let Some(ref delim) = heredoc_delim {
+            result.push_str(line);
+            if line.trim_end_matches('\n').trim() == delim.as_str() {
+                heredoc_delim = None;
+            }
+            continue;
+        }
+
+        // Check for heredoc start on this line (reuse the module-level function)
+        if let Some(delim) = heredoc_outside_quotes(line.trim_end_matches('\n')) {
+            heredoc_delim = Some(delim);
+        }
+
+        // Process this line character by character for quote-aware shebang splitting
+        split_line_shebangs(line, &mut result);
+    }
+    result
+}
+
+/// Process a single line for mid-line shebang splitting, respecting quotes.
+fn split_line_shebangs(line: &str, result: &mut String) {
     let mut in_single = false;
     let mut in_double = false;
     let mut in_comment = false;
-    let chars: Vec<char> = input.chars().collect();
+    let chars: Vec<char> = line.chars().collect();
     let len = chars.len();
 
     let mut i = 0;
     while i < len {
         let ch = chars[i];
 
-        // Reset comment state on newline
+        // Newline — just pass through
         if ch == '\n' {
             in_comment = false;
             result.push(ch);
@@ -97,8 +124,10 @@ fn split_midline_shebangs(input: &str) -> String {
             continue;
         }
 
-        // Detect comment start outside quotes
-        if !in_single && !in_double && ch == '#'
+        // Detect comment start outside quotes — # only starts a comment at a
+        // word boundary (after whitespace, BOL, or ;), not mid-word like foo#bar
+        let at_word_start = i == 0 || matches!(chars[i - 1], ' ' | '\t' | ';' | '{' | '(' | '\n');
+        if !in_single && !in_double && ch == '#' && at_word_start
             && !(i + 1 < len && chars[i + 1] == '!' && i + 2 < len && chars[i + 2] == '/')
         {
             in_comment = true;
@@ -137,7 +166,6 @@ fn split_midline_shebangs(input: &str) -> String {
         result.push(ch);
         i += 1;
     }
-    result
 }
 
 /// Strip lines from input, returning only lines that survive.
