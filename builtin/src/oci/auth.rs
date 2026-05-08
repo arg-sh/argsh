@@ -77,6 +77,49 @@ impl AuthChallenge {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_standard_bearer_challenge() {
+        let h = r#"Bearer realm="https://ghcr.io/token",service="ghcr.io",scope="repository:arg-sh/libs/data:pull""#;
+        let c = AuthChallenge::from_header(h).unwrap();
+        assert_eq!(c.realm, "https://ghcr.io/token");
+        assert_eq!(c.service, "ghcr.io");
+        assert_eq!(c.scope, "repository:arg-sh/libs/data:pull");
+    }
+
+    #[test]
+    fn parse_challenge_with_extra_whitespace() {
+        let h = r#"Bearer  realm="https://example.com/token" , service="example.com" , scope="repo:pull""#;
+        let c = AuthChallenge::from_header(h).unwrap();
+        assert_eq!(c.realm, "https://example.com/token");
+    }
+
+    #[test]
+    fn parse_challenge_with_comma_in_scope() {
+        let h = r#"Bearer realm="https://ghcr.io/token",service="ghcr.io",scope="repository:name:push,pull""#;
+        let c = AuthChallenge::from_header(h).unwrap();
+        assert_eq!(c.scope, "repository:name:push,pull");
+    }
+
+    #[test]
+    fn reject_non_bearer_scheme() {
+        assert!(AuthChallenge::from_header(r#"Basic realm="example""#).is_none());
+    }
+
+    #[test]
+    fn reject_missing_fields() {
+        assert!(AuthChallenge::from_header(r#"Bearer realm="https://example.com/token",service="example.com""#).is_none());
+    }
+
+    #[test]
+    fn reject_empty_header() {
+        assert!(AuthChallenge::from_header("").is_none());
+    }
+}
+
 /// Load the base64-encoded `user:pass` credential for `domain` from
 /// `~/.docker/config.json`.
 pub(crate) fn docker_basic_auth(domain: &str) -> Option<String> {

@@ -386,3 +386,73 @@ fn parse_manifest(val: &serde_json::Value) -> Result<Manifest, BoxErr> {
         layers,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn url_simple_registry() {
+        let c = OciClient::new("ghcr.io", "mylib", "latest").unwrap();
+        assert_eq!(c.url("manifests/latest"), "https://ghcr.io/v2/mylib/manifests/latest");
+    }
+
+    #[test]
+    fn url_nested_registry() {
+        let c = OciClient::new("ghcr.io/arg-sh/libs", "data", "0.1.0").unwrap();
+        assert_eq!(c.url("manifests/0.1.0"), "https://ghcr.io/v2/arg-sh/libs/data/manifests/0.1.0");
+    }
+
+    #[test]
+    fn url_trailing_slash_stripped() {
+        let c = OciClient::new("ghcr.io/arg-sh/libs/", "data", "latest").unwrap();
+        assert_eq!(c.url("blobs/sha256:abc"), "https://ghcr.io/v2/arg-sh/libs/data/blobs/sha256:abc");
+    }
+
+    #[test]
+    fn registry_host_simple() {
+        let c = OciClient::new("ghcr.io", "lib", "v1").unwrap();
+        assert_eq!(c.registry_host(), "ghcr.io");
+    }
+
+    #[test]
+    fn registry_host_nested() {
+        let c = OciClient::new("ghcr.io/arg-sh/libs", "lib", "v1").unwrap();
+        assert_eq!(c.registry_host(), "ghcr.io");
+    }
+
+    #[test]
+    fn parse_oci_manifest() {
+        let json: serde_json::Value = serde_json::from_str(r#"{
+            "mediaType": "application/vnd.oci.image.manifest.v1+json",
+            "config": { "mediaType": "application/vnd.oci.image.config.v1+json", "digest": "sha256:abc123", "size": 2 },
+            "layers": [{ "mediaType": "application/octet-stream", "digest": "sha256:def456", "size": 1024 }]
+        }"#).unwrap();
+        let m = parse_manifest(&json).unwrap();
+        assert_eq!(m.media_type.unwrap(), "application/vnd.oci.image.manifest.v1+json");
+        assert_eq!(m.config.digest, "sha256:abc123");
+        assert_eq!(m.layers.len(), 1);
+        assert_eq!(m.layers[0].size, 1024);
+    }
+
+    #[test]
+    fn parse_manifest_missing_layers() {
+        let json: serde_json::Value = serde_json::from_str(r#"{ "config": { "digest": "sha256:abc", "size": 0 } }"#).unwrap();
+        assert!(parse_manifest(&json).is_err());
+    }
+
+    #[test]
+    fn parse_descriptor_missing_digest() {
+        let json: serde_json::Value = serde_json::from_str(r#"{ "size": 0 }"#).unwrap();
+        assert!(parse_descriptor(&json).is_err());
+    }
+
+    #[test]
+    fn parse_descriptor_defaults() {
+        let json: serde_json::Value = serde_json::from_str(r#"{ "digest": "sha256:abc" }"#).unwrap();
+        let d = parse_descriptor(&json).unwrap();
+        assert_eq!(d.media_type, "application/octet-stream");
+        assert_eq!(d.size, 0);
+        assert!(d.annotations.is_none());
+    }
+}
