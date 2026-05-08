@@ -1,0 +1,69 @@
+---
+description: "AG014: inherited field missing default pattern"
+---
+
+# AG014: Inherited Field Missing Default Pattern
+
+| Property | Value |
+|----------|-------|
+| Code | AG014 |
+| Severity | Warning |
+| Since | v0.8.0 |
+
+## Description
+
+A field with the `:^` (inherited) modifier does not use the
+`${var:-...}` default pattern in its `local` declaration. Without this
+pattern, the parent's value is shadowed by the child's empty default instead
+of being inherited.
+
+The bare `${var}` form is not accepted because it fails under `set -u` when
+the variable is unset.
+
+## Example
+
+This triggers AG014:
+
+```bash
+main::deploy() {
+  # highlight-next-line
+  local domain=""               # does not inherit parent value
+  local -a args=(
+    'domain|d:^' "The domain"
+  )
+  :args "Deploy" "${@}"
+}
+```
+
+## How to Fix
+
+Use the `${var:-...}` pattern to inherit the parent's value:
+
+```bash
+main::deploy() {
+  local domain="${domain:-}"
+  local -a args=(
+    'domain|d:^' "The domain"
+  )
+  :args "Deploy" "${@}"
+}
+```
+
+You can also chain environment variable fallbacks:
+
+```bash
+local domain="${domain:-${DOMAIN_NAME:-}}"
+```
+
+## How to Suppress
+
+```bash
+# argsh disable=AG014
+local domain=""
+```
+
+Or file-wide:
+
+```bash
+# argsh disable-file=AG014
+```

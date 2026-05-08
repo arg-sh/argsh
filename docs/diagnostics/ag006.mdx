@@ -1,0 +1,58 @@
+---
+description: "AG006: usage declared but :usage never called"
+---
+
+# AG006: Usage Declared but `:usage` Never Called
+
+| Property | Value |
+|----------|-------|
+| Code | AG006 |
+| Severity | Error |
+| Since | v0.1.0 |
+
+## Description
+
+A function declares a `usage=()` array but never calls `:usage` to dispatch
+subcommands. The array declaration has no effect without the parse call.
+
+## Example
+
+This triggers AG006:
+
+```bash
+# highlight-next-line
+main() {
+  local -a usage=(
+    "deploy" "Deploy the app"
+    "status" "Show status"
+  )
+  # missing: :usage "My CLI" "${@}"
+}
+```
+
+## How to Fix
+
+Add a call to `:usage`:
+
+```bash
+main() {
+  local -a usage=(
+    "deploy" "Deploy the app"
+    "status" "Show status"
+  )
+  :usage "My CLI" "${@}"
+}
+```
+
+## How to Suppress
+
+```bash
+# argsh disable=AG006
+main() {
+```
+
+Or file-wide:
+
+```bash
+# argsh disable-file=AG006
+```

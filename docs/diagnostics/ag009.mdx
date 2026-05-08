@@ -1,0 +1,66 @@
+---
+description: "AG009: duplicate short alias"
+---
+
+# AG009: Duplicate Short Alias
+
+| Property | Value |
+|----------|-------|
+| Code | AG009 |
+| Severity | Warning |
+| Since | v0.1.0 |
+
+## Description
+
+Two or more entries in the same `args=()` array use the same single-character
+short alias. Only one will work at parse time.
+
+The duplicate check is suppressed when both entries share the same field name
+and the `:^` (inherited) modifier is involved, since the inherited field
+intentionally overrides the parent's definition.
+
+## Example
+
+This triggers AG009:
+
+```bash
+my_func() {
+  local name
+  local domain
+  local -a args=(
+    'name|n' "The name"
+    # highlight-next-line
+    'domain|n' "The domain"
+  )
+  :args "Test" "${@}"
+}
+```
+
+## How to Fix
+
+Use unique short aliases for each flag:
+
+```bash
+my_func() {
+  local name
+  local domain
+  local -a args=(
+    'name|n' "The name"
+    'domain|d' "The domain"
+  )
+  :args "Test" "${@}"
+}
+```
+
+## How to Suppress
+
+```bash
+# argsh disable=AG009
+'domain|n' "The domain"
+```
+
+Or file-wide:
+
+```bash
+# argsh disable-file=AG009
+```

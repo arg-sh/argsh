@@ -1,0 +1,63 @@
+---
+description: "AG008: duplicate flag name"
+---
+
+# AG008: Duplicate Flag Name
+
+| Property | Value |
+|----------|-------|
+| Code | AG008 |
+| Severity | Warning |
+| Since | v0.1.0 |
+
+## Description
+
+Two or more entries in the same `args=()` array declare the same long flag
+name. This means only one of them will take effect at parse time, which is
+almost always a bug.
+
+The duplicate check is suppressed when the `:^` (inherited) modifier is
+involved, since inherited fields intentionally override parent definitions.
+
+## Example
+
+This triggers AG008:
+
+```bash
+my_func() {
+  local domain
+  local -a args=(
+    'domain|d' "The domain name"
+    # highlight-next-line
+    'domain|' "The domain (duplicate)"
+  )
+  :args "Test" "${@}"
+}
+```
+
+## How to Fix
+
+Remove the duplicate entry or rename one of the flags:
+
+```bash
+my_func() {
+  local domain
+  local -a args=(
+    'domain|d' "The domain name"
+  )
+  :args "Test" "${@}"
+}
+```
+
+## How to Suppress
+
+```bash
+# argsh disable=AG008
+'domain|' "The domain (duplicate)"
+```
+
+Or file-wide:
+
+```bash
+# argsh disable-file=AG008
+```

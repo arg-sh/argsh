@@ -1,0 +1,57 @@
+---
+description: "Overview of all argsh-lint diagnostic codes"
+---
+
+# Diagnostic Codes
+
+argsh-lint reports diagnostics using stable `AG####` codes, modeled after
+shellcheck's `SC####` identifiers. Each code targets a specific class of
+mistake in argsh scripts.
+
+## Error Severity
+
+| Code | Severity | Summary |
+|------|----------|---------|
+| [AG001](./ag001.mdx) | Error | Args entry missing description |
+| [AG002](./ag002.mdx) | Error | Usage entry missing description |
+| [AG003](./ag003.mdx) | Error | Invalid field specification |
+| [AG004](./ag004.mdx) | Warning | Missing `local` variable declaration |
+| [AG005](./ag005.mdx) | Error | `args` declared but `:args` never called |
+| [AG006](./ag006.mdx) | Error | `usage` declared but `:usage` never called |
+| [AG007](./ag007.mdx) | Warning | Usage target function not found |
+| [AG008](./ag008.mdx) | Warning | Duplicate flag name |
+| [AG009](./ag009.mdx) | Warning | Duplicate short alias |
+| [AG010](./ag010.mdx) | Warning | Command resolves to bare function |
+| [AG012](./ag012.mdx) | Hint | Local variable shadows parent args field |
+| [AG013](./ag013.mdx) | Warning | Import could not be resolved |
+| [AG014](./ag014.mdx) | Warning | Inherited field missing default pattern |
+| [AG015](./ag015.mdx) | Warning | Source directive path not found |
+
+:::note
+AG011 was removed. Trailing `|` in a field spec is valid syntax that marks a
+long-only flag (no short alias).
+:::
+
+## Suppressing Diagnostics
+
+All diagnostic codes can be suppressed using comment directives, following
+the same style as shellcheck:
+
+```bash
+# Suppress specific codes on the next line
+# argsh disable=AG001,AG004
+
+# Suppress specific codes for the entire file
+# argsh disable-file=AG007
+
+# Suppress all argsh diagnostics for the entire file
+# argsh disable-file
+
+# Inline suppression (on the same line as the code)
+local -a args=( ... ) # argsh disable=AG004
+```
+
+The hyphenated form `# argsh-ignore=AG001` is also supported.
+
+See the [Lint guide](../development/fundamentals/lint.mdx) for the full
+command-line interface and editor integration.

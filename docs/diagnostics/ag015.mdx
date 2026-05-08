@@ -1,0 +1,61 @@
+---
+description: "AG015: source directive path not found"
+---
+
+# AG015: Source Directive Path Not Found
+
+| Property | Value |
+|----------|-------|
+| Code | AG015 |
+| Severity | Warning |
+| Since | v0.8.0 |
+
+## Description
+
+A `# argsh source=<path>` directive at the top of a file references a path
+that does not exist or is not a directory. This directive tells the linter
+(and LSP) where to search for imported modules. If the path is invalid,
+import resolution will be incomplete.
+
+## Example
+
+This triggers AG015:
+
+```bash
+#!/usr/bin/env bash
+# highlight-next-line
+# argsh source=vendor/libs
+source argsh
+
+import my-lib.sh
+```
+
+If `vendor/libs` does not exist relative to the script's directory, AG015
+fires.
+
+## How to Fix
+
+Ensure the path exists and is a directory:
+
+```bash
+mkdir -p vendor/libs
+```
+
+Or correct the directive to point to the right location:
+
+```bash
+# argsh source=lib/
+```
+
+## How to Suppress
+
+```bash
+# argsh disable=AG015
+# argsh source=vendor/libs
+```
+
+Or file-wide:
+
+```bash
+# argsh disable-file=AG015
+```

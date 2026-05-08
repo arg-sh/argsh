@@ -1,0 +1,61 @@
+---
+description: "AG005: args declared but :args never called"
+---
+
+# AG005: Args Declared but `:args` Never Called
+
+| Property | Value |
+|----------|-------|
+| Code | AG005 |
+| Severity | Error |
+| Since | v0.1.0 |
+
+## Description
+
+A function declares an `args=()` array but never calls `:args` or `:usage`
+to actually parse the arguments. The array declaration has no effect without
+the corresponding parse call.
+
+## Example
+
+This triggers AG005:
+
+```bash
+# highlight-next-line
+my_func() {
+  local name
+  local -a args=(
+    'name|n' "The name"
+  )
+  # missing: :args "My function" "${@}"
+  echo "Hello"
+}
+```
+
+## How to Fix
+
+Add a call to `:args` (or `:usage` if the function also has subcommands):
+
+```bash
+my_func() {
+  local name
+  local -a args=(
+    'name|n' "The name"
+  )
+  :args "My function" "${@}"
+  echo "Hello ${name}"
+}
+```
+
+## How to Suppress
+
+```bash
+# argsh disable=AG005
+my_func() {
+```
+
+Or file-wide:
+
+```bash
+# argsh disable-file=AG005
+```

@@ -1,0 +1,70 @@
+---
+description: "AG010: command resolves to bare function"
+---
+
+# AG010: Command Resolves to Bare Function
+
+| Property | Value |
+|----------|-------|
+| Code | AG010 |
+| Severity | Warning |
+| Since | v0.1.0 |
+
+## Description
+
+A `usage=()` entry resolves to a bare (non-namespaced) function instead of a
+properly namespaced one like `main::deploy()`. While this works at runtime,
+bare function names are more likely to collide with other functions or
+external commands.
+
+This diagnostic only fires when the namespaced form does not exist but a bare
+function with the same name does.
+
+## Example
+
+This triggers AG010:
+
+```bash
+main() {
+  local -a usage=(
+    # highlight-next-line
+    "deploy" "Deploy the app"
+  )
+  :usage "My CLI" "${@}"
+}
+
+# Bare function -- works but risks collision
+deploy() {
+  echo "Deploying..."
+}
+```
+
+## How to Fix
+
+Rename the function to use the namespace prefix:
+
+```bash
+main() {
+  local -a usage=(
+    "deploy" "Deploy the app"
+  )
+  :usage "My CLI" "${@}"
+}
+
+main::deploy() {
+  echo "Deploying..."
+}
+```
+
+## How to Suppress
+
+```bash
+# argsh disable=AG010
+"deploy" "Deploy the app"
+```
+
+Or file-wide:
+
+```bash
+# argsh disable-file=AG010
+```

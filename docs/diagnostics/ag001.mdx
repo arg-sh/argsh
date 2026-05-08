@@ -1,0 +1,59 @@
+---
+description: "AG001: args entry missing description"
+---
+
+# AG001: Args Entry Missing Description
+
+| Property | Value |
+|----------|-------|
+| Code | AG001 |
+| Severity | Error |
+| Since | v0.1.0 |
+
+## Description
+
+Every entry in the `args=()` array must have a description string following
+the field spec. The description is used for `--help` output and documentation
+generation. An entry with a non-empty spec but no description is an error.
+
+## Example
+
+This triggers AG001:
+
+```bash
+my_func() {
+  local name
+  local -a args=(
+    # highlight-next-line
+    'name|n'          # missing description
+  )
+  :args "My function" "${@}"
+}
+```
+
+## How to Fix
+
+Add a description string after the field spec:
+
+```bash
+my_func() {
+  local name
+  local -a args=(
+    'name|n' "The name to greet"
+  )
+  :args "My function" "${@}"
+}
+```
+
+## How to Suppress
+
+```bash
+# argsh disable=AG001
+'name|n'
+```
+
+Or file-wide:
+
+```bash
+# argsh disable-file=AG001
+```

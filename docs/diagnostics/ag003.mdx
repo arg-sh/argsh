@@ -1,0 +1,71 @@
+---
+description: "AG003: invalid field specification"
+---
+
+# AG003: Invalid Field Specification
+
+| Property | Value |
+|----------|-------|
+| Code | AG003 |
+| Severity | Error |
+| Since | v0.1.0 |
+
+## Description
+
+The field spec string in the `args=()` array could not be parsed. This
+usually means an unknown modifier, malformed syntax, or an invalid
+combination of modifiers in the spec.
+
+The diagnostic message includes the specific parse error for the spec.
+
+## Example
+
+This triggers AG003:
+
+```bash
+my_func() {
+  local name
+  local -a args=(
+    # highlight-next-line
+    'name|n|INVALID' "The name"
+  )
+  :args "My function" "${@}"
+}
+```
+
+## How to Fix
+
+Correct the field spec to use valid syntax. The general format is:
+
+```
+'<name>|<short>[<modifiers>]' "Description"
+```
+
+Valid modifiers include `!` (required), `+` (multi-value), `=` (key-value),
+`:^` (inherited), `:!` (flags-only), among others.
+
+```bash
+my_func() {
+  local name
+  local -a args=(
+    'name|n' "The name"
+  )
+  :args "My function" "${@}"
+}
+```
+
+See the [Command Line Parser](../development/fundamentals/command-line-parser.mdx)
+documentation for the full field spec syntax.
+
+## How to Suppress
+
+```bash
+# argsh disable=AG003
+'name|n|INVALID' "The name"
+```
+
+Or file-wide:
+
+```bash
+# argsh disable-file=AG003
+```

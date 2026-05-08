@@ -1,0 +1,71 @@
+---
+description: "AG012: local variable shadows parent scope args field"
+---
+
+# AG012: Local Variable Shadows Parent Args Field
+
+| Property | Value |
+|----------|-------|
+| Code | AG012 |
+| Severity | Hint |
+| Since | v0.1.0 |
+
+## Description
+
+A child function (dispatched via `:usage`) declares a `local` variable with
+the same name as a field in the parent function's `args=()` array. This
+shadows the parent's value, meaning the child will not inherit it.
+
+This is common in argsh when a child intentionally overrides a parent's flag
+with its own definition. When the child also has its own `args` entry for the
+same name, the message notes it as an intentional override. Otherwise, it
+warns that the parent's value will not be inherited.
+
+## Example
+
+This triggers AG012:
+
+```bash
+main() {
+  local verbose
+  local -a args=(
+    'verbose|v' "Enable verbose output"
+  )
+  :usage "My CLI" "${@}"
+}
+
+main::deploy() {
+  # highlight-next-line
+  local verbose    # shadows main's --verbose
+  echo "Deploying..."
+}
+```
+
+## How to Fix
+
+If the shadowing is intentional (child overrides parent), you can suppress
+the hint. If unintentional, remove the duplicate `local` declaration and rely
+on the parent's value, or use the `:^` modifier to explicitly inherit:
+
+```bash
+main::deploy() {
+  local verbose="${verbose:-}"
+  local -a args=(
+    'verbose|v:^' "Enable verbose output"
+  )
+  :args "Deploy" "${@}"
+}
+```
+
+## How to Suppress
+
+```bash
+# argsh disable=AG012
+local verbose
+```
+
+Or file-wide:
+
+```bash
+# argsh disable-file=AG012
+```

@@ -233,6 +233,15 @@ module.exports = {
       className: "homepage-sidebar-item",
     },
     {
+      type: "ref",
+      id: "diagnostics/index",
+      label: "Diagnostic Codes",
+      customProps: {
+        sidebar_icon: "exclamation-circle-solid",
+      },
+      className: "homepage-sidebar-item",
+    },
+    {
       type: "doc",
       id: "development/fundamentals/test",
       label: "Test",
@@ -608,6 +617,11 @@ module.exports = {
           label: "Lint",
         },
         {
+          type: "ref",
+          id: "diagnostics/index",
+          label: "Diagnostic Codes",
+        },
+        {
           type: "doc",
           id: "development/fundamentals/test",
           label: "Test",
@@ -727,6 +741,126 @@ module.exports = {
             sidebar_icon: "document-text-solid",
           },
           className: "homepage-sidebar-item",
+        },
+      ],
+    },
+  ],
+  diagnostics: [
+    {
+      type: "ref",
+      id: "homepage",
+      label: "Back to home",
+      customProps: {
+        sidebar_is_back_link: true,
+        sidebar_icon: "back-arrow",
+      },
+    },
+    {
+      type: "doc",
+      id: "diagnostics/index",
+      label: "Diagnostic Codes",
+      customProps: {
+        sidebar_is_title: true,
+        sidebar_icon: "exclamation-circle-solid",
+      },
+    },
+    {
+      type: "category",
+      label: "Error",
+      collapsible: false,
+      customProps: {
+        sidebar_is_group_headline: true,
+      },
+      items: [
+        {
+          type: "doc",
+          id: "diagnostics/ag001",
+          label: "AG001 — Missing args description",
+        },
+        {
+          type: "doc",
+          id: "diagnostics/ag002",
+          label: "AG002 — Missing usage description",
+        },
+        {
+          type: "doc",
+          id: "diagnostics/ag003",
+          label: "AG003 — Invalid field spec",
+        },
+        {
+          type: "doc",
+          id: "diagnostics/ag005",
+          label: "AG005 — Args declared, :args not called",
+        },
+        {
+          type: "doc",
+          id: "diagnostics/ag006",
+          label: "AG006 — Usage declared, :usage not called",
+        },
+      ],
+    },
+    {
+      type: "category",
+      label: "Warning",
+      collapsible: false,
+      customProps: {
+        sidebar_is_group_headline: true,
+      },
+      items: [
+        {
+          type: "doc",
+          id: "diagnostics/ag004",
+          label: "AG004 — Missing local declaration",
+        },
+        {
+          type: "doc",
+          id: "diagnostics/ag007",
+          label: "AG007 — Usage target not found",
+        },
+        {
+          type: "doc",
+          id: "diagnostics/ag008",
+          label: "AG008 — Duplicate flag name",
+        },
+        {
+          type: "doc",
+          id: "diagnostics/ag009",
+          label: "AG009 — Duplicate short alias",
+        },
+        {
+          type: "doc",
+          id: "diagnostics/ag010",
+          label: "AG010 — Bare function resolution",
+        },
+        {
+          type: "doc",
+          id: "diagnostics/ag013",
+          label: "AG013 — Unresolved import",
+        },
+        {
+          type: "doc",
+          id: "diagnostics/ag014",
+          label: "AG014 — Inherited field missing default",
+        },
+        {
+          type: "doc",
+          id: "diagnostics/ag015",
+          label: "AG015 — Source path not found",
+        },
+      ],
+    },
+    {
+      type: "category",
+      label: "Hint",
+      collapsible: false,
+      customProps: {
+        sidebar_is_group_headline: true,
+      },
+      items: [
+        {
+          type: "doc",
+          id: "diagnostics/ag012",
+          label: "AG012 — Variable shadows parent field",
         },
       ],
     },
