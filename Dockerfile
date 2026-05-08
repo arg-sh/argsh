@@ -174,7 +174,7 @@ FROM alpine:3.21 AS alpine
 
 # Runtime dependencies
 RUN apk add --no-cache \
-      bash git curl ca-certificates jq gettext
+      bash git curl ca-certificates gettext
 
 # test — bats-core + standard helper libraries (same pinned SHAs as Debian)
 RUN set -eux \
