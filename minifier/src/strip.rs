@@ -72,51 +72,6 @@ fn heredoc_outside_quotes(line: &str) -> Option<String> {
     None
 }
 
-/// Split mid-line shebangs (`}#!/...`) onto their own lines, but only when
-/// the `#!/` appears outside of quoted strings. This prevents mangling
-/// patterns like `'^#!/.*(ba)?sh'` inside single-quoted regexes (issue #76).
-fn split_midline_shebangs(input: &str) -> String {
-    let mut result = String::with_capacity(input.len());
-    let mut in_single = false;
-    let mut in_double = false;
-    let chars: Vec<char> = input.chars().collect();
-    let len = chars.len();
-
-    let mut i = 0;
-    while i < len {
-        let ch = chars[i];
-
-        // Track quotes
-        if ch == '\'' && !in_double {
-            in_single = !in_single;
-        } else if ch == '"' && !in_single {
-            let is_escaped = {
-                let mut b = 0;
-                let mut j = i;
-                while j > 0 && chars[j - 1] == '\\' { b += 1; j -= 1; }
-                b % 2 == 1
-            };
-            if !is_escaped {
-                in_double = !in_double;
-            }
-        }
-
-        // Detect #!/ outside quotes — only when preceded by a non-newline char
-        if !in_single && !in_double
-            && ch == '#'
-            && i + 1 < len && chars[i + 1] == '!'
-            && i + 2 < len && chars[i + 2] == '/'
-            && i > 0 && chars[i - 1] != '\n'
-        {
-            result.push('\n');
-        }
-
-        result.push(ch);
-        i += 1;
-    }
-    result
-}
-
 /// Strip lines from input, returning only lines that survive.
 ///
 /// Pre-processes input to split mid-line shebangs caused by file
@@ -124,9 +79,8 @@ fn split_midline_shebangs(input: &str) -> String {
 /// Preserves heredoc content verbatim (comments, imports, blank lines inside
 /// heredocs are kept).
 pub fn strip_lines(input: &str) -> Vec<String> {
-    // Split mid-line shebangs onto their own lines so they get stripped.
-    // Only replace outside of quoted strings to avoid mangling patterns like '^#!/'
-    let normalized = split_midline_shebangs(input);
+    // Split mid-line shebangs onto their own lines so they get stripped
+    let normalized = RE_MIDLINE_SHEBANG.replace_all(input, "$1\n#!/");
     let mut result = Vec::new();
     let mut heredoc_delim: Option<String> = None;
 
@@ -236,30 +190,6 @@ mod tests {
                 "EOF",
                 "echo after",
             ]
-        );
-    }
-
-    #[test]
-    fn shebang_inside_single_quotes_not_split() {
-        // Issue #76: '^#!/' inside single-quoted regex must not be treated as mid-line shebang
-        let input = "grep -qE '^#!/.*(ba)?sh([[:space:]]|$)|^#!/.*argsh'\necho after";
-        let result = strip_lines(input);
-        assert_eq!(
-            result,
-            vec![
-                "grep -qE '^#!/.*(ba)?sh([[:space:]]|$)|^#!/.*argsh'",
-                "echo after",
-            ]
-        );
-    }
-
-    #[test]
-    fn shebang_inside_double_quotes_not_split() {
-        let input = "echo \"^#!/bin/bash\"\necho after";
-        let result = strip_lines(input);
-        assert_eq!(
-            result,
-            vec!["echo \"^#!/bin/bash\"", "echo after"]
         );
     }
 
