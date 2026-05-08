@@ -18,6 +18,15 @@ import github
 # both forms; `declare -F` would miss builtin-loaded :usage.
 [[ -n "$(type -t :usage 2>/dev/null)" ]] || import args
 
+# Derive ARGSH_VERSION and ARGSH_COMMIT_SHA from git when running from source
+# (i.e. not from the minified release where these are baked in at build time).
+if [[ -z "${ARGSH_VERSION:-}" || "${ARGSH_VERSION:-}" == "unknown" ]]; then
+  ARGSH_VERSION="$(git describe --tags --dirty 2>/dev/null)" || ARGSH_VERSION="unknown"
+fi
+if [[ -z "${ARGSH_COMMIT_SHA:-}" || "${ARGSH_COMMIT_SHA:-}" == "unknown" ]]; then
+  ARGSH_COMMIT_SHA="$(git rev-parse --short HEAD 2>/dev/null)" || ARGSH_COMMIT_SHA="unknown"
+fi
+
 # @description Try loading argsh native builtins (.so).
 # Delegates search to __argsh_try_builtin() (defined in args.sh) to avoid
 # duplicating the search logic. Only adds explicit-path handling.
