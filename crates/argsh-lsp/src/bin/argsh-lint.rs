@@ -12,7 +12,6 @@
 //!   1  at least one diagnostic emitted
 //!   2  CLI usage error (unknown flag, file not found, read error, ...)
 
-use std::collections::HashMap;
 use std::io::{IsTerminal, Write};
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -35,7 +34,6 @@ OPTIONS (shellcheck-compatible where applicable):
     -i LIST,--include=LIST      Comma-separated codes to enable exclusively
     -S SEV, --severity=SEV      Minimum severity: error, warning, info, style
     -C WHEN,--color=WHEN        Colorize tty output: auto (default), always, never
-    -W N,   --wiki-link-count=N Show wiki links for first N occurrences of each code (default 0)
             --no-resolve        Skip cross-file import resolution (faster, skips AG013)
 
 Reads files listed on the command line. With no files, reads from stdin
@@ -77,7 +75,6 @@ struct Cli {
     exclude: Vec<String>,
     include: Vec<String>,
     min_severity: DiagnosticSeverity,
-    wiki_link_count: u32,
 }
 
 impl Default for Cli {
@@ -91,7 +88,6 @@ impl Default for Cli {
             include: Vec::new(),
             // DiagnosticSeverity::HINT (4) is the weakest; keep everything by default.
             min_severity: DiagnosticSeverity::HINT,
-            wiki_link_count: 0,
         }
     }
 }
@@ -209,12 +205,6 @@ fn parse_args(args: Vec<String>) -> Result<Cli, String> {
                 let v = take_value(&mut iter, &key, inline_ref)?;
                 cli.min_severity = parse_severity(&v)?;
             }
-            "-W" | "--wiki-link-count" => {
-                let v = take_value(&mut iter, &key, inline_ref)?;
-                cli.wiki_link_count = v
-                    .parse::<u32>()
-                    .map_err(|_| format!("invalid number for {}: {}", key, v))?;
-            }
             "--" => {
                 // Remaining args are files (allows filenames that start with `-`).
                 for f in iter.by_ref() {
@@ -281,8 +271,6 @@ fn severity_ansi(sev: Option<DiagnosticSeverity>) -> &'static str {
 
 const ANSI_RESET: &str = "\x1b[0m";
 const ANSI_BOLD: &str = "\x1b[1m";
-
-const WIKI_BASE_URL: &str = "https://arg.sh/diagnostics/";
 
 fn should_use_color(color: Color) -> bool {
     match color {
@@ -465,8 +453,6 @@ fn main() -> ExitCode {
     let mut all: Vec<(String, Vec<Diagnostic>)> = Vec::new();
     let mut total_emitted = 0usize;
     let mut had_io_error = false;
-    // Track how many times we have shown a wiki link for each code.
-    let mut wiki_shown: HashMap<String, u32> = HashMap::new();
 
     let sources: Vec<(String, Option<PathBuf>, String)> = if cli.files.is_empty() {
         // stdin mode
@@ -504,23 +490,6 @@ fn main() -> ExitCode {
                     Format::Checkstyle | Format::Quiet => unreachable!(),
                 };
                 println!("{}", line);
-
-                // Append a wiki link when -W N is active and we haven't
-                // exceeded N emissions for this code yet.
-                if cli.wiki_link_count > 0 {
-                    let code = code_str(d).to_string();
-                    if !code.is_empty() {
-                        let count = wiki_shown.entry(code.clone()).or_insert(0);
-                        if *count < cli.wiki_link_count {
-                            *count += 1;
-                            println!(
-                                "For more information:\n  {}{}",
-                                WIKI_BASE_URL,
-                                code.to_lowercase()
-                            );
-                        }
-                    }
-                }
             }
         }
 
