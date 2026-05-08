@@ -728,8 +728,57 @@ argsh::lib::_remove_lock_entry() {
   if (( _matched )); then mv "${_tmp}" "${_lock}"; else rm -f "${_tmp}"; fi
 }
 
-# @description Add a plugin library to the project.
-# @arg $1 string Lib reference (e.g. argsh@data, data, data@0.1.0)
+# @description Auto-install dependencies from a lib's argsh-plugin.yml.
+# Reads the `depends` list and adds any that aren't already installed.
+# @arg $1 string Path to the installed lib directory
+# @arg $2 int 1 if global install, 0 otherwise
+# @internal
+argsh::lib::_install_deps() {
+  local _dest="${1}" _global="${2:-0}"
+  [[ -f "${_dest}/argsh-plugin.yml" ]] || return 0
+  local _lib_dir
+  if (( _global )); then
+    _lib_dir="${__ARGSH_GLOBAL_LIBS}"
+  else
+    _lib_dir="$(argsh::lib::dir)"
+  fi
+  # Read depends: list (simple YAML list items: "  - name" or "  - name@version")
+  local _line _in_depends=0
+  while IFS= read -r _line || [[ -n "${_line}" ]]; do
+    [[ -n "${_line}" && "${_line}" != \#* ]] || continue
+    if [[ "${_line}" =~ ^depends:[[:space:]]*$ ]]; then _in_depends=1; continue; fi
+    if (( _in_depends )); then
+      [[ "${_line}" =~ ^[[:space:]] ]] || break
+      # List item: "  - libname" or "  - libname@version"
+      if [[ "${_line}" =~ ^[[:space:]]+-[[:space:]]+(.*) ]]; then
+        local _dep="${BASH_REMATCH[1]}"
+        _dep="${_dep%\"}" ; _dep="${_dep#\"}"
+        _dep="${_dep%\'}" ; _dep="${_dep#\'}"
+        # Strip trailing whitespace/comments
+        _dep="${_dep%%[[:space:]]\#*}"
+        _dep="${_dep%"${_dep##*[![:space:]]}"}"
+        [[ -n "${_dep}" ]] || continue
+        # Extract dep name (without provider/version) to check if installed
+        local _dep_name="${_dep}"
+        # Strip version: name@version or provider@name@version
+        _dep_name="${_dep_name%@[0-9v]*}"
+        _dep_name="${_dep_name%@latest}"
+        # Strip provider prefix: provider@name -> name
+        [[ "${_dep_name}" != *@* ]] || _dep_name="${_dep_name#*@}"
+        if [[ -d "${_lib_dir}/${_dep_name}" ]]; then
+          continue
+        fi
+        echo "argsh: installing dependency ${_dep}..." >&2
+        local -a _add_args=()
+        (( _global )) && _add_args+=(--global)
+        argsh::lib::add "${_add_args[@]}" "${_dep}" || {
+          echo "argsh: warning: failed to install dependency ${_dep}" >&2
+        }
+      fi
+    fi
+  done < "${_dest}/argsh-plugin.yml"
+}
+
 # @arg --global Install to global libs directory instead of project-local
 # @arg --expect-digest string Expected OCI digest for integrity verification
 # @example
@@ -846,6 +895,9 @@ argsh::lib::add() {
 
   # Check argsh version requirement from plugin manifest
   argsh::lib::_check_requires "${_dest}"
+
+  # Auto-install dependencies declared in the lib's argsh-plugin.yml
+  argsh::lib::_install_deps "${_dest}" $(( _global ))
 
   # Global installs: write to global lockfile, skip .argsh.yaml updates
   if (( _global )); then

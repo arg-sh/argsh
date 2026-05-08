@@ -1207,6 +1207,45 @@ YAML
   contains "no argsh-plugin.yml" stderr
 }
 
+@test "argsh::lib::_install_deps installs missing dependencies" {
+  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
+  local _tmp; _tmp="$(mktemp -d)"
+  mkdir -p "${_tmp}/.argsh/libs/mylib"
+  cat > "${_tmp}/.argsh/libs/mylib/argsh-plugin.yml" << 'YAML'
+name: mylib
+version: 1.0.0
+depends:
+  - depA
+  - depB@0.2.0
+YAML
+  mkdir -p "${_tmp}/.argsh/libs/depA"
+
+  local -a _added=()
+  argsh::lib::add() { _added+=("$*"); mkdir -p "${_tmp}/.argsh/libs/${*##* }"; }
+
+  PATH_BASE="${_tmp}" argsh::lib::_install_deps "${_tmp}/.argsh/libs/mylib" 0 >"${stdout}" 2>"${stderr}" || status=$?
+  rm -rf "${_tmp}"
+
+  assert "${status}" -eq 0
+  [[ "${_added[*]}" != *"depA"* ]]
+  [[ "${_added[*]}" == *"depB@0.2.0"* ]]
+}
+
+@test "argsh::lib::_install_deps skips when no depends section" {
+  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
+  local _tmp; _tmp="$(mktemp -d)"
+  mkdir -p "${_tmp}/.argsh/libs/mylib"
+  cat > "${_tmp}/.argsh/libs/mylib/argsh-plugin.yml" << 'YAML'
+name: mylib
+version: 1.0.0
+YAML
+
+  PATH_BASE="${_tmp}" argsh::lib::_install_deps "${_tmp}/.argsh/libs/mylib" 0 >"${stdout}" 2>"${stderr}" || status=$?
+  rm -rf "${_tmp}"
+
+  assert "${status}" -eq 0
+}
+
 @test "argsh::lib::_semver_satisfies: basic constraints" {
   if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
   argsh::lib::_semver_satisfies "1.2.3" ">=1.0.0"
@@ -1222,15 +1261,12 @@ YAML
 
 @test "argsh::lib::_semver_satisfies: caret and tilde" {
   if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
-  # ^1.2.0 means >=1.2.0 <2.0.0
   argsh::lib::_semver_satisfies "1.5.0" "^1.2.0"
   argsh::lib::_semver_satisfies "1.2.0" "^1.2.0"
   ! argsh::lib::_semver_satisfies "2.0.0" "^1.2.0"
   ! argsh::lib::_semver_satisfies "1.1.9" "^1.2.0"
-  # ^0.2.3 means >=0.2.3 <0.3.0 (0.x special case)
   argsh::lib::_semver_satisfies "0.2.5" "^0.2.3"
   ! argsh::lib::_semver_satisfies "0.3.0" "^0.2.3"
-  # ~1.2.0 means >=1.2.0 <1.3.0
   argsh::lib::_semver_satisfies "1.2.5" "~1.2.0"
   ! argsh::lib::_semver_satisfies "1.3.0" "~1.2.0"
 }
