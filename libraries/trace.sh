@@ -76,6 +76,9 @@ __argsh_trace_init() {
     echo ""
   } > "${__ARGSH_TRACE_FILE}"
 
+  # Enable functrace so DEBUG trap fires inside functions too
+  set -o functrace
+
   # Set up the DEBUG trap for function entry/exit tracking.
   # The trap fires before every simple command; we filter to only
   # record function call/return boundaries.
