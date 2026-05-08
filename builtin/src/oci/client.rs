@@ -55,6 +55,7 @@ pub struct OciClient {
     name: String,
     reference: String,
     token: Option<String>,
+    token_scope: Option<String>,
     basic_auth: Option<String>,
 }
 
@@ -76,6 +77,7 @@ impl OciClient {
             name: name.to_string(),
             reference: reference.to_string(),
             token: None,
+            token_scope: None,
             basic_auth,
         })
     }
@@ -100,6 +102,16 @@ impl OciClient {
         }
     }
 
+    /// Invalidate the cached token if its scope doesn't include the required action.
+    fn require_scope(&mut self, action: &str) {
+        if let Some(ref scope) = self.token_scope {
+            if !scope.contains(action) {
+                self.token = None;
+                self.token_scope = None;
+            }
+        }
+    }
+
     /// Ensure we have a valid token with the required scope.
     /// Triggers a challenge-response against the given URL if needed.
     fn ensure_auth(&mut self, url: &str) -> Result<(), BoxErr> {
@@ -113,6 +125,7 @@ impl OciClient {
             Ok(_) => Ok(()),
             Err(ref e) => {
                 if let Some(challenge) = AuthChallenge::from_ureq_error(e) {
+                    let scope = challenge.scope.clone();
                     let tok = auth::fetch_token(
                         &self.agent,
                         &challenge,
@@ -120,6 +133,7 @@ impl OciClient {
                         self.registry_host(),
                     )?;
                     self.token = Some(tok);
+                    self.token_scope = Some(scope);
                     Ok(())
                 } else {
                     Err(format!("registry request failed: {e}").into())
@@ -156,6 +170,7 @@ impl OciClient {
             Ok(res) => return Ok(res),
             Err(ref e) => {
                 if let Some(challenge) = AuthChallenge::from_ureq_error(e) {
+                    let scope = challenge.scope.clone();
                     let tok = auth::fetch_token(
                         &self.agent,
                         &challenge,
@@ -163,6 +178,7 @@ impl OciClient {
                         self.registry_host(),
                     )?;
                     self.token = Some(tok);
+                    self.token_scope = Some(scope);
                 } else {
                     // Not a 401 -- propagate.
                     return Err(format!("registry request failed: {e}").into());
@@ -229,6 +245,9 @@ impl OciClient {
     /// 1. `POST /v2/<name>/blobs/uploads/` → get upload URL from `Location` header.
     /// 2. `PUT <location>?digest=sha256:...` with the blob body (monolithic upload).
     pub fn push_blob(&mut self, data: &[u8]) -> Result<String, BoxErr> {
+        // Invalidate pull-only token — push needs push scope
+        self.require_scope("push");
+
         use sha2::{Digest, Sha256};
         let digest = format!("sha256:{:x}", Sha256::digest(data));
 
@@ -284,6 +303,7 @@ impl OciClient {
                     self.registry_host(),
                 )?;
                 self.token = Some(tok.clone());
+                self.token_scope = Some(challenge.scope.clone());
                 no_redir.post(&upload_url)
                     .set("Authorization", &format!("Bearer {}", tok))
                     .set("Content-Length", "0")
@@ -333,6 +353,7 @@ impl OciClient {
     /// Push a manifest to the registry under the configured reference (tag).
     /// Returns the manifest digest.
     pub fn push_manifest(&mut self, manifest_json: &[u8]) -> Result<String, BoxErr> {
+        self.require_scope("push");
         let url = self.url(&format!("manifests/{}", self.reference));
         self.ensure_auth(&url)?;
         let tok = self.token.clone()
