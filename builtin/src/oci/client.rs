@@ -103,9 +103,11 @@ impl OciClient {
     }
 
     /// Invalidate the cached token if its scope doesn't include the required action.
+    /// Scope format: "repository:name:pull,push" — checks the action list after the last colon.
     fn require_scope(&mut self, action: &str) {
         if let Some(ref scope) = self.token_scope {
-            if !scope.contains(action) {
+            let actions = scope.rsplit_once(':').map(|(_, a)| a).unwrap_or(scope);
+            if !actions.split(',').any(|a| a.trim() == action) {
                 self.token = None;
                 self.token_scope = None;
             }
