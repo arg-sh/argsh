@@ -468,25 +468,25 @@ if ! (( ARGSH_BUILTIN )); then
   while (( ${#cli[@]} )); do
     # positional
     if [[ ${cli[0]:0:1} != "-" ]]; then
-      local name value
+      local _pos_name _pos_value
       i="$(:args::field_positional "${positional_index}")" ||
         :args::error_usage "too many arguments: ${cli[0]}"
 
       field="${args[i]}"
-      name="$(args::field_name "${field}")"
-      value="$(:args::field_value "${cli[0]}")" || exit "${?}"
+      _pos_name="$(args::field_name "${field}")"
+      _pos_value="$(:args::field_value "${cli[0]}")" || exit "${?}"
 
       # shellcheck disable=SC2155
-      local -n ref="${name}"
-      if is::array "${name}"; then
+      local -n ref="${_pos_name}"
+      if is::array "${_pos_name}"; then
         (( first )) || {
           ref=()
           first=1
         }
-        ref+=("${value}")
+        ref+=("${_pos_value}")
       else
         # shellcheck disable=SC2178
-        ref="${value}"
+        ref="${_pos_value}"
       fi
       cli=("${cli[@]:1}")
       (( ++positional_index ))
@@ -659,7 +659,9 @@ if ! (( ARGSH_BUILTIN )); then
     fi
 
     # is it required? was it matched?
-    if (( attrs[6] )) && [[ -z ${match[${args[i]}]:-} ]]; then
+    # skip positionals (no '|' means no flag aliases) — they are validated
+    # by position, not by flag lookup
+    if (( attrs[6] )) && [[ ${args[i]} == *"|"* ]] && [[ -z ${match[${args[i]}]:-} ]]; then
       :args::error_usage "missing required flag: ${args[i]/|*}"
     fi
   done
