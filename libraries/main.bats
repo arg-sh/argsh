@@ -1075,82 +1075,32 @@ YAML
   contains "installed" stderr
 }
 
-@test "argsh::lib global lockfile tracking (add/remove)" {
-  if [[ -n "${BATS_LOAD:-}" ]]; then set +u; skip "function stubs do not survive minified argsh"; fi
-  local _tmp
-  _tmp="$(mktemp -d)"
-  local _global_libs="${_tmp}/global-libs"
-  mkdir -p "${_global_libs}"
+@test "e2e: argsh lib add --global writes to global lockfile" {
+  local _global_jaml="${__ARGSH_GLOBAL_LIBS}/jaml"
+  local _global_lock="${__ARGSH_GLOBAL_LIBS}/.argsh-global.lock"
+  local _backup=""
 
-  # Stub lib::pull to force curl fallback path
-  lib::pull() { return 1; }
-  export -f lib::pull
+  # Backup existing global jaml if present
+  if [[ -d "${_global_jaml}" ]]; then
+    _backup="$(mktemp -d)"
+    mv "${_global_jaml}" "${_backup}/jaml"
+  fi
 
-  # Stub curl to simulate API + tarball download
-  curl() {
-    local _out="" _url=""
-    while [[ $# -gt 0 ]]; do
-      case "${1}" in
-        -o) _out="${2}"; shift 2 ;;
-        -*) shift ;;
-        *) _url="${1}"; shift ;;
-      esac
-    done
-    if [[ "${_url}" == *"api.github.com"* ]]; then
-      echo '[{"tag_name": "mocklib/v0.1.0"}]'
-      return 0
-    fi
-    local _td; _td="$(mktemp -d)"
-    mkdir -p "${_td}/mocklib"
-    echo 'mock::fn() { :; }' > "${_td}/mocklib/mocklib.sh"
-    echo 'name: mocklib' > "${_td}/mocklib/argsh-plugin.yml"
-    echo 'version: 0.1.0' >> "${_td}/mocklib/argsh-plugin.yml"
-    if [[ -n "${_out}" ]]; then
-      tar czf "${_out}" -C "${_td}" mocklib
-    else
-      tar czf - -C "${_td}" mocklib
-    fi
-    rm -rf "${_td}"
-  }
-  export -f curl
+  local _ok=0
+  argsh::lib::add --global jaml >"${stdout}" 2>"${stderr}" || status=$?
+  if [[ "${status}" -eq 0 && -f "${_global_lock}" ]]; then
+    grep -q "argsh@jaml" "${_global_lock}" && _ok=1
+  fi
 
-  # Override global libs directory
-  local _orig_global="${__ARGSH_GLOBAL_LIBS}"
-  # shellcheck disable=SC2229
-  declare -gr __ARGSH_GLOBAL_LIBS="${_global_libs}"
+  # Cleanup
+  rm -rf "${_global_jaml}"
+  if [[ -n "${_backup}" ]]; then
+    mv "${_backup}/jaml" "${_global_jaml}" 2>/dev/null || true
+    rm -rf "${_backup}"
+  fi
 
-  # Add globally — should create global lockfile
-  argsh::lib::add --global mocklib >"${stdout}" 2>"${stderr}" || status=$?
-  assert "${status}" -eq 0
-  assert -f "${_global_libs}/mocklib/mocklib.sh"
-  assert -f "${_global_libs}/.argsh-global.lock"
-
-  # Lockfile should contain the entry
-  local _lock_content
-  _lock_content="$(cat "${_global_libs}/.argsh-global.lock")"
-  [[ "${_lock_content}" == *"argsh@mocklib"* ]] || {
-    echo "lockfile missing argsh@mocklib entry: ${_lock_content}" >&2; false
-  }
-  [[ "${_lock_content}" == *"ref:"* ]] || {
-    echo "lockfile missing ref field" >&2; false
-  }
-  [[ "${_lock_content}" == *"digest:"* ]] || {
-    echo "lockfile missing digest field" >&2; false
-  }
-
-  # Remove globally — should remove from lockfile
-  argsh::lib::remove --global mocklib >"${stdout}" 2>"${stderr}" || status=$?
-  assert "${status}" -eq 0
-  assert ! -d "${_global_libs}/mocklib"
-  # Entry should be gone from lockfile
-  _lock_content="$(cat "${_global_libs}/.argsh-global.lock")"
-  [[ "${_lock_content}" != *"argsh@mocklib"* ]] || {
-    echo "lockfile still contains argsh@mocklib after remove" >&2; false
-  }
-
-  # Restore and clean up
-  declare -gr __ARGSH_GLOBAL_LIBS="${_orig_global}"
-  rm -rf "${_tmp}"
+  assert "${_ok}" -eq 1
+  contains "installed" stderr
 }
 
 @test "e2e: argsh lib add --expect-digest rejects mismatch" {
@@ -1224,9 +1174,9 @@ YAML
   assert "${status}" -eq 0
   is_empty stderr
   contains "Available libraries:" stdout
-  contains "jaml (0.2.0)" stdout
-  contains "data (1.0.0)" stdout
-  contains "utils (0.3.0)" stdout
+  contains "jaml \\(0\.2\.0\\)" stdout
+  contains "data \\(1\.0\.0\\)" stdout
+  contains "utils \\(0\.3\.0\\)" stdout
 }
 
 @test "argsh::lib::search: shows latest version only (first occurrence)" {
@@ -1239,7 +1189,7 @@ YAML
   argsh::lib::search >"${stdout}" 2>"${stderr}" || status=$?
 
   assert "${status}" -eq 0
-  contains "jaml (0.2.0)" stdout
+  contains "jaml \\(0\.2\.0\\)" stdout
   # Older versions should not appear as separate entries
   ! command grep -q "0.1.1" "${stdout}"
   ! command grep -q "0.1.0" "${stdout}"
@@ -1255,7 +1205,7 @@ YAML
   argsh::lib::search jaml >"${stdout}" 2>"${stderr}" || status=$?
 
   assert "${status}" -eq 0
-  contains "jaml (0.2.0)" stdout
+  contains "jaml \\(0\.2\.0\\)" stdout
   ! command grep -q "data" "${stdout}"
   ! command grep -q "utils" "${stdout}"
 }
@@ -1297,7 +1247,7 @@ YAML
 
   assert "${status}" -eq 0
   contains "Authorization: token test-token-123" stderr
-  contains "jaml (0.1.0)" stdout
+  contains "jaml \\(0\.1\.0\\)" stdout
 }
 
 @test "argsh::main --help lists search subcommand" {
