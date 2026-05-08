@@ -22,11 +22,6 @@ static RE_IMPORT_DEF: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[ \t]*import\(\)\s*\{.+\}\s*$").unwrap());
 static RE_SET_PIPEFAIL: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[ \t]*set -euo pipefail").unwrap());
-/// Matches a shebang `#!/` that appears mid-line (after a non-newline char).
-/// This happens when files are concatenated without trailing newlines,
-/// producing lines like `}#!/usr/bin/env bash`.
-static RE_MIDLINE_SHEBANG: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(.)#!/").unwrap());
 static RE_HEREDOC: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"<<-?\s*['"]?(\w+)['"]?"#).unwrap());
 
@@ -79,6 +74,7 @@ fn split_midline_shebangs(input: &str) -> String {
     let mut result = String::with_capacity(input.len());
     let mut in_single = false;
     let mut in_double = false;
+    let mut in_comment = false;
     let chars: Vec<char> = input.chars().collect();
     let len = chars.len();
 
@@ -86,20 +82,49 @@ fn split_midline_shebangs(input: &str) -> String {
     while i < len {
         let ch = chars[i];
 
-        if ch == '\'' && !in_double {
-            in_single = !in_single;
-        } else if ch == '"' && !in_single {
-            let is_escaped = {
-                let mut b = 0;
-                let mut j = i;
-                while j > 0 && chars[j - 1] == '\\' { b += 1; j -= 1; }
-                b % 2 == 1
-            };
-            if !is_escaped {
-                in_double = !in_double;
-            }
+        // Reset comment state on newline
+        if ch == '\n' {
+            in_comment = false;
+            result.push(ch);
+            i += 1;
+            continue;
         }
 
+        // Inside a comment, skip quote tracking (e.g. "# don't")
+        if in_comment {
+            result.push(ch);
+            i += 1;
+            continue;
+        }
+
+        // Detect comment start outside quotes
+        if !in_single && !in_double && ch == '#'
+            && !(i + 1 < len && chars[i + 1] == '!' && i + 2 < len && chars[i + 2] == '/')
+        {
+            in_comment = true;
+            result.push(ch);
+            i += 1;
+            continue;
+        }
+
+        // Count preceding backslashes for escape detection
+        let is_escaped = if !in_single {
+            let mut b = 0;
+            let mut j = i;
+            while j > 0 && chars[j - 1] == '\\' { b += 1; j -= 1; }
+            b % 2 == 1
+        } else {
+            false // backslash is literal inside single quotes
+        };
+
+        // Track quotes (backslash is literal inside single quotes)
+        if ch == '\'' && !in_double && (in_single || !is_escaped) {
+            in_single = !in_single;
+        } else if ch == '"' && !in_single && !is_escaped {
+            in_double = !in_double;
+        }
+
+        // Detect #!/ outside quotes — split onto new line
         if !in_single && !in_double
             && ch == '#'
             && i + 1 < len && chars[i + 1] == '!'
@@ -259,6 +284,23 @@ mod tests {
             result,
             vec!["echo \"^#!/bin/bash\"", "echo after"]
         );
+    }
+
+    #[test]
+    fn comment_apostrophe_does_not_break_shebang_split() {
+        // Apostrophe in a comment must not toggle quote state
+        let input = "# don't break\n}#!/usr/bin/env bash\necho hello";
+        let result = strip_lines(input);
+        // Comment stripped, shebang split and stripped, code kept
+        assert_eq!(result, vec!["}", "echo hello"]);
+    }
+
+    #[test]
+    fn escaped_single_quote_outside_quotes() {
+        // \' outside quotes is a literal quote, not a string delimiter
+        let input = "echo \\'hello\\'\n}#!/usr/bin/env bash\necho after";
+        let result = strip_lines(input);
+        assert_eq!(result, vec!["echo \\'hello\\'", "}", "echo after"]);
     }
 
     #[test]
