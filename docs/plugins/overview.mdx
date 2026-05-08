@@ -67,7 +67,7 @@ argsh search jaml     # filter by name substring
 
 ### `argsh add --global`
 
-Installs a plugin to the global libs directory (`${XDG_DATA_HOME:-~/.local/share}/argsh/libs`) instead of the project-local `.argsh/libs/`. Global installs are tracked in a separate lockfile at `~/.local/share/argsh/libs/.argsh-global.lock`.
+Installs a plugin to the global libs directory (`${XDG_DATA_HOME:-~/.local/share}/argsh/libs`) instead of the project-local `.argsh/libs/`. Global installs are tracked in a separate lockfile at `${XDG_DATA_HOME:-~/.local/share}/argsh/libs/.argsh-global.lock`.
 
 ```bash
 argsh add --global jaml
@@ -75,7 +75,7 @@ argsh add --global jaml
 
 ### `argsh install`
 
-Installs all libraries from the lockfile (`.argsh.lock`). Each entry's OCI digest is verified during install — if a digest mismatch is detected, installation of that library fails. If no lockfile exists, falls back to reading `.argsh.yaml`.
+Installs all libraries from the lockfile (`.argsh.lock`). When using the OCI pull path (Rust builtin), each entry's digest is verified — mismatches fail the install. The curl fallback path warns but cannot verify digests. If no lockfile exists, falls back to reading `.argsh.yaml`.
 
 ```bash
 argsh install

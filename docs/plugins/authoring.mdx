@@ -39,7 +39,7 @@ depends:
 | Field | Required | Description |
 | ----- | -------- | ----------- |
 | `name` | yes | Plugin name. Must match `[a-zA-Z0-9_-]+`. |
-| `version` | yes | Semver version (`x.y.z`, optional `-pre` suffix). Required for publishing. |
+| `version` | for publish | Semver version (`x.y.z`, optional `-pre` suffix). Required for `argsh publish`, optional otherwise. |
 | `description` | no | Short description of the plugin. |
 | `requires.argsh` | no | Semver constraint for the minimum argsh version (e.g. `>=0.9.0`). On `argsh add`, a warning is printed if the installed argsh does not satisfy the constraint. |
 | `depends` | no | List of plugin dependencies. Each entry is a plugin name or `name@version`. Dependencies are auto-installed when the plugin is added via `argsh add`. |
