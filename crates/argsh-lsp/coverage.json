@@ -58,16 +58,23 @@
     },
     {
       "file": "crates/argsh-lsp/src/resolver.rs",
-      "percent_covered": "89.73",
-      "covered_lines": "594",
-      "total_lines": "662",
+      "percent_covered": "90.07",
+      "covered_lines": "617",
+      "total_lines": "685",
       "excluded_lines": "0"
     },
     {
       "file": "crates/argsh-lsp/src/bin/argsh-lint.rs",
-      "percent_covered": "89.32",
-      "covered_lines": "301",
-      "total_lines": "337",
+      "percent_covered": "89.35",
+      "covered_lines": "302",
+      "total_lines": "338",
+      "excluded_lines": "0"
+    },
+    {
+      "file": "crates/argsh-lsp/src/diagnostics.rs",
+      "percent_covered": "89.02",
+      "covered_lines": "535",
+      "total_lines": "601",
       "excluded_lines": "0"
     },
     {
@@ -75,13 +82,6 @@
       "percent_covered": "88.43",
       "covered_lines": "107",
       "total_lines": "121",
-      "excluded_lines": "0"
-    },
-    {
-      "file": "crates/argsh-lsp/src/diagnostics.rs",
-      "percent_covered": "87.59",
-      "covered_lines": "487",
-      "total_lines": "556",
       "excluded_lines": "0"
     },
     {
@@ -135,9 +135,9 @@
     },
     {
       "file": "crates/argsh-lsp/src/backend.rs",
-      "percent_covered": "68.85",
-      "covered_lines": "84",
-      "total_lines": "122",
+      "percent_covered": "69.11",
+      "covered_lines": "85",
+      "total_lines": "123",
       "excluded_lines": "0"
     },
     {
@@ -162,12 +162,12 @@
       "excluded_lines": "0"
     }
   ],
-  "percent_covered": "81.49",
-  "covered_lines": 6651,
-  "total_lines": 8162,
+  "percent_covered": "81.68",
+  "covered_lines": 6724,
+  "total_lines": 8232,
   "excluded_lines": 0,
   "percent_low": 25,
   "percent_high": 75,
   "command": "cargo-test+llvm-cov",
-  "date": "2026-05-08 13:52:07"
+  "date": "2026-05-08 20:14:36"
 }
