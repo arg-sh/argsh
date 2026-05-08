@@ -1110,10 +1110,40 @@ YAML
   local _global_lock="${__ARGSH_GLOBAL_LIBS}/.argsh-global.lock"
   local _global_jaml="${__ARGSH_GLOBAL_LIBS}/jaml"
   local _backup="" _lock_backup=""
+
+  # Backup existing global state
   if [[ -d "${_global_jaml}" ]]; then
     _backup="$(mktemp -d)"
     mv "${_global_jaml}" "${_backup}/jaml"
   fi
+  if [[ -f "${_global_lock}" ]]; then
+    _lock_backup="$(mktemp)"
+    cp "${_global_lock}" "${_lock_backup}"
+  fi
+
+  # Add globally
+  local _add_stderr; _add_stderr="$(mktemp)"
+  argsh::lib::add --global jaml >"${stdout}" 2>"${_add_stderr}" || status=$?
+
+  # Check results
+  local _ok=0 _has_entry=0 _has_ref=0 _has_digest=0
+  if [[ "${status:-0}" -eq 0 && -f "${_global_lock}" ]]; then
+    _ok=1
+    local _lc; _lc="$(cat "${_global_lock}")"
+    [[ "${_lc}" == *"argsh@jaml"* ]] && _has_entry=1
+    [[ "${_lc}" == *"ref:"* ]] && _has_ref=1
+    [[ "${_lc}" == *"digest:"* ]] && _has_digest=1
+  fi
+
+  # Test remove updates the lockfile
+  local _removed_ok=0
+  if (( _ok )); then
+    argsh::lib::remove --global jaml >"${stdout}" 2>"${stderr}" || true
+    local _lc2; _lc2="$(cat "${_global_lock}" 2>/dev/null)"
+    [[ "${_lc2}" != *"argsh@jaml"* ]] && _removed_ok=1
+  fi
+
+  # Restore backups
   rm -rf "${_global_jaml}"
   if [[ -n "${_backup}" ]]; then
     mv "${_backup}/jaml" "${_global_jaml}" 2>/dev/null || true
@@ -1130,7 +1160,6 @@ YAML
   assert "${_has_ref}" -eq 1
   assert "${_has_digest}" -eq 1
   assert "${_removed_ok}" -eq 1
-  # Check stderr from the add call (not overwritten by remove)
   grep -q "installed" "${_add_stderr}" || {
     echo "add stderr missing 'installed': $(cat "${_add_stderr}")" >&2; false
   }
