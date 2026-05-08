@@ -67,7 +67,7 @@ argsh search jaml     # filter by name substring
 
 ### `argsh add --global`
 
-Installs a plugin to the global libs directory (`${XDG_DATA_HOME:-~/.local/share}/argsh/libs`) instead of the project-local `.argsh/libs/`. Global installs are tracked in a separate lockfile at `${XDG_DATA_HOME:-~/.local/share}/argsh/libs/.argsh-global.lock`.
+Installs a plugin to the global libs directory (`${XDG_DATA_HOME:-$HOME/.local/share}/argsh/libs`) instead of the project-local `.argsh/libs/`. Global installs are tracked in a separate lockfile at `${XDG_DATA_HOME:-$HOME/.local/share}/argsh/libs/.argsh-global.lock`.
 
 ```bash
 argsh add --global jaml
