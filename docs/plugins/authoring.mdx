@@ -4,7 +4,7 @@ description: 'How to create an argsh plugin library.'
 
 # Authoring Plugins
 
-Create reusable libraries that others can install via `argsh lib add`.
+Create reusable libraries that others can install via `argsh add`.
 
 ## Structure
 
@@ -29,7 +29,20 @@ version: 0.1.0
 description: What this library does
 requires:
   argsh: ">=0.9.0"
+depends:
+  - jaml
+  - otherlib@0.2.0
 ```
+
+### Fields
+
+| Field | Required | Description |
+| ----- | -------- | ----------- |
+| `name` | yes | Plugin name. Must match `[a-zA-Z0-9_-]+`. |
+| `version` | for publish | Semver version (`x.y.z`, optional `-pre` suffix). Required for `argsh publish`, optional otherwise. |
+| `description` | no | Short description of the plugin. |
+| `requires.argsh` | no | Semver constraint for the minimum argsh version (e.g. `>=0.9.0`). On `argsh add`, a warning is printed if the installed argsh does not satisfy the constraint. |
+| `depends` | no | List of plugin dependencies. Each entry is a plugin name or `name@version`. Dependencies are auto-installed when the plugin is added via `argsh add`. |
 
 ## Library file
 
@@ -75,9 +88,29 @@ bats mylib/mylib.bats
 
 ## Publishing
 
-Plugins are distributed via the [arg-sh/libs](https://github.com/arg-sh/libs) repository.
+Plugins are distributed as OCI artifacts via the [arg-sh/libs](https://github.com/arg-sh/libs) repository. You can also publish to your own OCI registry.
 
-To contribute a plugin:
+### Validation
+
+`argsh publish` validates your `argsh-plugin.yml` before pushing:
+
+- `name` and `version` fields must be present.
+- `name` must match `[a-zA-Z0-9_-]+`.
+- `version` must be valid semver (`x.y.z` with optional `-pre` suffix). Tags like `latest` or bare integers are rejected.
+
+### Publishing to a registry
+
+```bash
+# Publish to the default registry (ghcr.io/arg-sh/libs)
+argsh publish
+
+# Publish to a custom registry
+argsh publish --registry harbor.mycompany.com/argsh
+```
+
+Publishing requires the native builtin (`.so`) with OCI push support. Install it with `argsh builtin install` if missing.
+
+### Contributing to arg-sh/libs
 
 1. Fork `github.com/arg-sh/libs`
 2. Create your library directory with the structure above

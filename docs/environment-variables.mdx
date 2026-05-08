@@ -126,6 +126,30 @@ argsh test   # container sees MY_TOKEN=secret, DEBUG=1
 
 This is useful for passing secrets, feature flags, or tool configuration without modifying argsh itself. Works in `.envrc`, CI, and MCP contexts.
 
+### ARGSH_LIB_REGISTRY
+
+Override the default OCI registry for plugin libraries. Defaults to `ghcr.io/arg-sh/libs`.
+
+```bash
+export ARGSH_LIB_REGISTRY="harbor.mycompany.com/argsh"
+```
+
+### ARGSH_OCI_CONNECT_TIMEOUT
+
+OCI client connection timeout in seconds. Defaults to `10`.
+
+```bash
+export ARGSH_OCI_CONNECT_TIMEOUT=5
+```
+
+### ARGSH_OCI_IO_TIMEOUT
+
+OCI client read/write timeout in seconds. Defaults to `30`.
+
+```bash
+export ARGSH_OCI_IO_TIMEOUT=60
+```
+
 ## Read-Only Variables
 
 These are set by argsh at runtime and should not be modified.
