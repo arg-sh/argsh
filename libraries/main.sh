@@ -915,7 +915,7 @@ argsh::lib::add() {
     if [[ -z "${_digest}" ]]; then
       local _sha_cmd="sha256sum"
       command -v sha256sum &>/dev/null || _sha_cmd="shasum -a 256"
-      _digest="sha256:$(tar cf - -C "${_lib_dir}" "${_name}" 2>/dev/null | ${_sha_cmd} | cut -d' ' -f1)"
+      _digest="sha256:$(tar cf - --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -C "${_lib_dir}" "${_name}" 2>/dev/null | ${_sha_cmd} | cut -d' ' -f1)"
     fi
     local _lock_key="${_ref}"
     [[ "${_lock_key}" == *@* ]] || _lock_key="argsh@${_lock_key}"
@@ -968,7 +968,7 @@ argsh::lib::add() {
     # Compute digest from installed files (deterministic tar | sha256sum)
     local _sha_cmd="sha256sum"
     command -v sha256sum &>/dev/null || _sha_cmd="shasum -a 256"
-    _digest="sha256:$(tar cf - -C "${_lib_dir}" "${_name}" 2>/dev/null | ${_sha_cmd} | cut -d' ' -f1)"
+    _digest="sha256:$(tar cf - --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -C "${_lib_dir}" "${_name}" 2>/dev/null | ${_sha_cmd} | cut -d' ' -f1)"
   fi
   local _lock_key="${_ref}"
   [[ "${_lock_key}" == *@* ]] || _lock_key="argsh@${_lock_key}"
