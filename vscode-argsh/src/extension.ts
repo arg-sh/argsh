@@ -24,12 +24,19 @@ interface CommandTreeItem {
   children?: CommandTreeItem[];
 }
 
+/** Key used to identify a breakpoint location tied to a command tree node. */
+function breakpointKey(uri: string, line: number): string {
+  return `${uri}:${line}`;
+}
+
 class ArgshCommandTreeProvider implements vscode.TreeDataProvider<CommandTreeItem> {
   private _onDidChangeTreeData = new vscode.EventEmitter<CommandTreeItem | undefined>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
   private items: CommandTreeItem[] = [];
   private uri: string = '';
   private activeItem: CommandTreeItem | undefined;
+  /** Tracks which command nodes have breakpoints (key = "uri:line"). */
+  private breakpoints = new Set<string>();
 
   refresh(symbols: CommandTreeItem[], uri: string) {
     this.items = symbols;
@@ -64,6 +71,7 @@ class ArgshCommandTreeProvider implements vscode.TreeDataProvider<CommandTreeIte
   getTreeItem(element: CommandTreeItem): vscode.TreeItem {
     const isFunction = element.kind === vscode.SymbolKind.Function;
     const hasChildren = element.children && element.children.length > 0;
+    const hasBp = isFunction && this.hasBreakpoint(element);
     const collapsible = hasChildren
       ? vscode.TreeItemCollapsibleState.Expanded
       : isFunction
@@ -73,15 +81,21 @@ class ArgshCommandTreeProvider implements vscode.TreeDataProvider<CommandTreeIte
     const item = new vscode.TreeItem(element.name, collapsible);
 
     if (isFunction) {
-      item.iconPath = hasChildren
-        ? new vscode.ThemeIcon('git-merge')
-        : new vscode.ThemeIcon('terminal');
+      item.iconPath = hasBp
+        ? new vscode.ThemeIcon('debug-breakpoint', new vscode.ThemeColor('debugIcon.breakpointForeground'))
+        : hasChildren
+          ? new vscode.ThemeIcon('git-merge')
+          : new vscode.ThemeIcon('terminal');
       item.description = element.detail || '';
       item.command = {
         command: 'argsh.goToSymbol',
         title: 'Go to',
         arguments: [element],
       };
+      item.contextValue = hasBp ? 'argshCommand:breakpoint' : 'argshCommand';
+      item.tooltip = hasBp
+        ? `${element.name} (breakpoint set on line ${element.range.start.line + 1})`
+        : element.name;
     } else if (element.kind === vscode.SymbolKind.Property) {
       item.iconPath = new vscode.ThemeIcon('symbol-field');
       item.description = element.detail || '';
@@ -90,19 +104,104 @@ class ArgshCommandTreeProvider implements vscode.TreeDataProvider<CommandTreeIte
       item.description = element.detail || '';
     }
 
-    // Highlight active function
+    // Highlight active function (overrides breakpoint icon when active)
     if (this.activeItem && element.name === this.activeItem.name
         && element.range.start.line === this.activeItem.range.start.line) {
-      item.iconPath = new vscode.ThemeIcon(
-        hasChildren ? 'git-merge' : 'terminal',
-        new vscode.ThemeColor('charts.green')
-      );
+      if (hasBp) {
+        // Active + breakpoint: use breakpoint-filled with green tint
+        item.iconPath = new vscode.ThemeIcon(
+          'debug-breakpoint',
+          new vscode.ThemeColor('charts.green')
+        );
+      } else {
+        item.iconPath = new vscode.ThemeIcon(
+          hasChildren ? 'git-merge' : 'terminal',
+          new vscode.ThemeColor('charts.green')
+        );
+      }
     }
 
     return item;
   }
 
   getUri(): string { return this.uri; }
+
+  hasBreakpoint(item: CommandTreeItem): boolean {
+    return this.breakpoints.has(breakpointKey(this.uri, item.range.start.line));
+  }
+
+  /**
+   * Toggle a breakpoint on the first line of the given command function.
+   * Returns true if a breakpoint was added, false if removed.
+   */
+  toggleBreakpoint(item: CommandTreeItem): boolean {
+    if (item.kind !== vscode.SymbolKind.Function || !this.uri) return false;
+
+    const uri = vscode.Uri.parse(this.uri);
+    const key = breakpointKey(this.uri, item.range.start.line);
+    const location = new vscode.Location(uri, new vscode.Position(item.range.start.line, 0));
+
+    if (this.breakpoints.has(key)) {
+      // Remove the matching breakpoint
+      const existing = vscode.debug.breakpoints.filter(
+        (bp): bp is vscode.SourceBreakpoint =>
+          bp instanceof vscode.SourceBreakpoint
+          && bp.location.uri.toString() === this.uri
+          && bp.location.range.start.line === item.range.start.line
+      );
+      if (existing.length > 0) {
+        vscode.debug.removeBreakpoints(existing);
+      }
+      this.breakpoints.delete(key);
+      this._onDidChangeTreeData.fire(undefined);
+      return false;
+    } else {
+      const bp = new vscode.SourceBreakpoint(location, true);
+      vscode.debug.addBreakpoints([bp]);
+      this.breakpoints.add(key);
+      this._onDidChangeTreeData.fire(undefined);
+      return true;
+    }
+  }
+
+  /**
+   * Synchronise internal breakpoint set with the actual VSCode breakpoints.
+   * Called when breakpoints change externally (e.g. gutter click).
+   */
+  syncBreakpoints(): void {
+    const prev = new Set(this.breakpoints);
+    this.breakpoints.clear();
+    const allFunctions = this.collectFunctions(this.items);
+    for (const fn of allFunctions) {
+      const line = fn.range.start.line;
+      const hasMatch = vscode.debug.breakpoints.some(
+        (bp): bp is vscode.SourceBreakpoint =>
+          bp instanceof vscode.SourceBreakpoint
+          && bp.location.uri.toString() === this.uri
+          && bp.location.range.start.line === line
+      );
+      if (hasMatch) {
+        this.breakpoints.add(breakpointKey(this.uri, line));
+      }
+    }
+    // Only refresh tree if something actually changed
+    if (prev.size !== this.breakpoints.size || [...prev].some(k => !this.breakpoints.has(k))) {
+      this._onDidChangeTreeData.fire(undefined);
+    }
+  }
+
+  private collectFunctions(items: CommandTreeItem[]): CommandTreeItem[] {
+    const result: CommandTreeItem[] = [];
+    for (const item of items) {
+      if (item.kind === vscode.SymbolKind.Function) {
+        result.push(item);
+      }
+      if (item.children) {
+        result.push(...this.collectFunctions(item.children));
+      }
+    }
+    return result;
+  }
 
   getChildren(element?: CommandTreeItem): CommandTreeItem[] {
     if (!element) return this.items;
@@ -219,6 +318,28 @@ export function activate(context: vscode.ExtensionContext) {
       showCollapseAll: true,
     });
     context.subscriptions.push(treeView);
+
+    // Toggle breakpoint command for command tree items
+    const toggleBpCmd = vscode.commands.registerCommand(
+      'argsh.commandTree.toggleBreakpoint',
+      (item: CommandTreeItem) => {
+        if (!item) return;
+        const added = treeProvider!.toggleBreakpoint(item);
+        const verb = added ? 'set' : 'removed';
+        vscode.window.setStatusBarMessage(
+          `argsh: Breakpoint ${verb} on ${item.name} (line ${item.range.start.line + 1})`,
+          3000
+        );
+      }
+    );
+    context.subscriptions.push(toggleBpCmd);
+
+    // Sync tree breakpoint indicators when breakpoints change externally
+    context.subscriptions.push(
+      vscode.debug.onDidChangeBreakpoints(() => {
+        treeProvider!.syncBreakpoints();
+      })
+    );
 
     // Update tree when active editor changes or document is saved
     const updateTree = async () => {
