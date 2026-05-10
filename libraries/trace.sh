@@ -91,8 +91,10 @@ __argsh_trace_init() {
     trap '__argsh_trace_debug_hook' DEBUG
   fi
 
+  # Chain EXIT trap — preserve $? for the previously-installed handler
+  # by saving exit code before our hook runs, then restoring it via (exit $code)
   if [[ -n "${_prev_exit}" ]]; then
-    trap "__argsh_trace_exit_hook \$?; ${_prev_exit}" EXIT
+    trap '__argsh_trace_saved_exit=$?; __argsh_trace_exit_hook $__argsh_trace_saved_exit; (exit $__argsh_trace_saved_exit); '"${_prev_exit}" EXIT
   else
     trap '__argsh_trace_exit_hook $?' EXIT
   fi
@@ -219,7 +221,7 @@ __argsh_trace_exit_hook() {
     local _d=${#__ARGSH_TRACE_STACK[@]}
     local _indent="" _i
     for (( _i=0; _i <= _d; _i++ )); do _indent+="  "; done
-    printf '%s\n' "${_indent}- \`${_top_func}\` exit ($(( _now - _top_start ))ms)" >> "${__ARGSH_TRACE_FILE}"
+    __argsh_trace_write "${_indent}- \`${_top_func}\` exit ($(( _now - _top_start ))ms)"
   done
 
   {

@@ -1570,11 +1570,18 @@ fn run_trace_mode(output: &Path, script: &Path, args: &[String]) -> Result<(), S
         .replace("__FIFO_PATH__", fifo_data.to_str().unwrap())
         .replace("__WRAPPER_PATH__", wrapper_path.to_str().unwrap());
 
-    // Detect if the script needs the argsh runtime
-    // Check first 10 lines for argsh shebang or source/import
+    // Detect if the script uses the argsh runtime — check for shebang
+    // containing "argsh" or an import/source statement (not just comments)
     let needs_argsh = std::fs::read_to_string(&script)
         .ok()
-        .map(|s| s.lines().take(10).any(|l| l.contains("argsh")))
+        .map(|s| {
+            s.lines().take(10).any(|l| {
+                let trimmed = l.trim();
+                (trimmed.starts_with("#!") && trimmed.contains("argsh"))
+                    || trimmed.starts_with("import ")
+                    || (trimmed.starts_with("source ") && trimmed.contains("argsh"))
+            })
+        })
         .unwrap_or(false);
 
     let argsh_loader = if needs_argsh {
@@ -1792,7 +1799,8 @@ fn render_trace_markdown(
             .unwrap_or_else(|| tf.file.clone());
 
         // Function entry
-        let indent = "  ".repeat(tf.depth as usize);
+        // Cap indent at 3 spaces — 4+ triggers CommonMark code block
+        let indent = "  ".repeat((tf.depth as usize).min(1));
         let timing = format_timing(tf.entry_ms);
 
         // Find matching FunctionInfo for enrichment
