@@ -1539,10 +1539,11 @@ fn run_trace_mode(output: &Path, script: &Path, args: &[String]) -> Result<(), S
     let script = script.canonicalize()
         .map_err(|e| format!("Failed to canonicalize script path: {}", e))?;
 
-    // Create FIFOs in a secure temporary directory
+    // Create FIFOs in a secure temporary directory.
+    // Hold the TempDir so it auto-cleans on all exit paths (including errors).
     let fifo_tmpdir = tempfile::tempdir()
         .map_err(|e| format!("Failed to create temp directory: {}", e))?;
-    let fifo_dir = fifo_tmpdir.keep();
+    let fifo_dir = fifo_tmpdir.path().to_path_buf();
     let fifo_data = fifo_dir.join("data");
 
     // Create the data FIFO
@@ -1570,10 +1571,10 @@ fn run_trace_mode(output: &Path, script: &Path, args: &[String]) -> Result<(), S
         .replace("__WRAPPER_PATH__", wrapper_path.to_str().unwrap());
 
     // Detect if the script needs the argsh runtime
+    // Check first 10 lines for argsh shebang or source/import
     let needs_argsh = std::fs::read_to_string(&script)
         .ok()
-        .and_then(|s| s.lines().next().map(String::from))
-        .map(|s| s.contains("argsh"))
+        .map(|s| s.lines().take(10).any(|l| l.contains("argsh")))
         .unwrap_or(false);
 
     let argsh_loader = if needs_argsh {
@@ -1603,11 +1604,9 @@ fn run_trace_mode(output: &Path, script: &Path, args: &[String]) -> Result<(), S
 
     // Collect events from the FIFO in a background thread
     let events: Arc<Mutex<Vec<TraceEvent>>> = Arc::new(Mutex::new(Vec::new()));
-    let _exit_code_fifo: Arc<Mutex<Option<i32>>> = Arc::new(Mutex::new(None));
     let fifo_done = Arc::new(AtomicBool::new(false));
 
     let events_clone = Arc::clone(&events);
-    let exit_code_clone = Arc::clone(&_exit_code_fifo);
     let fifo_done_clone = Arc::clone(&fifo_done);
     let fifo_data_clone = fifo_data.clone();
     let trace_start = Instant::now();
@@ -1651,10 +1650,7 @@ fn run_trace_mode(output: &Path, script: &Path, args: &[String]) -> Result<(), S
                         events_clone.lock().unwrap().push(event);
                     }
                 } else if line.starts_with("TRACE_EXIT\t") {
-                    let code: i32 = line.strip_prefix("TRACE_EXIT\t")
-                        .and_then(|s| s.parse().ok())
-                        .unwrap_or(-1);
-                    *exit_code_clone.lock().unwrap() = Some(code);
+                    // Exit code is also captured from child.wait() — no action needed here
                 }
             }
         }
@@ -1717,8 +1713,7 @@ fn run_trace_mode(output: &Path, script: &Path, args: &[String]) -> Result<(), S
     std::fs::write(output, &markdown)
         .map_err(|e| format!("Failed to write trace output: {}", e))?;
 
-    // Clean up temp directory
-    let _ = std::fs::remove_dir_all(&fifo_dir);
+    // TempDir (fifo_tmpdir) auto-cleans on drop
 
     eprintln!("argsh-dap: trace written to {}", output.display());
     Ok(())
