@@ -18,8 +18,8 @@ if [[ -z "${ARGSH_TRACE:-}" ]]; then
   __argsh_trace_init()  { :; }
   __argsh_trace_args()  { :; }
   __argsh_trace_usage() { :; }
-  return 0 2>/dev/null || exit 0
-fi
+else
+# ── Tracing enabled ────────────────────────────────────────────────────
 
 # ── Internal state ──────────────────────────────────────────────────────
 # obfus ignore variable
@@ -49,7 +49,7 @@ __argsh_trace_ms() {
 
 # Write a line to the trace file.
 __argsh_trace_write() {
-  echo "${*}" >> "${__ARGSH_TRACE_FILE}"
+  printf '%s\n' "${*}" >> "${__ARGSH_TRACE_FILE}"
 }
 
 # ── Initialization ──────────────────────────────────────────────────────
@@ -79,13 +79,23 @@ __argsh_trace_init() {
   # Enable functrace so DEBUG trap fires inside functions too
   set -o functrace
 
-  # Set up the DEBUG trap for function entry/exit tracking.
-  # The trap fires before every simple command; we filter to only
-  # record function call/return boundaries.
-  trap '__argsh_trace_debug_hook' DEBUG
+  # Chain with existing traps instead of overwriting them.
+  # obfus ignore variable
+  local _prev_debug _prev_exit
+  _prev_debug="$(trap -p DEBUG | sed "s/^trap -- '//;s/' DEBUG$//" 2>/dev/null)" || _prev_debug=""
+  _prev_exit="$(trap -p EXIT | sed "s/^trap -- '//;s/' EXIT$//" 2>/dev/null)" || _prev_exit=""
 
-  # Set up EXIT trap to write the summary section.
-  trap '__argsh_trace_exit_hook $?' EXIT
+  if [[ -n "${_prev_debug}" ]]; then
+    trap "${_prev_debug}; __argsh_trace_debug_hook" DEBUG
+  else
+    trap '__argsh_trace_debug_hook' DEBUG
+  fi
+
+  if [[ -n "${_prev_exit}" ]]; then
+    trap "__argsh_trace_exit_hook \$?; ${_prev_exit}" EXIT
+  else
+    trap '__argsh_trace_exit_hook $?' EXIT
+  fi
 }
 
 # ── DEBUG trap ──────────────────────────────────────────────────────────
@@ -200,6 +210,18 @@ __argsh_trace_exit_hook() {
   _now="$(__argsh_trace_ms)"
   local _elapsed=$(( _now - __ARGSH_TRACE_START ))
 
+  # Flush any pending function exits from the stack
+  while (( ${#__ARGSH_TRACE_STACK[@]} > 0 )); do
+    local _top="${__ARGSH_TRACE_STACK[-1]}"
+    unset '__ARGSH_TRACE_STACK[-1]'
+    local _top_func="${_top%%:*}"
+    local _top_start="${_top##*:}"
+    local _d=${#__ARGSH_TRACE_STACK[@]}
+    local _indent="" _i
+    for (( _i=0; _i <= _d; _i++ )); do _indent+="  "; done
+    printf '%s\n' "${_indent}- \`${_top_func}\` exit ($(( _now - _top_start ))ms)" >> "${__ARGSH_TRACE_FILE}"
+  done
+
   {
     echo ""
     echo "## Summary"
@@ -209,3 +231,5 @@ __argsh_trace_exit_hook() {
     echo "- **Exit code**: ${_exit_code}"
   } >> "${__ARGSH_TRACE_FILE}"
 }
+
+fi # end of ARGSH_TRACE guard
