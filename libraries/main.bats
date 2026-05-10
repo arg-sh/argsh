@@ -1450,29 +1450,284 @@ YAML
 # ARGSH_TRACE — process trace
 # ---------------------------------------------------------------------------
 
+@test "ARGSH_TRACE: creates file with markdown header (script name, date, args)" {
+  local _tmp _trace
+  _tmp="$(mktemp -d)"
+  _trace="${_tmp}/trace.md"
+
+  # Use a standalone script to avoid bats trap conflicts
+  cat > "${_tmp}/test.sh" <<'SCRIPT'
+#!/usr/bin/env bash
+export ARGSH_BUILTIN=0
+export ARGSH_SOURCE="my-deploy.sh"
+source "$1/args.sh"
+source "$1/trace.sh"
+__argsh_trace_init "--env" "prod" "--verbose"
+SCRIPT
+  chmod +x "${_tmp}/test.sh"
+  ARGSH_TRACE="${_trace}" bash "${_tmp}/test.sh" "${BATS_TEST_DIRNAME}" >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  assert -f "${_trace}"
+
+  local _content
+  _content="$(cat "${_trace}")"
+
+  # Must have the top-level markdown heading
+  [[ "${_content}" == *"# Process Trace"* ]] || {
+    echo "missing '# Process Trace' header"; cat "${_trace}"; false
+  }
+  # Script name from ARGSH_SOURCE
+  [[ "${_content}" == *"**Script**: my-deploy.sh"* ]] || {
+    echo "missing Script field with correct name"; cat "${_trace}"; false
+  }
+  # Date field (ISO format from date -Iseconds)
+  [[ "${_content}" == *"**Date**:"* ]] || {
+    echo "missing Date field"; cat "${_trace}"; false
+  }
+  # All args preserved
+  [[ "${_content}" == *"**Args**: \`--env prod --verbose\`"* ]] || {
+    echo "missing/wrong Args field"; cat "${_trace}"; false
+  }
+  # PID field
+  [[ "${_content}" == *"**PID**:"* ]] || {
+    echo "missing PID field"; cat "${_trace}"; false
+  }
+
+  rm -rf "${_tmp}"
+}
+
+@test "ARGSH_TRACE: function entry/exit is recorded in the trace" {
+  local _tmp _trace
+  _tmp="$(mktemp -d)"
+  _trace="${_tmp}/trace.md"
+
+  cat > "${_tmp}/test.sh" <<'SCRIPT'
+#!/usr/bin/env bash
+export ARGSH_BUILTIN=0
+export ARGSH_SOURCE="func-test.sh"
+source "$1/args.sh"
+source "$1/trace.sh"
+__argsh_trace_init
+
+_inner_func() {
+  echo "inner"
+}
+_outer_func() {
+  _inner_func
+}
+_outer_func
+SCRIPT
+  chmod +x "${_tmp}/test.sh"
+  ARGSH_TRACE="${_trace}" bash "${_tmp}/test.sh" "${BATS_TEST_DIRNAME}" >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  assert -f "${_trace}"
+
+  local _content
+  _content="$(cat "${_trace}")"
+
+  # Function entry markers
+  [[ "${_content}" == *"\`_outer_func\` enter"* ]] || {
+    echo "missing _outer_func entry"; cat "${_trace}"; false
+  }
+  [[ "${_content}" == *"\`_inner_func\` enter"* ]] || {
+    echo "missing _inner_func entry"; cat "${_trace}"; false
+  }
+  # Function exit markers
+  [[ "${_content}" == *"\`_inner_func\` exit"* ]] || {
+    echo "missing _inner_func exit"; cat "${_trace}"; false
+  }
+  [[ "${_content}" == *"\`_outer_func\` exit"* ]] || {
+    echo "missing _outer_func exit"; cat "${_trace}"; false
+  }
+
+  rm -rf "${_tmp}"
+}
+
+@test "ARGSH_TRACE: :args variables are dumped in the trace" {
+  local _tmp _trace
+  _tmp="$(mktemp -d)"
+  _trace="${_tmp}/trace.md"
+
+  cat > "${_tmp}/test.sh" <<'SCRIPT'
+#!/usr/bin/env bash
+export ARGSH_BUILTIN=0
+export ARGSH_SOURCE="args-dump.sh"
+source "$1/args.sh"
+source "$1/trace.sh"
+__argsh_trace_init "--port" "8080"
+
+_server_start() {
+  local port="3000"
+  local host="localhost"
+  local -a args=(
+    'port|p:~int' "Port to listen on"
+    'host|h' "Hostname"
+  )
+  :args "Server" "${@}"
+  echo "listening on ${host}:${port}"
+}
+_server_start --port 8080
+SCRIPT
+  chmod +x "${_tmp}/test.sh"
+  ARGSH_TRACE="${_trace}" bash "${_tmp}/test.sh" "${BATS_TEST_DIRNAME}" >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains "listening on localhost:8080" stdout
+  assert -f "${_trace}"
+
+  local _content
+  _content="$(cat "${_trace}")"
+
+  # The :args title appears
+  [[ "${_content}" == *"Variables after"*"Server"* ]] || {
+    echo "missing :args 'Server' section"; cat "${_trace}"; false
+  }
+  # Variable values dumped
+  [[ "${_content}" == *'port='*'8080'* ]] || {
+    echo "missing port=8080 dump"; cat "${_trace}"; false
+  }
+  [[ "${_content}" == *'host='*'localhost'* ]] || {
+    echo "missing host=localhost dump"; cat "${_trace}"; false
+  }
+
+  rm -rf "${_tmp}"
+}
+
+@test "ARGSH_TRACE: summary section has steps/duration/exit code" {
+  local _tmp _trace
+  _tmp="$(mktemp -d)"
+  _trace="${_tmp}/trace.md"
+
+  cat > "${_tmp}/test.sh" <<'SCRIPT'
+#!/usr/bin/env bash
+export ARGSH_BUILTIN=0
+export ARGSH_SOURCE="summary-test.sh"
+source "$1/args.sh"
+source "$1/trace.sh"
+__argsh_trace_init
+
+_step_one() { :; }
+_step_two() { :; }
+_step_one
+_step_two
+SCRIPT
+  chmod +x "${_tmp}/test.sh"
+  ARGSH_TRACE="${_trace}" bash "${_tmp}/test.sh" "${BATS_TEST_DIRNAME}" >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  assert -f "${_trace}"
+
+  local _content
+  _content="$(cat "${_trace}")"
+
+  [[ "${_content}" == *"## Summary"* ]] || {
+    echo "missing Summary section"; cat "${_trace}"; false
+  }
+  [[ "${_content}" == *"**Steps**:"* ]] || {
+    echo "missing Steps field"; cat "${_trace}"; false
+  }
+  # Steps should be non-zero (at least 2 functions entered)
+  ! [[ "${_content}" == *"**Steps**: 0"* ]] || {
+    echo "Steps is 0 but expected non-zero"; cat "${_trace}"; false
+  }
+  [[ "${_content}" == *"**Duration**:"* ]] || {
+    echo "missing Duration field"; cat "${_trace}"; false
+  }
+  [[ "${_content}" == *"**Exit code**: 0"* ]] || {
+    echo "missing or wrong Exit code field"; cat "${_trace}"; false
+  }
+
+  rm -rf "${_tmp}"
+}
+
+@test "ARGSH_TRACE: non-zero exit code is recorded" {
+  local _tmp _trace
+  _tmp="$(mktemp -d)"
+  _trace="${_tmp}/trace.md"
+
+  cat > "${_tmp}/test.sh" <<'SCRIPT'
+#!/usr/bin/env bash
+export ARGSH_BUILTIN=0
+export ARGSH_SOURCE="fail-test.sh"
+source "$1/args.sh"
+source "$1/trace.sh"
+__argsh_trace_init
+exit 42
+SCRIPT
+  chmod +x "${_tmp}/test.sh"
+  ARGSH_TRACE="${_trace}" bash "${_tmp}/test.sh" "${BATS_TEST_DIRNAME}" >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 42
+  assert -f "${_trace}"
+
+  local _content
+  _content="$(cat "${_trace}")"
+
+  [[ "${_content}" == *"**Exit code**: 42"* ]] || {
+    echo "expected exit code 42 in summary"; cat "${_trace}"; false
+  }
+
+  rm -rf "${_tmp}"
+}
+
+@test "ARGSH_TRACE: existing EXIT trap is preserved (trap chaining)" {
+  local _tmp _trace
+  _tmp="$(mktemp -d)"
+  _trace="${_tmp}/trace.md"
+  local _marker="${_tmp}/exit_trap_ran"
+
+  cat > "${_tmp}/test.sh" <<SCRIPT
+#!/usr/bin/env bash
+export ARGSH_BUILTIN=0
+export ARGSH_SOURCE="chain-test.sh"
+source "\$1/args.sh"
+
+# Set an EXIT trap BEFORE sourcing trace.sh
+trap "touch ${_marker}" EXIT
+
+source "\$1/trace.sh"
+__argsh_trace_init
+exit 0
+SCRIPT
+  chmod +x "${_tmp}/test.sh"
+  ARGSH_TRACE="${_trace}" bash "${_tmp}/test.sh" "${BATS_TEST_DIRNAME}" >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  # The trace file should exist (trace EXIT hook ran)
+  assert -f "${_trace}"
+  # The original EXIT trap should ALSO have fired
+  assert -f "${_marker}"
+
+  rm -rf "${_tmp}"
+}
+
 @test "ARGSH_TRACE: produces markdown with expected sections" {
   local _tmp _trace
   _tmp="$(mktemp -d)"
   _trace="${_tmp}/trace.md"
 
-  (
-    export ARGSH_BUILTIN=0
-    export ARGSH_TRACE="${_trace}"
-    export ARGSH_SOURCE="test-script.sh"
-    source "${BATS_TEST_DIRNAME}/args.sh"
-    source "${BATS_TEST_DIRNAME}/trace.sh"
-    __argsh_trace_init "Alice"
+  cat > "${_tmp}/test.sh" <<'SCRIPT'
+#!/usr/bin/env bash
+export ARGSH_BUILTIN=0
+export ARGSH_SOURCE="test-script.sh"
+source "$1/args.sh"
+source "$1/trace.sh"
+__argsh_trace_init "Alice"
 
-    _test_main() {
-      local name="world"
-      local -a args=(
-        'name' "Who to greet"
-      )
-      :args "Greeter" "${@}"
-      echo "Hello, ${name}!"
-    }
-    _test_main Alice
-  ) >"${stdout}" 2>"${stderr}" || status=$?
+_test_main() {
+  local name="world"
+  local -a args=(
+    'name' "Who to greet"
+  )
+  :args "Greeter" "${@}"
+  echo "Hello, ${name}!"
+}
+_test_main Alice
+SCRIPT
+  chmod +x "${_tmp}/test.sh"
+  ARGSH_TRACE="${_trace}" bash "${_tmp}/test.sh" "${BATS_TEST_DIRNAME}" >"${stdout}" 2>"${stderr}" || status=$?
 
   # Script should have succeeded
   assert "${status}" -eq 0
@@ -1534,12 +1789,15 @@ YAML
   _tmp="$(mktemp -d)"
   _trace="${_tmp}/trace.md"
 
-  (
-    unset ARGSH_TRACE
-    source "${BATS_TEST_DIRNAME}/args.sh"
-    source "${BATS_TEST_DIRNAME}/trace.sh"
-    __argsh_trace_init
-  ) >"${stdout}" 2>"${stderr}" || status=$?
+  cat > "${_tmp}/test.sh" <<'SCRIPT'
+#!/usr/bin/env bash
+unset ARGSH_TRACE
+source "$1/args.sh"
+source "$1/trace.sh"
+__argsh_trace_init
+SCRIPT
+  chmod +x "${_tmp}/test.sh"
+  bash "${_tmp}/test.sh" "${BATS_TEST_DIRNAME}" >"${stdout}" 2>"${stderr}" || status=$?
 
   assert "${status}" -eq 0
   assert ! -f "${_trace}"
@@ -1551,26 +1809,28 @@ YAML
   _tmp="$(mktemp -d)"
   _trace="${_tmp}/trace.md"
 
-  (
-    export ARGSH_BUILTIN=0
-    export ARGSH_TRACE="${_trace}"
-    export ARGSH_SOURCE="dispatch-test.sh"
-    source "${BATS_TEST_DIRNAME}/args.sh"
-    source "${BATS_TEST_DIRNAME}/trace.sh"
-    __argsh_trace_init "deploy"
+  cat > "${_tmp}/test.sh" <<'SCRIPT'
+#!/usr/bin/env bash
+export ARGSH_BUILTIN=0
+export ARGSH_SOURCE="dispatch-test.sh"
+source "$1/args.sh"
+source "$1/trace.sh"
+__argsh_trace_init "deploy"
 
-    _test_app::deploy() {
-      echo "deployed"
-    }
-    _test_app() {
-      local -a usage=(
-        'deploy|d' "Deploy the app"
-      )
-      :usage "App" "${@}"
-      "${usage[@]}"
-    }
-    _test_app deploy
-  ) >"${stdout}" 2>"${stderr}" || status=$?
+_test_app::deploy() {
+  echo "deployed"
+}
+_test_app() {
+  local -a usage=(
+    'deploy|d' "Deploy the app"
+  )
+  :usage "App" "${@}"
+  "${usage[@]}"
+}
+_test_app deploy
+SCRIPT
+  chmod +x "${_tmp}/test.sh"
+  ARGSH_TRACE="${_trace}" bash "${_tmp}/test.sh" "${BATS_TEST_DIRNAME}" >"${stdout}" 2>"${stderr}" || status=$?
 
   assert "${status}" -eq 0
   contains "deployed" stdout
