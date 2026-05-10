@@ -423,7 +423,7 @@ impl DapSession {
                     if let Some(imp) = self.imports.as_ref() {
                         if let Some(target) = imp.functions.iter().find(|f| f.name == target_name) {
                             // Find which file this function is in
-                            for (_, resolved_path) in &imp.resolved_files {
+                            for (_, _, resolved_path) in &imp.resolved_files {
                                 if let Ok(content) = std::fs::read_to_string(resolved_path) {
                                     let file_analysis = analyze(&content);
                                     if file_analysis.functions.iter().any(|f| f.name == target_name) {

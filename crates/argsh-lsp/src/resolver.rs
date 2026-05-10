@@ -12,7 +12,8 @@ pub struct ResolvedImports {
     /// All functions found in imported files.
     pub functions: Vec<FunctionInfo>,
     /// All resolved file paths (for go-to-definition across files).
-    pub resolved_files: Vec<(String, PathBuf)>, // (module_name, path)
+    /// Each entry is (importing_file, module_name, resolved_path).
+    pub resolved_files: Vec<(PathBuf, String, PathBuf)>,
     /// Whether import resolution actually ran (false when max_depth == 0).
     pub resolution_ran: bool,
 }
@@ -171,7 +172,7 @@ pub fn resolve_imports(analysis: &DocumentAnalysis, base_path: &Path, max_depth:
         HashMap::new()
     };
 
-    resolve_recursive(analysis, base_dir, &mut result, &mut visited, 0, max_depth, &envrc_vars, &project_root);
+    resolve_recursive(analysis, base_dir, base_path, &mut result, &mut visited, 0, max_depth, &envrc_vars, &project_root);
     result
 }
 
@@ -179,6 +180,7 @@ pub fn resolve_imports(analysis: &DocumentAnalysis, base_path: &Path, max_depth:
 fn resolve_recursive(
     analysis: &DocumentAnalysis,
     base_dir: &Path,
+    importing_file: &Path,
     result: &mut ResolvedImports,
     visited: &mut HashSet<PathBuf>,
     depth: usize,
@@ -259,7 +261,7 @@ fn resolve_recursive(
             // (e.g. `import fmt` + `import @libraries/fmt`).
             result
                 .resolved_files
-                .push((module.clone(), canonical.clone()));
+                .push((importing_file.to_path_buf(), module.clone(), canonical.clone()));
 
             // Skip analysis/recursion if already visited
             if visited.contains(&canonical) {
@@ -282,7 +284,7 @@ fn resolve_recursive(
 
             // Recurse into the imported file's imports
             let import_dir = canonical.parent().unwrap_or(base_dir);
-            resolve_recursive(&imported_analysis, import_dir, result, visited, depth + 1, max_depth, envrc_vars, project_root);
+            resolve_recursive(&imported_analysis, import_dir, &canonical, result, visited, depth + 1, max_depth, envrc_vars, project_root);
         }
     }
 
@@ -314,7 +316,7 @@ fn resolve_recursive(
                 }
 
                 let label = format!("argsh:{}", filename.trim_end_matches(".sh"));
-                result.resolved_files.push((label, canonical));
+                result.resolved_files.push((importing_file.to_path_buf(), label, canonical));
             }
         }
     }
@@ -808,9 +810,9 @@ mod tests {
 
         let analysis = analyze(main_content);
         let imports = resolve_imports(&analysis, &main_sh, 2);
-        assert!(imports.resolved_files.iter().any(|(name, _)| name == "^mylib"),
+        assert!(imports.resolved_files.iter().any(|(_, name, _)| name == "^mylib"),
             "resolved_files should preserve ^ prefix in module name, got: {:?}",
-            imports.resolved_files.iter().map(|(n, _)| n).collect::<Vec<_>>());
+            imports.resolved_files.iter().map(|(_, n, _)| n).collect::<Vec<_>>());
     }
 
     #[test]
@@ -931,5 +933,40 @@ mod tests {
         assert!(imports.functions.iter().any(|f| f.name == "envrc_func"),
             "Should find function via .envrc PATH_BASE, got: {:?}",
             imports.functions.iter().map(|f| &f.name).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn test_resolved_files_tracks_importing_file() {
+        // Verify that resolved_files records which file performed the import.
+        // main.sh imports a.sh which imports b.sh — each entry should record
+        // the correct importing file.
+        let dir = tempfile::tempdir().unwrap();
+
+        let b = dir.path().join("b.sh");
+        fs::write(&b, "func_b() { echo b; }\n").unwrap();
+
+        let a = dir.path().join("a.sh");
+        fs::write(&a, "import b\nfunc_a() { echo a; }\n").unwrap();
+
+        let main_content = "#!/usr/bin/env bash\nimport a\nmain() { echo; }\n";
+        let main_sh = dir.path().join("main.sh");
+        fs::write(&main_sh, main_content).unwrap();
+
+        let analysis = analyze(main_content);
+        let imports = resolve_imports(&analysis, &main_sh, 3);
+
+        // "a" should be recorded as imported by main.sh
+        let a_entry = imports.resolved_files.iter()
+            .find(|(_, name, _)| name == "a")
+            .expect("Should have resolved_files entry for module 'a'");
+        assert_eq!(a_entry.0.canonicalize().unwrap(), main_sh.canonicalize().unwrap(),
+            "Module 'a' should be recorded as imported by main.sh");
+
+        // "b" should be recorded as imported by a.sh
+        let b_entry = imports.resolved_files.iter()
+            .find(|(_, name, _)| name == "b")
+            .expect("Should have resolved_files entry for module 'b'");
+        assert_eq!(b_entry.0.canonicalize().unwrap(), a.canonicalize().unwrap(),
+            "Module 'b' should be recorded as imported by a.sh");
     }
 }

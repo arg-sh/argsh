@@ -43,7 +43,7 @@ pub fn goto_definition(
     if let Some(module) = extract_import_module(line, col) {
         // Strip @/~/^ prefix for matching against resolved files
         let clean = module.trim_start_matches(&['@', '~', '^'] as &[char]);
-        for (mod_name, path) in &imports.resolved_files {
+        for (_, mod_name, path) in &imports.resolved_files {
             let clean_resolved = mod_name.trim_start_matches(&['@', '~', '^'] as &[char]);
             if *mod_name == module || clean_resolved == clean {
                 if let Ok(import_uri) = Url::from_file_path(path) {
@@ -134,7 +134,7 @@ fn find_function_location(
 
     // Then try imported files
     if imports.functions.iter().any(|f| f.name == name) {
-        for (_, path) in &imports.resolved_files {
+        for (_, _, path) in &imports.resolved_files {
             let content = match std::fs::read_to_string(path) {
                 Ok(c) => c,
                 Err(_) => continue,

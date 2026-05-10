@@ -95,7 +95,8 @@ impl Backend {
                     .await;
                 return;
             }
-            let mut diags = diagnostics::generate_diagnostics(&doc.analysis, &doc.imports, &doc.content);
+            let doc_path = uri.to_file_path().ok();
+            let mut diags = diagnostics::generate_diagnostics(&doc.analysis, &doc.imports, &doc.content, doc_path.as_deref());
             // AG015: check # argsh source= directive resolves
             if let Some(ref directive) = doc.analysis.source_directive {
                 if let Ok(file_path) = uri.to_file_path() {
