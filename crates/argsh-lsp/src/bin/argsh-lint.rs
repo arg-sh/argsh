@@ -426,7 +426,7 @@ fn analyze_file(path: Option<&PathBuf>, content: &str, resolve: bool) -> Vec<Dia
     } else {
         resolver::ResolvedImports::default()
     };
-    diagnostics::generate_diagnostics(&analysis, &imports, content)
+    diagnostics::generate_diagnostics(&analysis, &imports, content, path.map(|p| p.as_path()))
 }
 
 fn print_checkstyle(all: &[(String, Vec<Diagnostic>)]) {
