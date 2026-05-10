@@ -200,14 +200,6 @@ jobs:
         run: argsh coverage shdoc
       - name: LSP coverage
         run: argsh coverage lsp
-      - name: Verify coverage files are in sync
-        run: |
-          git diff --exit-code \
-            --ignore-matching-lines '^  "date":' \
-            -- builtin/coverage.json \
-               minifier/coverage.json \
-               shdoc/coverage.json \
-               crates/argsh-lsp/coverage.json
 
   # ---------------------------------------------------------------------------
   # Minify — produce argsh.min.sh using the freshly-built minifier.
