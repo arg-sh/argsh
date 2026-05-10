@@ -27,10 +27,14 @@ pub mod codes {
 }
 
 /// Generate LSP diagnostics from a document analysis.
+///
+/// `document_path` identifies the file being diagnosed so that AG013 only
+/// considers imports resolved from THIS file, not from transitive dependencies.
 pub fn generate_diagnostics(
     analysis: &DocumentAnalysis,
     imports: &ResolvedImports,
     content: &str,
+    document_path: Option<&std::path::Path>,
 ) -> Vec<Diagnostic> {
     let mut diags = Vec::new();
     let suppressed = collect_suppressions(content);
@@ -52,7 +56,7 @@ pub fn generate_diagnostics(
 
     // Check unresolved imports (only when resolution actually ran — skip if resolveDepth=0)
     if imports.resolution_ran {
-        check_unresolved_imports(analysis, imports, &mut diags);
+        check_unresolved_imports(analysis, imports, document_path, &mut diags);
     }
 
     // Filter out suppressed diagnostics
@@ -562,13 +566,34 @@ fn check_scope_shadow(
 }
 
 /// Warn when an import statement could not be resolved to a file.
+///
+/// When `document_path` is provided, only imports whose `importing_file`
+/// matches this document are considered resolved. This prevents a module
+/// resolved from a transitive dependency from masking an unresolved import
+/// in the current file.
 fn check_unresolved_imports(
     analysis: &DocumentAnalysis,
     imports: &ResolvedImports,
+    document_path: Option<&std::path::Path>,
     diags: &mut Vec<Diagnostic>,
 ) {
     let resolved_modules: HashSet<String> = imports.resolved_files.iter()
-        .map(|(name, _)| name.clone())
+        .filter(|(importing_file, _, _)| {
+            // When we know the document path, only count imports that originated
+            // from this document. Otherwise fall back to the old global behaviour.
+            match document_path {
+                Some(doc) => {
+                    // Try canonical comparison first; fall back to direct comparison
+                    // when paths cannot be canonicalized (e.g. in tests with fake paths).
+                    match (importing_file.canonicalize(), doc.canonicalize()) {
+                        (Ok(a), Ok(b)) => a == b,
+                        _ => importing_file == doc,
+                    }
+                }
+                None => true,
+            }
+        })
+        .map(|(_, name, _)| name.clone())
         .collect();
 
     for imp in &analysis.imports {
@@ -654,7 +679,7 @@ f() {
 }
 "#;
         let analysis = analyze(content);
-        let diags = generate_diagnostics(&analysis, &empty_imports(), content);
+        let diags = generate_diagnostics(&analysis, &empty_imports(), content, None);
         let ag008: Vec<_> = diags.iter()
             .filter(|d| d.code == Some(NumberOrString::String("AG008".to_string())))
             .collect();
@@ -675,7 +700,7 @@ f() {
 }
 "#;
         let analysis = analyze(content);
-        let diags = generate_diagnostics(&analysis, &empty_imports(), content);
+        let diags = generate_diagnostics(&analysis, &empty_imports(), content, None);
         let ag008: Vec<_> = diags.iter()
             .filter(|d| d.code == Some(NumberOrString::String("AG008".to_string())))
             .collect();
@@ -695,7 +720,7 @@ f() {
 }
 "#;
         let analysis = analyze(content);
-        let diags = generate_diagnostics(&analysis, &empty_imports(), content);
+        let diags = generate_diagnostics(&analysis, &empty_imports(), content, None);
         let ag014: Vec<_> = diags.iter()
             .filter(|d| d.code == Some(NumberOrString::String("AG014".to_string())))
             .collect();
@@ -706,7 +731,7 @@ f() {
     fn test_ag014_suppressed_with_inherit_default() {
         let content = "#!/usr/bin/env bash\nsource argsh\nf() {\n  local domain=\"${domain:-}\"\n  local -a args=(\n    'domain|:^' \"Domain\"\n  )\n  :args \"Test\" \"${@}\"\n}\n";
         let analysis = analyze(content);
-        let diags = generate_diagnostics(&analysis, &empty_imports(), content);
+        let diags = generate_diagnostics(&analysis, &empty_imports(), content, None);
         let ag014: Vec<_> = diags.iter()
             .filter(|d| d.code == Some(NumberOrString::String("AG014".to_string())))
             .collect();
@@ -717,7 +742,7 @@ f() {
     fn test_ag014_suppressed_with_env_fallback() {
         let content = "#!/usr/bin/env bash\nsource argsh\nf() {\n  local domain=\"${domain:-${DOMAIN_NAME:-}}\"\n  local -a args=(\n    'domain|:^' \"Domain\"\n  )\n  :args \"Test\" \"${@}\"\n}\n";
         let analysis = analyze(content);
-        let diags = generate_diagnostics(&analysis, &empty_imports(), content);
+        let diags = generate_diagnostics(&analysis, &empty_imports(), content, None);
         let ag014: Vec<_> = diags.iter()
             .filter(|d| d.code == Some(NumberOrString::String("AG014".to_string())))
             .collect();
@@ -737,10 +762,59 @@ f() {
 }
 "#;
         let analysis = analyze(content);
-        let diags = generate_diagnostics(&analysis, &empty_imports(), content);
+        let diags = generate_diagnostics(&analysis, &empty_imports(), content, None);
         let ag014: Vec<_> = diags.iter()
             .filter(|d| d.code == Some(NumberOrString::String("AG014".to_string())))
             .collect();
         assert!(ag014.is_empty(), "AG014 should not fire for non-:^ fields");
+    }
+
+    #[test]
+    fn test_ag013_per_file_import_resolution() {
+        // Scenario: file_a.sh resolves "helpers", but file_b.sh does NOT.
+        // When diagnosing file_b.sh, AG013 should fire for "helpers" even though
+        // it was resolved globally (from file_a.sh's imports).
+        let file_a = std::path::PathBuf::from("/fake/file_a.sh");
+        let file_b = std::path::PathBuf::from("/fake/file_b.sh");
+        let resolved_path = std::path::PathBuf::from("/fake/helpers.sh");
+
+        // Both files import "helpers"
+        let content_b = "#!/usr/bin/env bash\nimport helpers\nmain() { echo; }\n";
+        let analysis_b = analyze(content_b);
+
+        // resolved_files only has the import from file_a, not file_b
+        let imports = ResolvedImports {
+            functions: vec![],
+            resolved_files: vec![
+                (file_a.clone(), "helpers".to_string(), resolved_path.clone()),
+            ],
+            resolution_ran: true,
+        };
+
+        // Without document_path (None) — old behaviour: no AG013 (globally resolved)
+        let diags_global = generate_diagnostics(&analysis_b, &imports, content_b, None);
+        let ag013_global: Vec<_> = diags_global.iter()
+            .filter(|d| d.code == Some(NumberOrString::String("AG013".to_string())))
+            .collect();
+        assert!(ag013_global.is_empty(),
+            "Without document_path, AG013 should not fire (global match), got: {:?}", ag013_global);
+
+        // With document_path = file_b — per-file: AG013 SHOULD fire
+        let diags_per_file = generate_diagnostics(&analysis_b, &imports, content_b, Some(&file_b));
+        let ag013_per_file: Vec<_> = diags_per_file.iter()
+            .filter(|d| d.code == Some(NumberOrString::String("AG013".to_string())))
+            .collect();
+        assert!(!ag013_per_file.is_empty(),
+            "With document_path=file_b, AG013 should fire because helpers was resolved from file_a");
+
+        // With document_path = file_a — per-file: AG013 should NOT fire
+        let content_a = "#!/usr/bin/env bash\nimport helpers\nmain() { echo; }\n";
+        let analysis_a = analyze(content_a);
+        let diags_a = generate_diagnostics(&analysis_a, &imports, content_a, Some(&file_a));
+        let ag013_a: Vec<_> = diags_a.iter()
+            .filter(|d| d.code == Some(NumberOrString::String("AG013".to_string())))
+            .collect();
+        assert!(ag013_a.is_empty(),
+            "With document_path=file_a, AG013 should not fire because helpers was resolved from file_a");
     }
 }
