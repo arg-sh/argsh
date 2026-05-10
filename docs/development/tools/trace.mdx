@@ -1,0 +1,131 @@
+---
+description: 'Generate structured markdown traces of script execution for debugging, documentation, and CI'
+---
+
+# Process Trace
+
+argsh can produce a structured markdown trace of your script's execution, capturing function calls, variable state, command dispatch, and timing information. This is invaluable for debugging CI failures, documenting script behavior, onboarding new team members, and code review.
+
+## Two methods
+
+There are two ways to generate a trace:
+
+| Method | Best for | Requires |
+|--------|----------|----------|
+| `ARGSH_TRACE` env var | CI pipelines, quick debugging | Nothing extra |
+| `argsh-dap --trace` | Richer output, IDE integration | `argsh-dap` binary |
+
+## Method 1: ARGSH_TRACE environment variable
+
+Set `ARGSH_TRACE` to a file path before running your script. The trace is written incrementally during execution with zero configuration.
+
+```bash
+# Generate a trace of your deploy script
+ARGSH_TRACE=/tmp/deploy-trace.md ./deploy.sh --env staging
+
+# In CI (GitHub Actions example)
+- name: Deploy
+  run: ./deploy.sh --env production
+  env:
+    ARGSH_TRACE: ${{ runner.temp }}/trace.md
+
+- name: Upload trace
+  if: always()
+  uses: actions/upload-artifact@v4
+  with:
+    name: execution-trace
+    path: ${{ runner.temp }}/trace.md
+```
+
+### What gets traced
+
+- **Function entry/exit** with timing offsets
+- **Variable state** after every `:args` call (field names and values)
+- **Command dispatch** via `:usage` (which subcommand was resolved)
+- **Summary** with total steps, duration, and exit code
+
+### Behavior
+
+- When `ARGSH_TRACE` is unset or empty, tracing is completely disabled (zero overhead, no-op stubs)
+- The trace file is truncated on init, so each run produces a fresh trace
+- Existing `EXIT` and `DEBUG` traps are preserved (trap chaining)
+- The `functrace` shell option is enabled to trace inside functions
+
+## Method 2: argsh-dap --trace
+
+The DAP server includes a headless trace mode that instruments bash execution via a FIFO-based prelude, similar to the interactive debugger but without requiring a DAP client.
+
+```bash
+# Generate a trace using argsh-dap
+argsh-dap --trace output.md -- ./deploy.sh --env staging
+
+# With arguments
+argsh-dap --trace /tmp/trace.md -- ./my-script.sh arg1 arg2
+```
+
+This method uses the same instrumentation as the interactive debugger, providing consistent behavior between debugging and tracing.
+
+## Example output
+
+A trace file looks like this:
+
+````markdown
+# Process Trace
+
+- **Script**: deploy.sh
+- **Date**: 2026-05-10T14:32:01+00:00
+- **Args**: `--env staging`
+- **PID**: 12345
+
+## Execution
+
+- **[1]** `main` enter (+0ms)
+  - **[2]** `deploy` enter (+2ms)
+
+    <details><summary>Variables after <code>:args "Deploy"</code> (+3ms)</summary>
+
+    ```
+    env="staging"
+    verbose=""
+    dry_run=""
+    ```
+    </details>
+
+    - dispatch: `staging` -> `deploy::staging` (+4ms)
+    - **[3]** `deploy::staging` enter (+4ms)
+    - `deploy::staging` exit (120ms)
+  - `deploy` exit (125ms)
+- `main` exit (126ms)
+
+## Summary
+
+- **Steps**: 3
+- **Duration**: 126ms
+- **Exit code**: 0
+````
+
+## Use cases
+
+### CI debugging
+
+When a CI job fails, the trace shows exactly which function failed, what arguments it received, and how long each step took. Upload the trace as a build artifact for post-mortem analysis.
+
+### Documentation
+
+Generate traces from example invocations to produce living documentation that stays in sync with the code. The markdown format renders directly in GitHub/GitLab.
+
+### Code review
+
+Include a trace in your PR to show reviewers the execution path of a new feature or bug fix. Reviewers can verify the dispatch logic and variable handling without running the code.
+
+### Onboarding
+
+New team members can trace existing scripts to understand the execution flow, subcommand dispatch, and how `:args` fields map to variables.
+
+## Integration with the debugger
+
+The trace feature shares concepts with the [Debugger](./debugger.mdx):
+
+- Both use bash's `DEBUG` trap for instrumentation
+- `argsh-dap --trace` uses the same prelude injection as interactive debugging
+- Traces complement breakpoint debugging: use traces for the big picture, breakpoints for specific issues
