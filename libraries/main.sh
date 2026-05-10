@@ -17,6 +17,7 @@ import github
 # earlier so :usage already exists (as a function or builtin). `type -t` finds
 # both forms; `declare -F` would miss builtin-loaded :usage.
 [[ -n "$(type -t :usage 2>/dev/null)" ]] || import args
+import trace
 
 # Derive ARGSH_VERSION and ARGSH_COMMIT_SHA from git when running from source
 # (i.e. not from the minified release where these are baked in at build time).
@@ -1988,6 +1989,9 @@ argsh::shebang() {
     # argsh disable=AG013
     import "${_lib}"
   done
+
+  # Initialize process trace if ARGSH_TRACE is set to a file path.
+  __argsh_trace_init "${@:2}"
 
   shift
   # shellcheck source=/dev/null

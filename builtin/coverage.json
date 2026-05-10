@@ -1,88 +1,39 @@
 {
   "files": [
     {
-      "file": "builtin/src/usage/completion.rs",
-      "percent_covered": "100.00",
-      "covered_lines": "166",
-      "total_lines": "166",
-      "excluded_lines": "5"
-    },
-    {
-      "file": "builtin/src/to.rs",
-      "percent_covered": "100.00",
-      "covered_lines": "87",
-      "total_lines": "87",
-      "excluded_lines": "5"
-    },
-    {
-      "file": "builtin/src/shared.rs",
-      "percent_covered": "100.00",
-      "covered_lines": "157",
-      "total_lines": "157",
-      "excluded_lines": "13"
-    },
-    {
-      "file": "builtin/src/lib.rs",
-      "percent_covered": "100.00",
-      "covered_lines": "11",
-      "total_lines": "11",
-      "excluded_lines": "2"
-    },
-    {
       "file": "builtin/src/is.rs",
-      "percent_covered": "100.00",
-      "covered_lines": "60",
+      "percent_covered": "6.67",
+      "covered_lines": "4",
       "total_lines": "60",
       "excluded_lines": "4"
     },
     {
+      "file": "builtin/src/to.rs",
+      "percent_covered": "5.75",
+      "covered_lines": "5",
+      "total_lines": "87",
+      "excluded_lines": "5"
+    },
+    {
       "file": "builtin/src/args.rs",
-      "percent_covered": "100.00",
-      "covered_lines": "136",
+      "percent_covered": "3.68",
+      "covered_lines": "5",
       "total_lines": "136",
       "excluded_lines": "11"
     },
     {
+      "file": "builtin/src/usage/completion.rs",
+      "percent_covered": "1.81",
+      "covered_lines": "3",
+      "total_lines": "166",
+      "excluded_lines": "5"
+    },
+    {
       "file": "builtin/src/shell.rs",
-      "percent_covered": "99.55",
-      "covered_lines": "223",
+      "percent_covered": "1.34",
+      "covered_lines": "3",
       "total_lines": "224",
       "excluded_lines": "37"
-    },
-    {
-      "file": "builtin/src/field.rs",
-      "percent_covered": "99.27",
-      "covered_lines": "271",
-      "total_lines": "273",
-      "excluded_lines": "8"
-    },
-    {
-      "file": "builtin/src/usage/mod.rs",
-      "percent_covered": "95.78",
-      "covered_lines": "636",
-      "total_lines": "664",
-      "excluded_lines": "22"
-    },
-    {
-      "file": "builtin/src/usage/docgen.rs",
-      "percent_covered": "92.61",
-      "covered_lines": "426",
-      "total_lines": "460",
-      "excluded_lines": "7"
-    },
-    {
-      "file": "builtin/src/import.rs",
-      "percent_covered": "92.52",
-      "covered_lines": "235",
-      "total_lines": "254",
-      "excluded_lines": "10"
-    },
-    {
-      "file": "builtin/src/usage/mcp.rs",
-      "percent_covered": "60.62",
-      "covered_lines": "408",
-      "total_lines": "673",
-      "excluded_lines": "105"
     },
     {
       "file": "builtin/src/lib_cmd.rs",
@@ -92,11 +43,53 @@
       "excluded_lines": "0"
     },
     {
+      "file": "builtin/src/usage/mod.rs",
+      "percent_covered": "0.90",
+      "covered_lines": "6",
+      "total_lines": "664",
+      "excluded_lines": "22"
+    },
+    {
       "file": "builtin/src/lib_push_cmd.rs",
       "percent_covered": "0.86",
       "covered_lines": "1",
       "total_lines": "116",
       "excluded_lines": "0"
+    },
+    {
+      "file": "builtin/src/import.rs",
+      "percent_covered": "0.79",
+      "covered_lines": "2",
+      "total_lines": "254",
+      "excluded_lines": "10"
+    },
+    {
+      "file": "builtin/src/usage/docgen.rs",
+      "percent_covered": "0.65",
+      "covered_lines": "3",
+      "total_lines": "460",
+      "excluded_lines": "7"
+    },
+    {
+      "file": "builtin/src/usage/mcp.rs",
+      "percent_covered": "0.45",
+      "covered_lines": "3",
+      "total_lines": "673",
+      "excluded_lines": "105"
+    },
+    {
+      "file": "builtin/src/field.rs",
+      "percent_covered": "0.37",
+      "covered_lines": "1",
+      "total_lines": "273",
+      "excluded_lines": "8"
+    },
+    {
+      "file": "builtin/src/shared.rs",
+      "percent_covered": "0.00",
+      "covered_lines": "0",
+      "total_lines": "157",
+      "excluded_lines": "13"
     },
     {
       "file": "builtin/src/oci/client.rs",
@@ -111,10 +104,17 @@
       "covered_lines": "0",
       "total_lines": "92",
       "excluded_lines": "0"
+    },
+    {
+      "file": "builtin/src/lib.rs",
+      "percent_covered": "0.00",
+      "covered_lines": "0",
+      "total_lines": "11",
+      "excluded_lines": "2"
     }
   ],
-  "percent_covered": "75.72",
-  "covered_lines": 2828,
+  "percent_covered": "0.99",
+  "covered_lines": 37,
   "total_lines": 3735,
   "excluded_lines": 229,
   "percent_low": 25,

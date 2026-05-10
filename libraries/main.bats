@@ -1445,3 +1445,145 @@ YAML
   contains "Available libraries:" stdout
   contains "jaml" stdout
 }
+
+# ---------------------------------------------------------------------------
+# ARGSH_TRACE — process trace
+# ---------------------------------------------------------------------------
+
+@test "ARGSH_TRACE: produces markdown with expected sections" {
+  local _tmp _trace
+  _tmp="$(mktemp -d)"
+  _trace="${_tmp}/trace.md"
+
+  (
+    export ARGSH_BUILTIN=0
+    export ARGSH_TRACE="${_trace}"
+    export ARGSH_SOURCE="test-script.sh"
+    source "${BATS_TEST_DIRNAME}/args.sh"
+    source "${BATS_TEST_DIRNAME}/trace.sh"
+    __argsh_trace_init "Alice"
+
+    _test_main() {
+      local name="world"
+      local -a args=(
+        'name' "Who to greet"
+      )
+      :args "Greeter" "${@}"
+      echo "Hello, ${name}!"
+    }
+    _test_main Alice
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  # Script should have succeeded
+  assert "${status}" -eq 0
+  contains "Hello, Alice!" stdout
+
+  # Trace file must exist
+  assert -f "${_trace}"
+
+  # Check expected sections in the markdown trace
+  local _content
+  _content="$(cat "${_trace}")"
+
+  # Header section
+  [[ "${_content}" == *"# Process Trace"* ]] || {
+    echo "missing '# Process Trace' header"; cat "${_trace}"; false
+  }
+  [[ "${_content}" == *"**Date**:"* ]] || {
+    echo "missing Date field"; cat "${_trace}"; false
+  }
+  [[ "${_content}" == *"**Args**: \`Alice\`"* ]] || {
+    echo "missing Args field"; cat "${_trace}"; false
+  }
+
+  # Execution section
+  [[ "${_content}" == *"## Execution"* ]] || {
+    echo "missing '## Execution' section"; cat "${_trace}"; false
+  }
+
+  # Variables after :args
+  [[ "${_content}" == *"Variables after"* ]] || {
+    echo "missing 'Variables after' section"; cat "${_trace}"; false
+  }
+  [[ "${_content}" == *"Greeter"* ]] || {
+    echo "missing :args title in trace"; cat "${_trace}"; false
+  }
+  [[ "${_content}" == *'name='* ]] || {
+    echo "missing variable dump"; cat "${_trace}"; false
+  }
+
+  # Summary section
+  [[ "${_content}" == *"## Summary"* ]] || {
+    echo "missing '## Summary' section"; cat "${_trace}"; false
+  }
+  [[ "${_content}" == *"**Steps**:"* ]] || {
+    echo "missing Steps in summary"; cat "${_trace}"; false
+  }
+  [[ "${_content}" == *"**Duration**:"* ]] || {
+    echo "missing Duration in summary"; cat "${_trace}"; false
+  }
+  [[ "${_content}" == *"**Exit code**:"* ]] || {
+    echo "missing Exit code in summary"; cat "${_trace}"; false
+  }
+
+  rm -rf "${_tmp}"
+}
+
+@test "ARGSH_TRACE: unset produces no trace file" {
+  local _tmp _trace
+  _tmp="$(mktemp -d)"
+  _trace="${_tmp}/trace.md"
+
+  (
+    unset ARGSH_TRACE
+    source "${BATS_TEST_DIRNAME}/args.sh"
+    source "${BATS_TEST_DIRNAME}/trace.sh"
+    __argsh_trace_init
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  assert ! -f "${_trace}"
+  rm -rf "${_tmp}"
+}
+
+@test "ARGSH_TRACE: :usage dispatch is recorded" {
+  local _tmp _trace
+  _tmp="$(mktemp -d)"
+  _trace="${_tmp}/trace.md"
+
+  (
+    export ARGSH_BUILTIN=0
+    export ARGSH_TRACE="${_trace}"
+    export ARGSH_SOURCE="dispatch-test.sh"
+    source "${BATS_TEST_DIRNAME}/args.sh"
+    source "${BATS_TEST_DIRNAME}/trace.sh"
+    __argsh_trace_init "deploy"
+
+    _test_app::deploy() {
+      echo "deployed"
+    }
+    _test_app() {
+      local -a usage=(
+        'deploy|d' "Deploy the app"
+      )
+      :usage "App" "${@}"
+      "${usage[@]}"
+    }
+    _test_app deploy
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains "deployed" stdout
+  assert -f "${_trace}"
+
+  local _content
+  _content="$(cat "${_trace}")"
+  [[ "${_content}" == *"dispatch:"* ]] || {
+    echo "missing dispatch entry in trace"; cat "${_trace}"; false
+  }
+  [[ "${_content}" == *"deploy"* ]] || {
+    echo "missing deploy command in trace"; cat "${_trace}"; false
+  }
+
+  rm -rf "${_tmp}"
+}

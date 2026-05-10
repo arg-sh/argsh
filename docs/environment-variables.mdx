@@ -62,6 +62,25 @@ This is different from `--no-builtin`, which skips ALL builtin loading (includin
 export ARGSH_NO_AUTO_DOWNLOAD=1
 ```
 
+### ARGSH_TRACE
+
+*New in v0.9.0*
+
+When set to a file path, argsh writes a structured markdown trace of the script's execution. The trace includes function call/return boundaries with timing, variable state after each `:args` call, and command dispatch via `:usage`.
+
+```bash
+ARGSH_TRACE=/tmp/trace.md argsh ./myscript.sh deploy --env prod
+```
+
+The resulting markdown file contains:
+
+- **Header** with script name, date, arguments, and PID
+- **Execution** section with indented function entry/exit events and elapsed times
+- **Variables** collapsible sections showing parsed argument values after each `:args` call
+- **Summary** with total steps, duration, and exit code
+
+This is useful for debugging complex multi-subcommand scripts, understanding the call flow, and diagnosing argument parsing issues.
+
 ### PATH_BASE
 
 Project root directory. Used by `import @...` to resolve project-relative imports. Typically set in `.envrc`.
