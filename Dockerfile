@@ -3,7 +3,8 @@
 # Build modes:
 #   1. Extract Rust binaries:  docker buildx build --target artifacts -o out .
 #   2. Full image (local):     docker buildx build .
-#   3. Full image (CI):        Uses GHA cache from the build job so the Rust
+#   3. Alpine image:           docker buildx build --target alpine .
+#   4. Full image (CI):        Uses GHA cache from the build job so the Rust
 #                               stages are cache hits — only the final assembly
 #                               layers (tools, COPY argsh.min.sh) run fresh.
 
@@ -69,6 +70,24 @@ WORKDIR /build
 COPY crates/ crates/
 RUN cargo build --release --manifest-path crates/argsh-lsp/Cargo.toml --bins
 
+# minifier (musl) — statically linked for Alpine
+FROM rust:1-alpine AS minifier-build-musl
+WORKDIR /build
+COPY minifier/ .
+RUN cargo build --release
+
+# shdoc (musl) — statically linked for Alpine
+FROM rust:1-alpine AS shdoc-build-musl
+WORKDIR /build
+COPY shdoc/ .
+RUN cargo build --release
+
+# argsh-lsp / argsh-lint / argsh-dap (musl) — statically linked for Alpine
+FROM rust:1-alpine AS lsp-build-musl
+WORKDIR /build
+COPY crates/ crates/
+RUN cargo build --release --manifest-path crates/argsh-lsp/Cargo.toml --bins
+
 # artifacts — extract just the Rust binaries (used by CI for multi-arch release)
 FROM scratch AS artifacts
 COPY --from=minifier-build /build/target/release/minifier /minifier
@@ -78,10 +97,15 @@ COPY --from=builtin-build-musl /build/target/release/libargsh.so /libargsh-musl.
 COPY --from=lsp-build /build/crates/argsh-lsp/target/release/argsh-lsp /argsh-lsp
 COPY --from=lsp-build /build/crates/argsh-lsp/target/release/argsh-lint /argsh-lint
 COPY --from=lsp-build /build/crates/argsh-lsp/target/release/argsh-dap /argsh-dap
+COPY --from=minifier-build-musl /build/target/release/minifier /minifier-musl
+COPY --from=shdoc-build-musl /build/target/release/shdoc /shdoc-musl
+COPY --from=lsp-build-musl /build/crates/argsh-lsp/target/release/argsh-lsp /argsh-lsp-musl
+COPY --from=lsp-build-musl /build/crates/argsh-lsp/target/release/argsh-lint /argsh-lint-musl
+COPY --from=lsp-build-musl /build/crates/argsh-lsp/target/release/argsh-dap /argsh-dap-musl
 
 # ── Final image ──────────────────────────────────────────────────────────
 
-FROM debian:trixie-slim
+FROM debian:trixie-slim AS debian
 
 # kcov — bash script coverage (binary copied from pinned kcov image;
 # runtime deps installed via apt below to keep them up-to-date with the base)
@@ -141,3 +165,58 @@ ENV PATH_BASE=/workspace
 # docker
 COPY ./.docker/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 ENTRYPOINT [ "docker-entrypoint.sh" ]
+
+# ── Alpine image ─────────────────────────────────────────────────────────
+# Lightweight variant with musl-linked binaries.
+# Build:  docker buildx build --target alpine -t argsh:alpine .
+
+FROM alpine:3.21 AS alpine
+
+# Runtime dependencies
+RUN apk add --no-cache \
+      bash git curl ca-certificates gettext
+
+# test — bats-core + standard helper libraries (same pinned SHAs as Debian)
+RUN set -eux \
+  && git init /tmp/bats \
+  && git -C /tmp/bats remote add origin https://github.com/bats-core/bats-core.git \
+  && git -C /tmp/bats fetch --depth 1 origin 3bca150ec86275d6d9d5a4fd7d48ab8b6c6f3d87 \
+  && git -C /tmp/bats checkout FETCH_HEAD \
+  && /tmp/bats/install.sh /usr/local \
+  && git clone --depth 1 https://github.com/bats-core/bats-support.git /usr/local/lib/bats-support \
+  && git -C /usr/local/lib/bats-support fetch --depth 1 origin 24a72e14349690bcbf7c151b9d2d1cdd32d36eb1 \
+  && git -C /usr/local/lib/bats-support checkout FETCH_HEAD \
+  && git clone --depth 1 https://github.com/bats-core/bats-assert.git /usr/local/lib/bats-assert \
+  && git -C /usr/local/lib/bats-assert fetch --depth 1 origin f1e9280eaae8f86cbe278a687e6ba755bc802c1a \
+  && git -C /usr/local/lib/bats-assert checkout FETCH_HEAD \
+  && git clone --depth 1 https://github.com/bats-core/bats-file.git /usr/local/lib/bats-file \
+  && git -C /usr/local/lib/bats-file fetch --depth 1 origin 13ad5e2ffcc360281432db3d43a306f7b3667d60 \
+  && git -C /usr/local/lib/bats-file checkout FETCH_HEAD \
+  && rm -rf /tmp/bats \
+      /usr/local/lib/bats-support/.git \
+      /usr/local/lib/bats-assert/.git \
+      /usr/local/lib/bats-file/.git
+
+# lint
+COPY --from=koalaman/shellcheck:stable /bin/shellcheck /usr/local/bin/shellcheck
+
+# tools
+COPY --from=ghcr.io/jqlang/jq:1.8.1 /jq /usr/local/bin/jq
+COPY --from=mikefarah/yq:4.53.2 /usr/bin/yq /usr/local/bin/yq
+
+# argsh itself (musl-linked binaries)
+COPY --from=minifier-build-musl /build/target/release/minifier /usr/local/bin/minifier
+COPY --from=shdoc-build-musl /build/target/release/shdoc /usr/local/bin/shdoc
+COPY --from=builtin-build-musl /build/target/release/libargsh.so /usr/local/lib/argsh.so
+COPY --from=lsp-build-musl /build/crates/argsh-lsp/target/release/argsh-lsp /usr/local/bin/argsh-lsp
+COPY --from=lsp-build-musl /build/crates/argsh-lsp/target/release/argsh-lint /usr/local/bin/argsh-lint
+COPY --from=lsp-build-musl /build/crates/argsh-lsp/target/release/argsh-dap /usr/local/bin/argsh-dap
+COPY ./argsh.min.sh /usr/local/bin/argsh
+ENV ARGSH_BUILTIN_PATH=/usr/local/lib/argsh.so
+ENV BATS_LIB_PATH=/usr/local/lib
+ENV PATH_BASE=/workspace
+
+# docker
+COPY ./.docker/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+ENTRYPOINT [ "docker-entrypoint.sh" ]
+
