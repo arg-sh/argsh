@@ -24,6 +24,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -312,6 +313,123 @@ __argsh_dap_trap() {
 trap '__argsh_dap_trap' DEBUG
 # ── end debug prelude ────────────────────────────────────────────────────
 "#;
+
+// ---------------------------------------------------------------------------
+// Trace prelude — injected into bash for headless `--trace` mode.
+// Similar to the DEBUG trap but writes events to the FIFO without blocking
+// for resume commands. Every trap hit writes a TRACE event and returns
+// immediately, allowing the script to run to completion uninterrupted.
+// ---------------------------------------------------------------------------
+
+const TRACE_PRELUDE: &str = r#"
+# ── argsh trace prelude ─────────────────────────────────────────────────
+# Injected by argsh-dap --trace. Collects execution events via FIFO.
+# Unlike the debug prelude, this does NOT block — it fires and forgets.
+
+__ARGSH_TRACE_FIFO="__FIFO_PATH__"
+__ARGSH_TRACE_WRAPPER="__WRAPPER_PATH__"
+__ARGSH_TRACE_LOCK=""
+__ARGSH_TRACE_DEPTH=0
+__ARGSH_TRACE_PREV_FUNC=""
+__ARGSH_TRACE_FUNC_STACK=()
+
+exec {__ARGSH_TRACE_LOCK}>"${__ARGSH_TRACE_FIFO}.lock"
+
+__argsh_trace_trap() {
+  local _file="${BASH_SOURCE[1]:-${0}}"
+  local _line="${BASH_LINENO[0]}"
+  local _func="${FUNCNAME[1]:-main}"
+  local _depth=$(( ${#FUNCNAME[@]} - 1 ))
+  local _cmd="${BASH_COMMAND}"
+
+  # Skip events from the wrapper script itself
+  [[ "${_file}" != "${__ARGSH_TRACE_WRAPPER}" ]] || return 0
+
+  # Detect function entry/exit by depth changes
+  local _event_type="step"
+  if (( _depth > __ARGSH_TRACE_DEPTH )); then
+    _event_type="enter"
+    __ARGSH_TRACE_FUNC_STACK+=("${_func}")
+  elif (( _depth < __ARGSH_TRACE_DEPTH )); then
+    _event_type="exit"
+    # Pop from our stack
+    if (( ${#__ARGSH_TRACE_FUNC_STACK[@]} > 0 )); then
+      _func="${__ARGSH_TRACE_FUNC_STACK[-1]}"
+      unset '__ARGSH_TRACE_FUNC_STACK[-1]'
+    fi
+  fi
+  __ARGSH_TRACE_DEPTH=${_depth}
+
+  # Detect :args and :usage calls
+  local _special=""
+  case "${_cmd}" in
+    :args*|": args"*) _special="args" ;;
+    :usage*|": usage"*) _special="usage" ;;
+  esac
+
+  # Write event to FIFO under flock to prevent interleaving
+  (
+    flock "${__ARGSH_TRACE_LOCK}"
+    printf 'TRACE\t%s\t%s\t%s\t%s\t%d\t%s\t%s\n' \
+      "${_event_type}" "${_file}" "${_line}" "${_func}" "${_depth}" \
+      "${_cmd}" "${_special}" \
+      > "${__ARGSH_TRACE_FIFO}"
+  )
+
+  return 0
+}
+
+trap '__argsh_trace_trap' DEBUG
+
+# Dump variables on exit for final state capture
+__argsh_trace_exit() {
+  (
+    flock "${__ARGSH_TRACE_LOCK}"
+    printf 'TRACE_EXIT\t%d\n' "$?" > "${__ARGSH_TRACE_FIFO}"
+  )
+}
+trap '__argsh_trace_exit' EXIT
+# ── end trace prelude ───────────────────────────────────────────────────
+"#;
+
+// ---------------------------------------------------------------------------
+// Trace mode types — used by `--trace` to collect and render events
+// ---------------------------------------------------------------------------
+
+/// A single trace event collected from the FIFO during `--trace` mode.
+#[derive(Debug, Clone)]
+struct TraceEvent {
+    /// Event type: "enter", "exit", or "step".
+    event_type: String,
+    /// Source file path.
+    file: String,
+    /// Line number in the source file.
+    line: u32,
+    /// Function name.
+    func: String,
+    /// Call depth (0 = top-level).
+    depth: u32,
+    /// The bash command being executed.
+    command: String,
+    /// Special marker: "args", "usage", or empty.
+    special: String,
+    /// Timestamp relative to trace start (milliseconds).
+    elapsed_ms: u64,
+}
+
+/// Information about a function call extracted from trace events.
+#[derive(Debug, Clone)]
+struct TracedFunction {
+    name: String,
+    file: String,
+    entry_line: u32,
+    depth: u32,
+    entry_ms: u64,
+    exit_ms: Option<u64>,
+    steps: Vec<TraceEvent>,
+    has_args_call: bool,
+    has_usage_call: bool,
+}
 
 // ---------------------------------------------------------------------------
 // DAP Session
@@ -1399,6 +1517,547 @@ fn send_dap_message<T: Serialize>(writer: &Arc<Mutex<io::Stdout>>, msg: &T) {
 }
 
 // ---------------------------------------------------------------------------
+// Trace mode — headless execution with markdown output
+// ---------------------------------------------------------------------------
+
+/// Run a script with the trace prelude and write a structured markdown trace.
+///
+/// This mode reuses the FIFO infrastructure from the DAP debugger but runs
+/// headlessly: no DAP protocol, no stdin reading. The script runs to
+/// completion while trace events are collected, then the markdown file is
+/// written with enriched analysis from `argsh_syntax`.
+#[cfg(unix)]
+fn run_trace_mode(output: &Path, script: &Path, args: &[String]) -> Result<(), String> {
+    let start_time = Instant::now();
+
+    // Validate that the script exists
+    if !script.exists() {
+        return Err(format!("Script not found: {}", script.display()));
+    }
+
+    // Canonicalize the script path for consistent display
+    let script = script.canonicalize()
+        .map_err(|e| format!("Failed to canonicalize script path: {}", e))?;
+
+    // Create FIFOs in a secure temporary directory
+    let fifo_tmpdir = tempfile::tempdir()
+        .map_err(|e| format!("Failed to create temp directory: {}", e))?;
+    let fifo_dir = fifo_tmpdir.keep();
+    let fifo_data = fifo_dir.join("data");
+
+    // Create the data FIFO
+    {
+        let data_str = fifo_data.to_str()
+            .ok_or("FIFO path contains invalid UTF-8")?;
+        let data_c = std::ffi::CString::new(data_str).unwrap();
+        // SAFETY: CString pointer is valid and null-terminated.
+        let rc = unsafe { libc::mkfifo(data_c.as_ptr(), 0o600) };
+        if rc != 0 {
+            let err = std::io::Error::last_os_error();
+            return Err(format!("Failed to create FIFO: {}", err));
+        }
+    }
+
+    // Lock file for flock-based FIFO write serialization
+    let lock_path = fifo_dir.join("data.lock");
+    std::fs::write(&lock_path, "").ok();
+
+    let wrapper_path = fifo_dir.join("wrapper.sh");
+
+    // Build the trace prelude with paths substituted
+    let prelude = TRACE_PRELUDE
+        .replace("__FIFO_PATH__", fifo_data.to_str().unwrap())
+        .replace("__WRAPPER_PATH__", wrapper_path.to_str().unwrap());
+
+    // Detect if the script needs the argsh runtime
+    let needs_argsh = std::fs::read_to_string(&script)
+        .ok()
+        .and_then(|s| s.lines().next().map(String::from))
+        .map(|s| s.contains("argsh"))
+        .unwrap_or(false);
+
+    let argsh_loader = if needs_argsh {
+        format!(
+            concat!(
+                "# Load argsh runtime\n",
+                "_argsh_rt=\"$(dirname \"{script}\")/../argsh.min.sh\"\n",
+                "[[ -f \"$_argsh_rt\" ]] || _argsh_rt=\"$(command -v argsh 2>/dev/null)\"\n",
+                "[[ -n \"$_argsh_rt\" ]] || {{ echo \"argsh-dap: argsh runtime not found\" >&2; exit 1; }}\n",
+                "ARGSH_SOURCE=\"{script}\" source \"$_argsh_rt\"\n",
+            ),
+            script = script.display()
+        )
+    } else {
+        String::new()
+    };
+
+    let wrapper = format!(
+        "#!/usr/bin/env bash\nset -T\n{argsh}{prelude}\nsource \"{script}\" \"$@\"\n",
+        argsh = argsh_loader,
+        prelude = prelude,
+        script = script.display()
+    );
+
+    std::fs::write(&wrapper_path, &wrapper)
+        .map_err(|e| format!("Failed to write wrapper script: {}", e))?;
+
+    // Collect events from the FIFO in a background thread
+    let events: Arc<Mutex<Vec<TraceEvent>>> = Arc::new(Mutex::new(Vec::new()));
+    let _exit_code_fifo: Arc<Mutex<Option<i32>>> = Arc::new(Mutex::new(None));
+    let fifo_done = Arc::new(AtomicBool::new(false));
+
+    let events_clone = Arc::clone(&events);
+    let exit_code_clone = Arc::clone(&_exit_code_fifo);
+    let fifo_done_clone = Arc::clone(&fifo_done);
+    let fifo_data_clone = fifo_data.clone();
+    let trace_start = Instant::now();
+
+    let reader_thread = std::thread::spawn(move || {
+        // The reader loop reopens the FIFO after each EOF (bash may close
+        // and reopen the write end in subshells).
+        loop {
+            if fifo_done_clone.load(Ordering::SeqCst) {
+                break;
+            }
+
+            let file = match std::fs::File::open(&fifo_data_clone) {
+                Ok(f) => f,
+                Err(_) => break,
+            };
+            let reader = BufReader::new(file);
+
+            for line in reader.lines() {
+                let line = match line {
+                    Ok(l) => l,
+                    Err(_) => break,
+                };
+
+                let elapsed = trace_start.elapsed().as_millis() as u64;
+
+                if line.starts_with("TRACE\t") {
+                    // Format: TRACE\ttype\tfile\tline\tfunc\tdepth\tcmd\tspecial
+                    let parts: Vec<&str> = line.splitn(8, '\t').collect();
+                    if parts.len() >= 7 {
+                        let event = TraceEvent {
+                            event_type: parts[1].to_string(),
+                            file: parts[2].to_string(),
+                            line: parts[3].parse().unwrap_or(0),
+                            func: parts[4].to_string(),
+                            depth: parts[5].parse().unwrap_or(0),
+                            command: parts[6].to_string(),
+                            special: parts.get(7).unwrap_or(&"").to_string(),
+                            elapsed_ms: elapsed,
+                        };
+                        events_clone.lock().unwrap().push(event);
+                    }
+                } else if line.starts_with("TRACE_EXIT\t") {
+                    let code: i32 = line.strip_prefix("TRACE_EXIT\t")
+                        .and_then(|s| s.parse().ok())
+                        .unwrap_or(-1);
+                    *exit_code_clone.lock().unwrap() = Some(code);
+                }
+            }
+        }
+    });
+
+    // Spawn the bash process
+    let mut cmd = Command::new("bash");
+    cmd.arg(wrapper_path.to_str().unwrap());
+    cmd.args(args);
+    if let Some(parent) = script.parent() {
+        cmd.current_dir(parent);
+    }
+    cmd.stdin(Stdio::inherit());
+    cmd.stdout(Stdio::inherit());
+    cmd.stderr(Stdio::inherit());
+
+    let mut child = cmd.spawn()
+        .map_err(|e| format!("Failed to spawn bash: {}", e))?;
+
+    // Wait for the script to finish
+    let status = child.wait()
+        .map_err(|e| format!("Failed to wait for bash: {}", e))?;
+
+    let process_exit_code = status.code().unwrap_or(-1);
+
+    // Give the FIFO reader a moment to drain remaining events, then signal it
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    fifo_done.store(true, Ordering::SeqCst);
+
+    // Unblock the reader thread if it's stuck on open() by briefly opening
+    // the FIFO for writing. This makes the reader's open() return, then it
+    // sees fifo_done==true and exits.
+    let _ = std::fs::OpenOptions::new().write(true).open(&fifo_data);
+
+    let _ = reader_thread.join();
+
+    let total_duration = start_time.elapsed();
+    let events = events.lock().unwrap();
+    // Prefer the actual process exit code (ground truth) over the FIFO-reported
+    // one, which may not arrive in time for fast-exiting scripts.
+    let exit_code = process_exit_code;
+
+    // Analyze the script with argsh_syntax for enrichment
+    let content = std::fs::read_to_string(&script).unwrap_or_default();
+    let analysis = analyze(&content);
+    let imports = resolver::resolve_imports(&analysis, &script, resolver::DEFAULT_MAX_DEPTH);
+
+    // Build the markdown output
+    let markdown = render_trace_markdown(
+        &script,
+        args,
+        &events,
+        exit_code,
+        &total_duration,
+        &analysis,
+        &imports,
+    );
+
+    // Write the output file
+    std::fs::write(output, &markdown)
+        .map_err(|e| format!("Failed to write trace output: {}", e))?;
+
+    // Clean up temp directory
+    let _ = std::fs::remove_dir_all(&fifo_dir);
+
+    eprintln!("argsh-dap: trace written to {}", output.display());
+    Ok(())
+}
+
+/// Render the collected trace events into a structured markdown document.
+///
+/// Enriches the raw execution trace with static analysis from `argsh_syntax`:
+/// - Field type annotations from `:args` definitions
+/// - Command tree from `:usage` dispatch
+/// - Import tree from the resolver
+fn render_trace_markdown(
+    script: &Path,
+    args: &[String],
+    events: &[TraceEvent],
+    exit_code: i32,
+    duration: &std::time::Duration,
+    analysis: &DocumentAnalysis,
+    imports: &resolver::ResolvedImports,
+) -> String {
+    let mut md = String::new();
+
+    let script_name = script.file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| script.display().to_string());
+
+    let args_str = if args.is_empty() {
+        String::new()
+    } else {
+        format!(" {}", args.join(" "))
+    };
+
+    // Header
+    md.push_str(&format!("# Process Trace: {}{}\n\n", script_name, args_str));
+
+    let now = chrono_like_timestamp();
+    let duration_secs = duration.as_secs_f64();
+    let duration_str = if duration_secs < 1.0 {
+        format!("{:.0}ms", duration.as_millis())
+    } else {
+        format!("{:.1}s", duration_secs)
+    };
+
+    md.push_str(&format!(
+        "> Generated: {}  \n> Script: `{}`  \n> Exit code: {} | Duration: {} | Steps: {}\n\n",
+        now,
+        script.display(),
+        exit_code,
+        duration_str,
+        events.len(),
+    ));
+
+    md.push_str("---\n\n");
+
+    // Command tree from static analysis
+    let has_usage = analysis.functions.iter().any(|f| f.calls_usage);
+    if has_usage {
+        md.push_str("## Command Tree\n\n");
+        md.push_str("```\n");
+        md.push_str(&script_name);
+        md.push('\n');
+        render_command_tree(&mut md, analysis, &analysis.functions, "", 0);
+        md.push_str("```\n\n---\n\n");
+    }
+
+    // Execution trace
+    md.push_str("## Execution\n\n");
+
+    // Build traced functions from events
+    let traced_fns = build_traced_functions(events);
+
+    for tf in &traced_fns {
+        let file_short = Path::new(&tf.file)
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| tf.file.clone());
+
+        // Function entry
+        let indent = "  ".repeat(tf.depth as usize);
+        let timing = format_timing(tf.entry_ms);
+
+        // Find matching FunctionInfo for enrichment
+        let func_info = analysis.functions.iter().find(|f| f.name == tf.name)
+            .or_else(|| imports.functions.iter().find(|f| f.name == tf.name));
+
+        if let Some(exit_ms) = tf.exit_ms {
+            let call_duration = exit_ms - tf.entry_ms;
+            md.push_str(&format!(
+                "{}### `{}` ({}:{}) [{}]\n\n",
+                indent, tf.name, file_short, tf.entry_line,
+                format_timing(call_duration)
+            ));
+        } else {
+            md.push_str(&format!(
+                "{}### `{}` ({}:{}) [{}+]\n\n",
+                indent, tf.name, file_short, tf.entry_line, timing
+            ));
+        }
+
+        // Steps table
+        if !tf.steps.is_empty() {
+            md.push_str(&format!("{}| # | Line | Command | Duration |\n", indent));
+            md.push_str(&format!("{}|---|------|---------|----------|\n", indent));
+
+            let mut step_num = 0;
+            for (i, step) in tf.steps.iter().enumerate() {
+                step_num += 1;
+                let step_duration = if i + 1 < tf.steps.len() {
+                    let next_ms = tf.steps[i + 1].elapsed_ms;
+                    format_timing(next_ms - step.elapsed_ms)
+                } else {
+                    "<1ms".to_string()
+                };
+
+                // Truncate long commands
+                let cmd_display = if step.command.len() > 60 {
+                    format!("{}...", &step.command[..57])
+                } else {
+                    step.command.clone()
+                };
+
+                md.push_str(&format!(
+                    "{}| {} | {} | `{}` | {} |\n",
+                    indent, step_num, step.line, cmd_display, step_duration
+                ));
+            }
+            md.push('\n');
+        }
+
+        // Args details if the function has :args
+        if tf.has_args_call {
+            if let Some(fi) = func_info {
+                if !fi.args_entries.is_empty() {
+                    md.push_str(&format!(
+                        "{}<details>\n{}<summary>:args definition</summary>\n\n",
+                        indent, indent
+                    ));
+                    md.push_str(&format!(
+                        "{}| Field | Description | Type |\n",
+                        indent
+                    ));
+                    md.push_str(&format!(
+                        "{}|-------|-------------|------|\n",
+                        indent
+                    ));
+
+                    for entry in &fi.args_entries {
+                        let type_str = match &entry.parsed {
+                            Ok(f) => {
+                                let mut t = if f.is_positional {
+                                    "positional".to_string()
+                                } else {
+                                    "flag".to_string()
+                                };
+                                if f.is_boolean { t.push_str(" :+"); }
+                                if f.required { t.push_str(" :!"); }
+                                if !f.type_name.is_empty() {
+                                    t.push_str(&format!(" :~{}", f.type_name));
+                                }
+                                t
+                            }
+                            Err(_) => "unknown".to_string(),
+                        };
+
+                        md.push_str(&format!(
+                            "{}| `{}` | {} | {} |\n",
+                            indent, entry.spec, entry.description, type_str
+                        ));
+                    }
+
+                    md.push_str(&format!("\n{}</details>\n\n", indent));
+                }
+            }
+        }
+    }
+
+    md.push_str("---\n\n");
+
+    // Import tree
+    if !imports.resolved_files.is_empty() {
+        md.push_str("## Import Tree\n\n");
+        md.push_str("| Module | Path |\n");
+        md.push_str("|--------|------|\n");
+
+        for (_, module, resolved_path) in &imports.resolved_files {
+            md.push_str(&format!(
+                "| `{}` | `{}` |\n",
+                module,
+                resolved_path.display()
+            ));
+        }
+
+        md.push_str("\n---\n\n");
+    }
+
+    // Summary
+    md.push_str("## Summary\n\n");
+    md.push_str("| Metric | Value |\n");
+    md.push_str("|--------|-------|\n");
+
+    let total_steps = events.iter().filter(|e| e.event_type == "step").count();
+    let fn_calls = events.iter().filter(|e| e.event_type == "enter").count();
+    let args_calls = events.iter().filter(|e| e.special == "args").count();
+    let usage_calls = events.iter().filter(|e| e.special == "usage").count();
+
+    md.push_str(&format!("| Total steps | {} |\n", total_steps));
+    md.push_str(&format!("| Functions called | {} |\n", fn_calls));
+    md.push_str(&format!("| `:args` parsed | {} |\n", args_calls));
+    md.push_str(&format!("| `:usage` dispatched | {} |\n", usage_calls));
+    md.push_str(&format!("| Imports loaded | {} |\n", imports.resolved_files.len()));
+    md.push_str(&format!("| Exit code | {} |\n", exit_code));
+    md.push_str(&format!("| Wall time | {} |\n", duration_str));
+
+    md
+}
+
+/// Build a list of traced function calls from raw events.
+fn build_traced_functions(events: &[TraceEvent]) -> Vec<TracedFunction> {
+    let mut functions: Vec<TracedFunction> = Vec::new();
+    // Stack of indices into `functions` for open (un-exited) function calls
+    let mut stack: Vec<usize> = Vec::new();
+
+    for event in events {
+        match event.event_type.as_str() {
+            "enter" => {
+                let idx = functions.len();
+                functions.push(TracedFunction {
+                    name: event.func.clone(),
+                    file: event.file.clone(),
+                    entry_line: event.line,
+                    depth: event.depth,
+                    entry_ms: event.elapsed_ms,
+                    exit_ms: None,
+                    steps: Vec::new(),
+                    has_args_call: false,
+                    has_usage_call: false,
+                });
+                stack.push(idx);
+            }
+            "exit" => {
+                if let Some(idx) = stack.pop() {
+                    functions[idx].exit_ms = Some(event.elapsed_ms);
+                }
+            }
+            "step" => {
+                // Add step to the most recently entered function
+                if let Some(&idx) = stack.last() {
+                    if event.special == "args" {
+                        functions[idx].has_args_call = true;
+                    }
+                    if event.special == "usage" {
+                        functions[idx].has_usage_call = true;
+                    }
+                    functions[idx].steps.push(event.clone());
+                }
+            }
+            _ => {}
+        }
+    }
+
+    functions
+}
+
+/// Render the command tree from :usage analysis (recursive).
+fn render_command_tree(
+    md: &mut String,
+    analysis: &DocumentAnalysis,
+    funcs: &[FunctionInfo],
+    prefix: &str,
+    depth: usize,
+) {
+    // Find functions at this level that have :usage entries
+    for func in funcs {
+        if depth == 0 && !func.calls_usage {
+            continue;
+        }
+        if depth > 0 {
+            // Only render if we were explicitly asked to render this func
+            continue;
+        }
+
+        for (i, entry) in func.usage_entries.iter().enumerate() {
+            let is_last = i == func.usage_entries.len() - 1;
+            let connector = if is_last { "└── " } else { "├── " };
+            let name = entry.name.split('|').next().unwrap_or(&entry.name);
+            let clean = name.split('@').next().unwrap_or(name);
+
+            md.push_str(&format!("{}{}{}\n", prefix, connector, clean));
+
+            // Find the target function and recurse
+            let target_name = if let Some(ref explicit) = entry.explicit_func {
+                explicit.clone()
+            } else {
+                format!("{}::{}", func.name, clean)
+            };
+            if let Some(target) = analysis.functions.iter().find(|f| f.name == target_name) {
+                if target.calls_usage {
+                    let child_prefix = if is_last {
+                        format!("{}    ", prefix)
+                    } else {
+                        format!("{}│   ", prefix)
+                    };
+                    for (j, sub_entry) in target.usage_entries.iter().enumerate() {
+                        let sub_last = j == target.usage_entries.len() - 1;
+                        let sub_conn = if sub_last { "└── " } else { "├── " };
+                        let sub_name = sub_entry.name.split('|').next().unwrap_or(&sub_entry.name);
+                        let sub_clean = sub_name.split('@').next().unwrap_or(sub_name);
+                        md.push_str(&format!("{}{}{}\n", child_prefix, sub_conn, sub_clean));
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Format milliseconds into a human-readable duration string.
+fn format_timing(ms: u64) -> String {
+    if ms == 0 {
+        "<1ms".to_string()
+    } else if ms < 1000 {
+        format!("{}ms", ms)
+    } else {
+        format!("{:.1}s", ms as f64 / 1000.0)
+    }
+}
+
+/// Generate a timestamp string without pulling in the chrono crate.
+fn chrono_like_timestamp() -> String {
+    let output = std::process::Command::new("date")
+        .arg("-Iseconds")
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
+
+    output.unwrap_or_else(|| "unknown".to_string())
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
@@ -1410,7 +2069,7 @@ fn main() {
 
 #[cfg(unix)]
 fn main() {
-    // Handle --version and --help
+    // Handle --version, --help, and --trace
     let args: Vec<String> = std::env::args().collect();
     if args.len() > 1 {
         match args[1].as_str() {
@@ -1421,12 +2080,48 @@ fn main() {
             "--help" | "-h" => {
                 println!("argsh-dap — Debug Adapter Protocol server for argsh scripts");
                 println!();
-                println!("This binary is invoked by VSCode's debug adapter infrastructure.");
-                println!("It is not intended to be run directly.");
-                println!();
-                println!("Usage: argsh-dap");
-                println!("       argsh-dap --version");
+                println!("Usage:");
+                println!("  argsh-dap                              Start DAP server (stdin/stdout)");
+                println!("  argsh-dap --trace <out.md> -- <script> [args...]");
+                println!("                                         Run script and write execution trace");
+                println!("  argsh-dap --version                    Show version");
                 return;
+            }
+            "--trace" => {
+                // Parse: --trace <output.md> -- <script> [args...]
+                if args.len() < 3 {
+                    eprintln!("argsh-dap: --trace requires an output path");
+                    eprintln!("Usage: argsh-dap --trace <out.md> -- <script> [args...]");
+                    std::process::exit(2);
+                }
+                let output = PathBuf::from(&args[2]);
+
+                // Find the "--" separator
+                let sep_pos = args.iter().position(|a| a == "--");
+                let sep_pos = match sep_pos {
+                    Some(p) if p >= 3 => p,
+                    _ => {
+                        eprintln!("argsh-dap: --trace requires -- separator before script");
+                        eprintln!("Usage: argsh-dap --trace <out.md> -- <script> [args...]");
+                        std::process::exit(2);
+                    }
+                };
+
+                if sep_pos + 1 >= args.len() {
+                    eprintln!("argsh-dap: no script specified after --");
+                    std::process::exit(2);
+                }
+
+                let script = PathBuf::from(&args[sep_pos + 1]);
+                let script_args: Vec<String> = args[sep_pos + 2..].to_vec();
+
+                match run_trace_mode(&output, &script, &script_args) {
+                    Ok(()) => return,
+                    Err(e) => {
+                        eprintln!("argsh-dap: trace failed: {}", e);
+                        std::process::exit(1);
+                    }
+                }
             }
             _ => {
                 eprintln!("argsh-dap: unknown flag: {}", args[1]);
