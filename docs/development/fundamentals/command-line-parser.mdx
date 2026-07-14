@@ -308,8 +308,9 @@ Two POSIX/GNU conventions are supported when parsing the command line:
   `mycmd file.txt -` / `cat data | mycmd -` idiom:
 
   ```bash
-  local value=""
+  local file value=""
   local -a args=(
+    'file'         "Input file"
     'value:~stdin' "Value to process (- reads stdin)"
   )
   :args "Brief description of your command" "${@}"
