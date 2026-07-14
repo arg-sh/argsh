@@ -299,6 +299,35 @@ Here `arg1` is required (uninitialized) and `arg2` is optional (has a default). 
 The `:!` modifier only applies to **flags**, not positional arguments. For positionals, use variable initialization to control whether they are required.
 :::
 
+### `-` (stdin placeholder) and `--` (end of flags)
+
+Two POSIX/GNU conventions are supported when parsing the command line:
+
+- A bare `-` is treated as a **positional argument**, never as a flag. Combined
+  with the `stdin` type it reads the value from stdin — the classic
+  `mycmd file.txt -` / `cat data | mycmd -` idiom:
+
+  ```bash
+  local file value=""
+  local -a args=(
+    'file'         "Input file"
+    'value:~stdin' "Value to process (- reads stdin)"
+  )
+  :args "Brief description of your command" "${@}"
+  ```
+
+  Without the `stdin` type, a bare `-` is assigned literally.
+
+- `--` ends flag parsing: everything after it is treated as positional, even if
+  it starts with a dash (`mycmd -v -- --weird-filename`).
+
+:::note
+These conventions apply to `:args` (argument parsing). A flag that takes a
+value consumes the next token verbatim — `--name -- foo` stores `--` as the
+value (getopt_long-consistent). The `:usage` command dispatcher is unaffected:
+it forwards unknown dash-tokens to the subcommand's `:args` unchanged.
+:::
+
 ### Catch all arguments
 
 You can catch all remaining arguments by declaring a array as variable.
@@ -348,7 +377,7 @@ Defined by appending a `:~<type>` to the flag name. The following types are avai
 - `int`
 - `float`
 - `boolean`
-- `stdin` (reads from stdin if `-` is passed)
+- `stdin` (reads from stdin if `-` is passed — works for flags and positionals, see [`-` and `--`](#--stdin-placeholder-and----end-of-flags))
 
 ### boolean flags
 

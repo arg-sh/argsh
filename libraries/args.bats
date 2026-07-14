@@ -2191,6 +2191,75 @@ source "${PATH_FIXTURES}/fmt.sh"
   contains "myinput=hello_world" stdout
 }
 
+@test "attrs: bare - is a positional, not a flag" {
+  # POSIX convention: a lone - is a positional (stdin placeholder), never a flag
+  (
+    local val=""
+    local -a args=(
+      'val' "A value"
+    )
+    :args "Dash positional test" -
+    echo "val=${val}"
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains "val=-" stdout
+}
+
+@test "attrs: bare - positional with stdin type reads stdin" {
+  # Sentinel delimiters so a missing trailing-newline trim (builtin must match
+  # the bash \$(cat) semantics) fails the match instead of hiding in a grep.
+  (
+    local val=""
+    local -a args=(
+      'val:~stdin' "A value or - for stdin"
+    )
+    :args "Dash stdin test" -
+    echo "val=<${val}>END"
+  ) < <(printf 'piped-value\n') >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains "val=<piped-value>END" stdout
+}
+
+@test "attrs: -- ends flag parsing" {
+  # GNU convention: everything after -- is positional, even if it looks like a
+  # flag. (Positional names avoid :args-internal locals like `first`/`field` —
+  # pure-bash namerefs resolve against those.)
+  (
+    local verbose="" alpha="" beta=""
+    local -a args=(
+      'alpha'      "First positional"
+      'beta'       "Second positional"
+      'verbose|v:+' "Verbose mode"
+    )
+    :args "Separator test" -v -- --not-a-flag -x
+    echo "verbose=${verbose} alpha=${alpha} beta=${beta}"
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains "verbose=1 alpha=--not-a-flag beta=-x" stdout
+}
+
+@test "attrs: unknown flag after -- is not an error" {
+  # -- disables flag parsing entirely; -h after it is a positional too
+  (
+    local val=""
+    local -a args=(
+      'val' "A value"
+    )
+    :args "Separator help test" -- -h
+    echo "val=${val}"
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains "val=-h" stdout
+}
+
 @test "attrs: custom type returns None from exec_capture" {
   # Covers field.rs line 257 (custom type returning error on exec_capture None)
   if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
