@@ -331,11 +331,12 @@ pub fn convert_type(
         }
         "stdin" => {
             if value == "-" { // coverage:off - stdin pipe reading cannot be tested in BATS subshell context
-                // Read from stdin
+                // Read from stdin; strip trailing newlines to match the bash
+                // fallback (to::stdin runs in a command substitution)
                 use std::io::Read; // coverage:off
                 let mut buf = String::new(); // coverage:off
                 std::io::stdin().read_to_string(&mut buf).ok(); // coverage:off
-                Ok(buf) // coverage:off
+                Ok(buf.trim_end_matches('\n').to_string()) // coverage:off
             } else {
                 Ok(value.to_string())
             }

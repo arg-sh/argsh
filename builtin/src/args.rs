@@ -90,12 +90,21 @@ pub fn args_main(args: &[String]) -> i32 {
     let mut positional_index: usize = 1;
     let mut matched: Vec<String> = Vec::new();
     let mut first_array = false;
+    let mut no_more_flags = false;
 
     // idx stays 0: we always process the front element; cli.remove(0) shifts the rest down
     let idx = 0;
     while idx < cli.len() {
-        // Positional argument
-        if !cli[idx].starts_with('-') {
+        // `--` ends flag parsing (GNU convention) — everything after is positional
+        if !no_more_flags && cli[idx] == "--" {
+            cli.remove(idx);
+            no_more_flags = true;
+            continue;
+        }
+
+        // Positional argument — a bare `-` is a positional by POSIX convention
+        // (the stdin placeholder, consumed by the `stdin` field type), not a flag
+        if no_more_flags || !cli[idx].starts_with('-') || cli[idx] == "-" {
             let pos_idx = match field::field_positional(positional_index, &args_arr) {
                 Some(i) => i,
                 None => {

@@ -465,13 +465,21 @@ if ! (( ARGSH_BUILTIN )); then
     exit 0
   fi
 
-  local first=0 field="" i positional_index=1
+  local first=0 field="" i positional_index=1 no_more_flags=0
   local -A match=()
   local -a cli=("${@}")
 
   while (( ${#cli[@]} )); do
-    # positional
-    if [[ ${cli[0]:0:1} != "-" ]]; then
+    # `--` ends flag parsing (GNU convention) — everything after is positional
+    if (( ! no_more_flags )) && [[ ${cli[0]} == "--" ]]; then
+      no_more_flags=1
+      cli=("${cli[@]:1}")
+      continue
+    fi
+
+    # positional — a bare `-` is a positional by POSIX convention (the stdin
+    # placeholder, consumed by the `stdin` field type), not a flag
+    if (( no_more_flags )) || [[ ${cli[0]:0:1} != "-" || ${cli[0]} == "-" ]]; then
       local _pos_name _pos_value
       i="$(:args::field_positional "${positional_index}")" ||
         :args::error_usage "too many arguments: ${cli[0]}"
