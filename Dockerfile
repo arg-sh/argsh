@@ -23,17 +23,23 @@ COPY shdoc/ .
 RUN cargo build --release
 
 # builtin — build Rust loadable builtins
-# System lld (from apt) is required because export_name attributes contain
-# colons (e.g. ":args_struct") which cause "syntax error in VERSION script"
-# with both GNU ld and rust-lld. The system lld (from apt) handles them.
-# We symlink system lld over the rust-lld shim in gcc-ld/ so that
-# -fuse-ld=lld resolves to system lld on all architectures.
+# The export_name attributes contain colons (e.g. ":args_struct"), which
+# linkers reject UNQUOTED in the rustc-generated version script ("syntax
+# error in VERSION script"). Older system lld accepted them, but lld >= 20
+# rejects too — the plain system-lld symlink rotted when rust:1-alpine
+# moved to lld 22. The shim installed over rustc's gcc-ld/ld.lld quotes
+# those symbols in the script (standard version-script syntax, identical
+# export semantics) and delegates to system lld — linker-version-proof.
 # (-Clinker-features=-lld would be cleaner but is only stable on x86_64.)
 # See: https://github.com/rust-lang/rust/issues/38238
 # Build on bookworm (glibc 2.36) for maximum glibc compatibility.
 FROM rust:1-slim-bookworm AS builtin-build
 RUN apt-get update && apt-get install -y --no-install-recommends lld && rm -rf /var/lib/apt/lists/*
-RUN ln -sf /usr/bin/ld.lld "$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | awk '/host/{print $2}')/bin/gcc-ld/ld.lld"
+COPY .docker/ld-lld-quote-version-script.sh /usr/local/bin/ld-lld-quote-version-script
+RUN chmod +x /usr/local/bin/ld-lld-quote-version-script \
+  && mv /usr/bin/ld.lld /usr/bin/ld.lld-real \
+  && ln -sf /usr/local/bin/ld-lld-quote-version-script /usr/bin/ld.lld \
+  && ln -sf /usr/local/bin/ld-lld-quote-version-script "$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | awk '/host/{print $2}')/bin/gcc-ld/ld.lld"
 ARG RUSTFLAGS
 ARG CARGO_PROFILE_RELEASE_STRIP
 ARG CARGO_PROFILE_RELEASE_LTO
@@ -49,9 +55,13 @@ RUN ARGSH_SO_VERSION="${ARGSH_SO_VERSION}" ARGSH_SO_COMMIT="${ARGSH_SO_COMMIT}" 
 # Musl build for Alpine — cdylib works with -C target-feature=-crt-static.
 FROM rust:1-alpine AS builtin-build-musl
 RUN apk add --no-cache lld
-# Symlink system lld over rust-lld (same workaround as glibc build — colon
-# symbols in export_name break rust-lld's version script parser).
-RUN ln -sf /usr/bin/ld.lld "$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | awk '/host/{print $2}')/bin/gcc-ld/ld.lld"
+# Same version-script-quoting shim as the glibc build (colon symbols in
+# export_name; alpine ships lld >= 20 which rejects them unquoted).
+COPY .docker/ld-lld-quote-version-script.sh /usr/local/bin/ld-lld-quote-version-script
+RUN chmod +x /usr/local/bin/ld-lld-quote-version-script \
+  && mv /usr/bin/ld.lld /usr/bin/ld.lld-real \
+  && ln -sf /usr/local/bin/ld-lld-quote-version-script /usr/bin/ld.lld \
+  && ln -sf /usr/local/bin/ld-lld-quote-version-script "$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | awk '/host/{print $2}')/bin/gcc-ld/ld.lld"
 ARG RUSTFLAGS
 ARG CARGO_PROFILE_RELEASE_STRIP
 ARG CARGO_PROFILE_RELEASE_LTO
