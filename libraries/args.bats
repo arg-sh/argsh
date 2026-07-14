@@ -2208,18 +2208,20 @@ source "${PATH_FIXTURES}/fmt.sh"
 }
 
 @test "attrs: bare - positional with stdin type reads stdin" {
+  # Sentinel delimiters so a missing trailing-newline trim (builtin must match
+  # the bash \$(cat) semantics) fails the match instead of hiding in a grep.
   (
     local val=""
     local -a args=(
       'val:~stdin' "A value or - for stdin"
     )
     :args "Dash stdin test" -
-    echo "val=${val}"
+    echo "val=<${val}>END"
   ) < <(printf 'piped-value\n') >"${stdout}" 2>"${stderr}" || status=$?
 
   assert "${status}" -eq 0
   is_empty stderr
-  contains "val=piped-value" stdout
+  contains "val=<piped-value>END" stdout
 }
 
 @test "attrs: -- ends flag parsing" {

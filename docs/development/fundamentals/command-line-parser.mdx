@@ -320,6 +320,13 @@ Two POSIX/GNU conventions are supported when parsing the command line:
 - `--` ends flag parsing: everything after it is treated as positional, even if
   it starts with a dash (`mycmd -v -- --weird-filename`).
 
+:::note
+These conventions apply to `:args` (argument parsing). A flag that takes a
+value consumes the next token verbatim — `--name -- foo` stores `--` as the
+value (getopt_long-consistent). The `:usage` command dispatcher is unaffected:
+it forwards unknown dash-tokens to the subcommand's `:args` unchanged.
+:::
+
 ### Catch all arguments
 
 You can catch all remaining arguments by declaring a array as variable.

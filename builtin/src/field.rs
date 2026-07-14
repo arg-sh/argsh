@@ -330,7 +330,7 @@ pub fn convert_type(
             }
         }
         "stdin" => {
-            if value == "-" { // coverage:off - stdin pipe reading cannot be tested in BATS subshell context
+            if value == "-" { // coverage:off - exercised by bats ("bare - positional with stdin type reads stdin") but the in-builtin stdin read is not captured by coverage instrumentation
                 // Read from stdin; strip trailing newlines to match the bash
                 // fallback (to::stdin runs in a command substitution)
                 use std::io::Read; // coverage:off
