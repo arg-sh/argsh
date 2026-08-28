@@ -345,6 +345,10 @@ EOF
   is_empty stderr
   grep -q "#!/bin/sh" "${_tmp}/out"
   grep -q "echo minified" "${_tmp}/out"
+  # The temp-file+mv path must not leak mktemp's 0600 onto the artifact —
+  # the pre-fix redirect produced a normally-readable file.
+  local _mode; _mode="$(stat -c '%a' "${_tmp}/out")"
+  [[ "${_mode}" != "600" ]] || { echo "out has mktemp perms 0600" >&2; return 1; }
   rm -rf "${_tmp}"
 }
 

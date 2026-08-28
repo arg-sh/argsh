@@ -1581,6 +1581,13 @@ argsh::minify() {
       # Not a regular file (e.g. the /dev/stdout default) — mv cannot replace it.
       cat "${_render}" >"${out}"
     else
+      # mv would hand ${out} mktemp's 0600 mode; the old redirect kept the
+      # file's existing perms (or umask for a new one). Restore that contract.
+      if [[ -f "${out}" ]]; then
+        chmod --reference="${out}" "${_render}" 2>/dev/null || chmod 644 "${_render}"
+      else
+        chmod 644 "${_render}"
+      fi
       mv "${_render}" "${out}"
     fi
   )
