@@ -295,6 +295,142 @@ declare -gi ARGSH_BUILTIN="${ARGSH_BUILTIN:-0}"
 }
 
 # ---------------------------------------------------------------------------
+# argsh::minify — a failed template render must not truncate the output (#178)
+#
+# Fake minifier + envsubst executables go on PATH so argsh::minify takes its
+# local path (no docker forward) with a controlled render. Executables, not
+# function stubs, so the tests also hold against the minified argsh.
+# ---------------------------------------------------------------------------
+minify_fixture() {
+  local dir="${1}"
+  mkdir -p "${dir}/bin"
+  cat >"${dir}/bin/minifier" <<'EOF'
+#!/usr/bin/env bash
+in="" out=""
+while (( ${#} )); do
+  case "${1}" in
+    -i) in="${2}"; shift 2 ;;
+    -o) out="${2}"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+cat "${in}" >"${out}"
+EOF
+  chmod +x "${dir}/bin/minifier"
+  echo 'echo minified' >"${dir}/in.sh"
+  # shellcheck disable=SC2016
+  printf '#!/bin/sh\n${data}\n' >"${dir}/template"
+}
+
+@test "argsh::minify: template render writes the output on success" {
+  local _tmp; _tmp="$(mktemp -d)"
+  minify_fixture "${_tmp}"
+  cat >"${_tmp}/bin/envsubst" <<'EOF'
+#!/usr/bin/env bash
+if [[ "${1:-}" == "--version" ]]; then
+  echo "envsubst (GNU gettext-runtime) 0.22"
+  exit 0
+fi
+content="$(cat)"
+printf '%s\n' "${content//'${data}'/${data}}"
+EOF
+  chmod +x "${_tmp}/bin/envsubst"
+
+  (
+    PATH="${_tmp}/bin:${PATH}" \
+      argsh::minify -t "${_tmp}/template" -o "${_tmp}/out" "${_tmp}/in.sh"
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  grep -q "#!/bin/sh" "${_tmp}/out"
+  grep -q "echo minified" "${_tmp}/out"
+  # The temp-file+mv path must not leak mktemp's 0600 onto the artifact —
+  # the pre-fix redirect produced a normally-readable file.
+  local _mode; _mode="$(stat -c '%a' "${_tmp}/out")"
+  [[ "${_mode}" != "600" ]] || { echo "out has mktemp perms 0600" >&2; return 1; }
+  rm -rf "${_tmp}"
+}
+
+@test "argsh::minify: failed template render leaves existing output untouched" {
+  local _tmp; _tmp="$(mktemp -d)"
+  minify_fixture "${_tmp}"
+  echo "previous good artifact" >"${_tmp}/out"
+  cat >"${_tmp}/bin/envsubst" <<'EOF'
+#!/usr/bin/env bash
+if [[ "${1:-}" == "--version" ]]; then
+  echo "envsubst (GNU gettext-runtime) 0.22"
+  exit 0
+fi
+echo "boom: render failed" >&2
+exit 1
+EOF
+  chmod +x "${_tmp}/bin/envsubst"
+
+  (
+    PATH="${_tmp}/bin:${PATH}" \
+      argsh::minify -t "${_tmp}/template" -o "${_tmp}/out" "${_tmp}/in.sh"
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -ne 0
+  contains "left untouched" stderr
+  assert "$(cat "${_tmp}/out")" = "previous good artifact"
+  rm -rf "${_tmp}"
+}
+
+@test "argsh::minify: empty template render leaves existing output untouched" {
+  local _tmp; _tmp="$(mktemp -d)"
+  minify_fixture "${_tmp}"
+  echo "previous good artifact" >"${_tmp}/out"
+  cat >"${_tmp}/bin/envsubst" <<'EOF'
+#!/usr/bin/env bash
+if [[ "${1:-}" == "--version" ]]; then
+  echo "envsubst (GNU gettext-runtime) 0.22"
+  exit 0
+fi
+cat >/dev/null
+exit 0
+EOF
+  chmod +x "${_tmp}/bin/envsubst"
+
+  (
+    PATH="${_tmp}/bin:${PATH}" \
+      argsh::minify -t "${_tmp}/template" -o "${_tmp}/out" "${_tmp}/in.sh"
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -ne 0
+  contains "left untouched" stderr
+  assert "$(cat "${_tmp}/out")" = "previous good artifact"
+  rm -rf "${_tmp}"
+}
+
+@test "argsh::minify: non-GNU envsubst is rejected with a clear message" {
+  local _tmp; _tmp="$(mktemp -d)"
+  minify_fixture "${_tmp}"
+  echo "previous good artifact" >"${_tmp}/out"
+  cat >"${_tmp}/bin/envsubst" <<'EOF'
+#!/usr/bin/env bash
+if [[ "${1:-}" == "--version" ]]; then
+  echo "renvsubst 0.6.1"
+  exit 0
+fi
+echo "ERROR: Unknown flag: ${1}" >&2
+exit 1
+EOF
+  chmod +x "${_tmp}/bin/envsubst"
+
+  (
+    PATH="${_tmp}/bin:${PATH}" \
+      argsh::minify -t "${_tmp}/template" -o "${_tmp}/out" "${_tmp}/in.sh"
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -ne 0
+  contains "not GNU envsubst" stderr
+  assert "$(cat "${_tmp}/out")" = "previous good artifact"
+  rm -rf "${_tmp}"
+}
+
+# ---------------------------------------------------------------------------
 # argsh::builtin::download — atomic install via temp file
 #
 # Regression: `argsh builtin update` segfaulted when overwriting the .so file
