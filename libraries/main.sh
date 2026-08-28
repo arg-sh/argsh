@@ -1515,11 +1515,12 @@ argsh::minify() {
   # is scoped to this function's invocation and does not clobber any
   # caller-installed EXIT trap. :args-set vars are inherited by the subshell.
   (
-    local _content _tout
+    local _content _tout _render
     _content="$(mktemp)"
     _tout="$(mktemp)"
+    _render="$(mktemp)"
     # shellcheck disable=SC2064
-    trap "rm -f ${_content} ${_tout}" EXIT
+    trap "rm -f ${_content} ${_tout} ${_render}" EXIT
 
     local _f _file
     local -a _glob
@@ -1554,13 +1555,34 @@ argsh::minify() {
       echo "argsh: envsubst is required for -t/--template (install gettext)" >&2
       exit 1
     }
+    # Drop-in replacements like renvsubst reject the GNU SHELL-FORMAT
+    # argument ("Unknown flag") — name the culprit instead of failing cryptic.
+    envsubst --version 2>/dev/null | grep -q "GNU gettext" || {
+      echo "argsh: $(command -v envsubst) is not GNU envsubst; -t/--template needs the gettext one (install gettext or fix PATH)" >&2
+      exit 1
+    }
     # obfus ignore variable
     local commit_sha="${GIT_COMMIT_SHA:-}"
     # obfus ignore variable
     local version="${GIT_VERSION:-}"
     export data commit_sha version
+    # Render into a temp file first: a direct redirect into ${out} would
+    # truncate a previously-good artifact before envsubst even runs.
     # shellcheck disable=SC2016
-    envsubst '$data,$commit_sha,$version' <"${template}" >"${out}"
+    envsubst '$data,$commit_sha,$version' <"${template}" >"${_render}" || {
+      echo "argsh: envsubst failed to render ${template}; ${out} left untouched" >&2
+      exit 1
+    }
+    [[ -s "${_render}" ]] || {
+      echo "argsh: envsubst rendered ${template} to an empty file; ${out} left untouched" >&2
+      exit 1
+    }
+    if [[ -e "${out}" && ! -f "${out}" ]]; then
+      # Not a regular file (e.g. the /dev/stdout default) — mv cannot replace it.
+      cat "${_render}" >"${out}"
+    else
+      mv "${_render}" "${out}"
+    fi
   )
 }
 
