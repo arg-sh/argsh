@@ -379,3 +379,114 @@ main "${@}"
     }
     let _ = child.wait();
 }
+
+// ---------------------------------------------------------------------------
+// --trace mode tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn trace_writes_markdown_output() {
+    let dir = tempfile::tempdir().unwrap();
+    let script = dir.path().join("hello.sh");
+    std::fs::write(&script, "#!/usr/bin/env bash\ngreet() {\n  local name=\"${1:-world}\"\n  echo \"Hello, ${name}!\"\n}\ngreet \"$@\"\n").unwrap();
+
+    let output = dir.path().join("trace.md");
+
+    let result = Command::new(bin())
+        .args(["--trace", output.to_str().unwrap(), "--", script.to_str().unwrap(), "Alice"])
+        .output()
+        .expect("run argsh-dap --trace");
+
+    assert!(
+        result.status.success(),
+        "trace command failed: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+
+    assert!(output.exists(), "trace output file should exist");
+
+    let content = std::fs::read_to_string(&output).unwrap();
+
+    // Verify markdown structure
+    assert!(content.starts_with("# Process Trace:"), "should start with header, got: {}", &content[..80.min(content.len())]);
+    assert!(content.contains("hello.sh"), "should reference the script name");
+    assert!(content.contains("Alice"), "should include the script args");
+    assert!(content.contains("## Execution"), "should have Execution section");
+    assert!(content.contains("## Summary"), "should have Summary section");
+    assert!(content.contains("Exit code"), "should report exit code");
+    assert!(content.contains("Wall time"), "should report wall time");
+}
+
+#[test]
+fn trace_captures_function_calls() {
+    let dir = tempfile::tempdir().unwrap();
+    let script = dir.path().join("funcs.sh");
+    std::fs::write(&script, "#!/usr/bin/env bash\ninner() {\n  echo \"inner\"\n}\nouter() {\n  inner\n  echo \"outer\"\n}\nouter\n").unwrap();
+
+    let output = dir.path().join("trace.md");
+
+    let result = Command::new(bin())
+        .args(["--trace", output.to_str().unwrap(), "--", script.to_str().unwrap()])
+        .output()
+        .expect("run argsh-dap --trace");
+
+    assert!(
+        result.status.success(),
+        "trace command failed: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+
+    let content = std::fs::read_to_string(&output).unwrap();
+
+    // Should capture function entries
+    assert!(content.contains("outer"), "should trace outer function");
+    assert!(content.contains("inner"), "should trace inner function");
+    assert!(content.contains("Functions called"), "should report function call count");
+}
+
+#[test]
+fn trace_missing_script_fails() {
+    let dir = tempfile::tempdir().unwrap();
+    let output = dir.path().join("trace.md");
+    let missing = dir.path().join("nonexistent.sh");
+
+    let result = Command::new(bin())
+        .args(["--trace", output.to_str().unwrap(), "--", missing.to_str().unwrap()])
+        .output()
+        .expect("run argsh-dap --trace");
+
+    assert!(!result.status.success(), "should fail for missing script");
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(stderr.contains("not found"), "should report script not found: {}", stderr);
+}
+
+#[test]
+fn trace_no_separator_fails() {
+    let result = Command::new(bin())
+        .args(["--trace", "out.md", "script.sh"])
+        .output()
+        .expect("run argsh-dap --trace");
+
+    assert!(!result.status.success(), "should fail without -- separator");
+    assert_eq!(result.status.code(), Some(2));
+}
+
+#[test]
+fn trace_reports_nonzero_exit_code() {
+    let dir = tempfile::tempdir().unwrap();
+    let script = dir.path().join("fail.sh");
+    std::fs::write(&script, "#!/usr/bin/env bash\nexit 42\n").unwrap();
+
+    let output = dir.path().join("trace.md");
+
+    let result = Command::new(bin())
+        .args(["--trace", output.to_str().unwrap(), "--", script.to_str().unwrap()])
+        .output()
+        .expect("run argsh-dap --trace");
+
+    // The trace itself should succeed even if the script exits non-zero
+    assert!(result.status.success(), "trace command should succeed");
+
+    let content = std::fs::read_to_string(&output).unwrap();
+    assert!(content.contains("42"), "should report exit code 42 in trace");
+}

@@ -313,6 +313,15 @@ module.exports = {
       className: "homepage-sidebar-item",
     },
     {
+      type: "doc",
+      id: "development/tools/trace",
+      label: "Process Trace",
+      customProps: {
+        sidebar_icon: "timeline",
+      },
+      className: "homepage-sidebar-item",
+    },
+    {
       type: "html",
       value: "Reference",
       customProps: {
@@ -665,6 +674,11 @@ module.exports = {
           type: "doc",
           id: "development/tools/debugger",
           label: "Debugger",
+        },
+        {
+          type: "doc",
+          id: "development/tools/trace",
+          label: "Process Trace",
         },
       ],
     },
