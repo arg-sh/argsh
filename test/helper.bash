@@ -29,8 +29,29 @@ load_source() {
   : "${PATH_SNAPSHOTS="${PATH_FIXTURES}/snapshots"}"
   mkdir -p "${PATH_SNAPSHOTS}"
 
-  [[ -f "${file}" ]] ||
+  # A missing file means two different things depending on how it was chosen,
+  # and they must not share a code path.
+  #
+  # DEFAULT (no BATS_LOAD): the `.sh` beside the `.bats` is a convention, not a
+  # requirement — suites legitimately have no matching source file. Skipping is
+  # correct, and so is the silence.
+  #
+  # EXPLICIT (BATS_LOAD set): the caller named a file. Returning 0 sources
+  # NOTHING and runs the suite against whatever the environment already
+  # provides, so `BATS_LOAD=argsh.min.sh` from the wrong directory reports on a
+  # bundle it never read. Measured: a misdirected BATS_LOAD turns 370 passing
+  # tests into 136 failures that say `command not found` and never mention
+  # BATS_LOAD — and any test file that does not happen to touch the source
+  # still PASSES. An explicit request that cannot be honoured is an error.
+  if [[ ! -f "${file}" ]]; then
+    [[ -z "${BATS_LOAD}" ]] || {
+      echo "load_source: BATS_LOAD=${BATS_LOAD} does not exist (cwd: ${PWD})" >&2
+      echo "  Refusing to run — the suite would test whatever is already loaded," >&2
+      echo "  not the file you named." >&2
+      return 1
+    }
     return 0
+  fi
 
   # shellcheck disable=SC1090
   source "${file}"
