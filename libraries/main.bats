@@ -6,11 +6,49 @@
 # and subcommand handlers (test/lint/minify/coverage/docs).
 
 load ../test/helper
+
+# Each test gets its own data dir, so a --global test installs into the
+# test's temp dir and not into the global lib dir of the user. main.sh reads
+# XDG_DATA_HOME once, when it loads, so this block must come before
+# load_source. bats sets BATS_TEST_TMPDIR before it sources this file for a
+# test.
+if [[ -n "${BATS_TEST_TMPDIR:-}" ]]; then
+  export XDG_DATA_HOME="${BATS_TEST_TMPDIR}/data"
+fi
+
 ARGSH_SOURCE=argsh
 load_source
 
 # Ensure ARGSH_BUILTIN is defined for tests (default: not loaded)
 declare -gi ARGSH_BUILTIN="${ARGSH_BUILTIN:-0}"
+
+# Guard for writes through $HOME, for the tests of this file only.
+# setup_file gives these tests a new, empty HOME, and removes XDG_DATA_HOME,
+# so that the fallback data dir is in that HOME too. teardown_file fails
+# when an entry is in that HOME after the tests. The guard does not see a
+# write to an absolute path, or to a home dir that comes from the passwd
+# database (for example ~user). It never reads the HOME of the user.
+setup_file() {
+  export ARGSH_TEST_HOME="${BATS_FILE_TMPDIR}/home"
+  mkdir "${ARGSH_TEST_HOME}"
+  export HOME="${ARGSH_TEST_HOME}"
+  unset XDG_DATA_HOME
+}
+
+teardown_file() {
+  [[ -d "${ARGSH_TEST_HOME:-}" ]] || {
+    echo "the HOME of the tests is missing: ${ARGSH_TEST_HOME:-}" >&2
+    return 1
+  }
+  local -a _entries
+  shopt -s nullglob dotglob
+  _entries=("${ARGSH_TEST_HOME}"/*)
+  shopt -u nullglob dotglob
+  (( ${#_entries[@]} == 0 )) || {
+    echo "a test wrote under HOME: ${_entries[*]#"${ARGSH_TEST_HOME}/"}" >&2
+    return 1
+  }
+}
 
 # ---------------------------------------------------------------------------
 # argsh::builtin (no args) — shows status
@@ -1211,30 +1249,14 @@ YAML
 }
 
 @test "e2e: argsh lib add --global installs to global dir" {
-
+  # The global dir is in the temp dir of this test (see the top of the file).
+  assert "${__ARGSH_GLOBAL_LIBS}" = "${BATS_TEST_TMPDIR}/data/argsh/libs"
   local _global_jaml="${__ARGSH_GLOBAL_LIBS}/jaml"
-  local _backup=""
-
-  # Preserve any pre-existing global install and ensure restore on failure
-  if [[ -d "${_global_jaml}" ]]; then
-    _backup="$(mktemp -d)"
-    mv "${_global_jaml}" "${_backup}/jaml"
-  fi
 
   argsh::lib::add --global jaml >"${stdout}" 2>"${stderr}" || status=$?
 
-  # Check result before cleanup
-  local _ok=0
-  [[ "${status:-0}" -eq 0 ]] && [[ -f "${_global_jaml}/jaml" ]] && _ok=1
-
-  # Clean up
-  rm -rf "${_global_jaml}"
-  if [[ -n "${_backup}" ]]; then
-    mv "${_backup}/jaml" "${_global_jaml}" 2>/dev/null || true
-    rm -rf "${_backup}"
-  fi
-
-  assert "${_ok}" -eq 1
+  assert "${status}" -eq 0
+  assert -f "${_global_jaml}/jaml"
   contains "installed" stderr
 }
 
@@ -1270,22 +1292,12 @@ YAML
 }
 
 @test "e2e: argsh lib add --global writes to global lockfile" {
+  # The global dir is in the temp dir of this test (see the top of the file).
+  assert "${__ARGSH_GLOBAL_LIBS}" = "${BATS_TEST_TMPDIR}/data/argsh/libs"
   local _global_lock="${__ARGSH_GLOBAL_LIBS}/.argsh-global.lock"
-  local _global_jaml="${__ARGSH_GLOBAL_LIBS}/jaml"
-  local _backup="" _lock_backup=""
-
-  # Backup existing global state
-  if [[ -d "${_global_jaml}" ]]; then
-    _backup="$(mktemp -d)"
-    mv "${_global_jaml}" "${_backup}/jaml"
-  fi
-  if [[ -f "${_global_lock}" ]]; then
-    _lock_backup="$(mktemp)"
-    cp "${_global_lock}" "${_lock_backup}"
-  fi
 
   # Add globally
-  local _add_stderr; _add_stderr="$(mktemp)"
+  local _add_stderr="${BATS_TEST_TMPDIR}/add.stderr"
   argsh::lib::add --global jaml >"${stdout}" 2>"${_add_stderr}" || status=$?
 
   # Check results
@@ -1306,18 +1318,6 @@ YAML
     [[ "${_lc2}" != *"argsh@jaml"* ]] && _removed_ok=1
   fi
 
-  # Restore backups
-  rm -rf "${_global_jaml}"
-  if [[ -n "${_backup}" ]]; then
-    mv "${_backup}/jaml" "${_global_jaml}" 2>/dev/null || true
-    rm -rf "${_backup}"
-  fi
-  if [[ -n "${_lock_backup}" ]]; then
-    mv "${_lock_backup}" "${_global_lock}"
-  else
-    rm -f "${_global_lock}"
-  fi
-
   assert "${_ok}" -eq 1
   assert "${_has_entry}" -eq 1
   assert "${_has_ref}" -eq 1
@@ -1326,7 +1326,6 @@ YAML
   grep -q "installed" "${_add_stderr}" || {
     echo "add stderr missing 'installed': $(cat "${_add_stderr}")" >&2; false
   }
-  rm -f "${_add_stderr}"
 }
 
 @test "e2e: argsh lib add --expect-digest rejects mismatch" {
