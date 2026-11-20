@@ -22,10 +22,12 @@ load_source
 # Ensure ARGSH_BUILTIN is defined for tests (default: not loaded)
 declare -gi ARGSH_BUILTIN="${ARGSH_BUILTIN:-0}"
 
-# Guard: no test may write under HOME. setup_file gives the tests of this
-# file a new, empty HOME, and removes XDG_DATA_HOME, so that the fallback
-# data dir is in that HOME too. teardown_file fails when an entry is in that
-# HOME after the tests. The guard never reads the HOME of the user.
+# Guard for writes through $HOME, for the tests of this file only.
+# setup_file gives these tests a new, empty HOME, and removes XDG_DATA_HOME,
+# so that the fallback data dir is in that HOME too. teardown_file fails
+# when an entry is in that HOME after the tests. The guard does not see a
+# write to an absolute path, or to a home dir that comes from the passwd
+# database (for example ~user). It never reads the HOME of the user.
 setup_file() {
   export ARGSH_TEST_HOME="${BATS_FILE_TMPDIR}/home"
   mkdir "${ARGSH_TEST_HOME}"
