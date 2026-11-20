@@ -1292,8 +1292,8 @@ source "${PATH_FIXTURES}/fmt.sh"
 
 @test "usage: unknown flag before command defers to help" {
   # In :usage, unknown flags break out of the flag loop. If no command was found
-  # before the break, it defers to help via "${usage[@]}".
-  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  # before the break, it defers to help via "${usage[@]}". Both modes: the
+  # pure-bash :usage read the unset command name here and aborted (set -u).
   (
     :test::usage --unknownflag cmd2
   ) >"${stdout}" 2>"${stderr}" || status=$?
@@ -1302,6 +1302,36 @@ source "${PATH_FIXTURES}/fmt.sh"
   assert "${status}" -eq 0
   is_empty stderr
   contains "Usage:" stdout
+}
+
+@test "usage: unknown short flag before command defers to help" {
+  (
+    :test::usage -x cmd2
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains "Usage:" stdout
+}
+
+@test "usage: flags without a command defer to help" {
+  (
+    :test::usage --verbose
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains "Usage:" stdout
+}
+
+@test "usage: unknown flag after the command is the error of the subcommand" {
+  (
+    :test::usage cmd2 --unknownflag
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 2
+  is_empty stdout
+  contains "unknown flag: --unknownflag" stderr
 }
 
 @test "args::field_name asref=0 preserves dashes" {

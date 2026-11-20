@@ -255,6 +255,14 @@ if ! (( ARGSH_BUILTIN )); then
   done
   :args::check_required_flags
 
+  # No command given (e.g. flags only, or an unknown flag before the
+  # command: the flag loop stops there) → defer to help, as the builtin
+  # does. The lookup below reads cmd, which is unset here (set -u).
+  if [[ -z "${cmd:-}" ]]; then
+    usage=(":usage::help" "${title}" "${usage[@]}")
+    return 0
+  fi
+
   local func
   for (( i=0; i < ${#usage[@]}; i+=2 )); do
     local _entry_cmd="${usage[i]/:*}"
@@ -276,11 +284,6 @@ if ! (( ARGSH_BUILTIN )); then
   done
 
   if [[ -z "${func:-}" ]]; then
-    if [[ -z "${cmd:-}" ]]; then
-      # No command given (e.g. flags only, or flags + --help) → defer to help
-      usage=(":usage::help" "${title}" "${usage[@]}")
-      return 0
-    fi
     local _sug
     _sug="$(:usage::suggest "${cmd}" "${usage[@]}")"
     if [[ -n "${_sug}" ]]; then
