@@ -22,6 +22,32 @@ load_source
 # Ensure ARGSH_BUILTIN is defined for tests (default: not loaded)
 declare -gi ARGSH_BUILTIN="${ARGSH_BUILTIN:-0}"
 
+# Guard: no test may write under HOME. setup_file gives the tests of this
+# file a new, empty HOME, and removes XDG_DATA_HOME, so that the fallback
+# data dir is in that HOME too. teardown_file fails when an entry is in that
+# HOME after the tests. The guard never reads the HOME of the user.
+setup_file() {
+  export ARGSH_TEST_HOME="${BATS_FILE_TMPDIR}/home"
+  mkdir "${ARGSH_TEST_HOME}"
+  export HOME="${ARGSH_TEST_HOME}"
+  unset XDG_DATA_HOME
+}
+
+teardown_file() {
+  [[ -d "${ARGSH_TEST_HOME:-}" ]] || {
+    echo "the HOME of the tests is missing: ${ARGSH_TEST_HOME:-}" >&2
+    return 1
+  }
+  local -a _entries
+  shopt -s nullglob dotglob
+  _entries=("${ARGSH_TEST_HOME}"/*)
+  shopt -u nullglob dotglob
+  (( ${#_entries[@]} == 0 )) || {
+    echo "a test wrote under HOME: ${_entries[*]#"${ARGSH_TEST_HOME}/"}" >&2
+    return 1
+  }
+}
+
 # ---------------------------------------------------------------------------
 # argsh::builtin (no args) — shows status
 # ---------------------------------------------------------------------------
