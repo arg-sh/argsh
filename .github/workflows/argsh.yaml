@@ -133,20 +133,34 @@ jobs:
         run: docker load < /tmp/ci-image.tar.gz
       - name: Test (pure bash)
         run: |
+          # bats prints the TAP plan `1..N` first. The step fails when bats
+          # did not run (no plan) or ran no test (`1..0`).
+          set -o pipefail
           docker run --rm \
             -v "${{ github.workspace }}:/workspace" -w /workspace \
             -e ARGSH_PURE_BASH_TEST=1 \
             -e GITHUB_TOKEN \
-            ${{ env.CI_IMAGE }} test libraries/
+            ${{ env.CI_IMAGE }} test libraries/ | tee "${RUNNER_TEMP}/bats-pure-bash.tap"
+          grep -Eq '^1\.\.[1-9][0-9]*$' "${RUNNER_TEMP}/bats-pure-bash.tap" || {
+            echo "::error::bats ran no test"
+            exit 1
+          }
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Test (native builtins)
         run: |
+          # bats prints the TAP plan `1..N` first. The step fails when bats
+          # did not run (no plan) or ran no test (`1..0`).
+          set -o pipefail
           docker run --rm \
             -v "${{ github.workspace }}:/workspace" -w /workspace \
             -e ARGSH_BUILTIN_TEST=1 \
             -e GITHUB_TOKEN \
-            ${{ env.CI_IMAGE }} test libraries/
+            ${{ env.CI_IMAGE }} test libraries/ | tee "${RUNNER_TEMP}/bats-native-builtins.tap"
+          grep -Eq '^1\.\.[1-9][0-9]*$' "${RUNNER_TEMP}/bats-native-builtins.tap" || {
+            echo "::error::bats ran no test"
+            exit 1
+          }
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -232,11 +246,18 @@ jobs:
             ${{ env.CI_IMAGE }} lint argsh.min.sh
       - name: Test minified
         run: |
+          # bats prints the TAP plan `1..N` first. The step fails when bats
+          # did not run (no plan) or ran no test (`1..0`).
+          set -o pipefail
           docker run --rm \
             -v "${{ github.workspace }}:/workspace" -w /workspace \
             -e BATS_LOAD=argsh.min.sh \
             -e ARGSH_BUILTIN_TEST=1 \
-            ${{ env.CI_IMAGE }} test libraries/
+            ${{ env.CI_IMAGE }} test libraries/ | tee "${RUNNER_TEMP}/bats-minified.tap"
+          grep -Eq '^1\.\.[1-9][0-9]*$' "${RUNNER_TEMP}/bats-minified.tap" || {
+            echo "::error::bats ran no test"
+            exit 1
+          }
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
