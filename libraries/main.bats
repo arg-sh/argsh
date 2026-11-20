@@ -1248,6 +1248,7 @@ YAML
 
 @test "e2e: argsh lib add --global installs to global dir" {
   # The global dir is in the temp dir of this test (see the top of the file).
+  assert "${__ARGSH_GLOBAL_LIBS}" = "${BATS_TEST_TMPDIR}/data/argsh/libs"
   local _global_jaml="${__ARGSH_GLOBAL_LIBS}/jaml"
 
   argsh::lib::add --global jaml >"${stdout}" 2>"${stderr}" || status=$?
@@ -1290,6 +1291,7 @@ YAML
 
 @test "e2e: argsh lib add --global writes to global lockfile" {
   # The global dir is in the temp dir of this test (see the top of the file).
+  assert "${__ARGSH_GLOBAL_LIBS}" = "${BATS_TEST_TMPDIR}/data/argsh/libs"
   local _global_lock="${__ARGSH_GLOBAL_LIBS}/.argsh-global.lock"
 
   # Add globally
