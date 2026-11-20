@@ -6,6 +6,16 @@
 # and subcommand handlers (test/lint/minify/coverage/docs).
 
 load ../test/helper
+
+# Each test gets its own data dir, so a --global test installs into the
+# test's temp dir and not into the global lib dir of the user. main.sh reads
+# XDG_DATA_HOME once, when it loads, so this block must come before
+# load_source. bats sets BATS_TEST_TMPDIR before it sources this file for a
+# test.
+if [[ -n "${BATS_TEST_TMPDIR:-}" ]]; then
+  export XDG_DATA_HOME="${BATS_TEST_TMPDIR}/data"
+fi
+
 ARGSH_SOURCE=argsh
 load_source
 
@@ -1211,30 +1221,13 @@ YAML
 }
 
 @test "e2e: argsh lib add --global installs to global dir" {
-
+  # The global dir is in the temp dir of this test (see the top of the file).
   local _global_jaml="${__ARGSH_GLOBAL_LIBS}/jaml"
-  local _backup=""
-
-  # Preserve any pre-existing global install and ensure restore on failure
-  if [[ -d "${_global_jaml}" ]]; then
-    _backup="$(mktemp -d)"
-    mv "${_global_jaml}" "${_backup}/jaml"
-  fi
 
   argsh::lib::add --global jaml >"${stdout}" 2>"${stderr}" || status=$?
 
-  # Check result before cleanup
-  local _ok=0
-  [[ "${status:-0}" -eq 0 ]] && [[ -f "${_global_jaml}/jaml" ]] && _ok=1
-
-  # Clean up
-  rm -rf "${_global_jaml}"
-  if [[ -n "${_backup}" ]]; then
-    mv "${_backup}/jaml" "${_global_jaml}" 2>/dev/null || true
-    rm -rf "${_backup}"
-  fi
-
-  assert "${_ok}" -eq 1
+  assert "${status}" -eq 0
+  assert -f "${_global_jaml}/jaml"
   contains "installed" stderr
 }
 
@@ -1270,19 +1263,8 @@ YAML
 }
 
 @test "e2e: argsh lib add --global writes to global lockfile" {
+  # The global dir is in the temp dir of this test (see the top of the file).
   local _global_lock="${__ARGSH_GLOBAL_LIBS}/.argsh-global.lock"
-  local _global_jaml="${__ARGSH_GLOBAL_LIBS}/jaml"
-  local _backup="" _lock_backup=""
-
-  # Backup existing global state
-  if [[ -d "${_global_jaml}" ]]; then
-    _backup="$(mktemp -d)"
-    mv "${_global_jaml}" "${_backup}/jaml"
-  fi
-  if [[ -f "${_global_lock}" ]]; then
-    _lock_backup="$(mktemp)"
-    cp "${_global_lock}" "${_lock_backup}"
-  fi
 
   # Add globally
   local _add_stderr; _add_stderr="$(mktemp)"
@@ -1304,18 +1286,6 @@ YAML
     argsh::lib::remove --global jaml >"${stdout}" 2>"${stderr}" || true
     local _lc2; _lc2="$(cat "${_global_lock}" 2>/dev/null)"
     [[ "${_lc2}" != *"argsh@jaml"* ]] && _removed_ok=1
-  fi
-
-  # Restore backups
-  rm -rf "${_global_jaml}"
-  if [[ -n "${_backup}" ]]; then
-    mv "${_backup}/jaml" "${_global_jaml}" 2>/dev/null || true
-    rm -rf "${_backup}"
-  fi
-  if [[ -n "${_lock_backup}" ]]; then
-    mv "${_lock_backup}" "${_global_lock}"
-  else
-    rm -f "${_global_lock}"
   fi
 
   assert "${_ok}" -eq 1
