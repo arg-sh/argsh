@@ -1723,3 +1723,88 @@ YAML
 
   rm -rf "${_tmp}"
 }
+
+@test "ARGSH_TRACE: unset does not end a script that contains trace.sh" {
+  # argsh.min.sh joins trace.sh with the other libraries into one script.
+  # A top-level return or exit in trace.sh ends that script early.
+  local _tmp _script
+  _tmp="$(mktemp -d)"
+  _script="${_tmp}/joined.sh"
+  {
+    cat "${BATS_TEST_DIRNAME}/trace.sh"
+    echo 'echo "after trace.sh"'
+  } >"${_script}"
+
+  # Run as a script, as `bash argsh.min.sh` does.
+  (
+    unset ARGSH_TRACE
+    bash "${_script}"
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+  assert "${status}" -eq 0
+  contains "after trace.sh" stdout
+
+  # Sourced, as BATS_LOAD=argsh.min.sh does.
+  status=0
+  (
+    unset ARGSH_TRACE
+    source "${_script}"
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+  assert "${status}" -eq 0
+  contains "after trace.sh" stdout
+
+  rm -rf "${_tmp}"
+}
+
+@test "ARGSH_TRACE: sourcing trace.sh twice defines the same functions" {
+  local _tmp _trace
+  _tmp="$(mktemp -d)"
+  _trace="${_tmp}/trace.md"
+
+  # Unset: only the no-op stubs.
+  (
+    unset ARGSH_TRACE
+    source "${BATS_TEST_DIRNAME}/trace.sh"
+    source "${BATS_TEST_DIRNAME}/trace.sh"
+    declare -F __argsh_trace_init __argsh_trace_args __argsh_trace_usage >/dev/null || {
+      echo "a no-op stub is missing"; exit 1
+    }
+    if declare -F __argsh_trace_debug_hook >/dev/null; then
+      echo "a trace function is defined with ARGSH_TRACE unset"; exit 1
+    fi
+    __argsh_trace_init
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+  assert "${status}" -eq 0
+  is_empty stdout
+
+  # Set: the trace functions, and the second source resets the state.
+  status=0
+  (
+    export ARGSH_TRACE="${_trace}"
+    source "${BATS_TEST_DIRNAME}/trace.sh"
+    __ARGSH_TRACE_STEP=5
+    source "${BATS_TEST_DIRNAME}/trace.sh"
+    declare -F __argsh_trace_debug_hook __argsh_trace_exit_hook >/dev/null || {
+      echo "a trace function is missing"; exit 1
+    }
+    [[ "${__ARGSH_TRACE_FILE}" == "${_trace}" ]] || { echo "wrong trace file"; exit 1; }
+    (( __ARGSH_TRACE_STEP == 0 )) || { echo "state not reset"; exit 1; }
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+  assert "${status}" -eq 0
+  is_empty stdout
+
+  rm -rf "${_tmp}"
+}
+
+# ---------------------------------------------------------------------------
+# argsh.min.sh — the minified CLI
+# ---------------------------------------------------------------------------
+
+@test "argsh.min.sh: -h prints the help" {
+  # The CI image runs the committed argsh.min.sh as its CLI. If the file
+  # ends before its command dispatch, each CI step exits 0 and does nothing.
+  ARGSH_NO_AUTO_DOWNLOAD=1 bash "${BATS_TEST_DIRNAME}/../argsh.min.sh" -h \
+    >"${stdout}" 2>"${stderr}" || status=$?
+  assert "${status}" -eq 0
+  contains "Usage:" stdout
+  contains "Minify Bash files" stdout
+}
