@@ -337,7 +337,7 @@ if ! (( ARGSH_BUILTIN )); then
   COMMANDNAME+=("${_cmd_name/@*/}")
 
   # Process trace: record command dispatch.
-  declare -F __argsh_trace_usage &>/dev/null && __argsh_trace_usage "${func}" "${cmd}"
+  ! declare -F __argsh_trace_usage &>/dev/null || __argsh_trace_usage "${func}" "${cmd}"
 
   # obfus ignore variable
   usage=("${func}" "${cli[@]}")
@@ -529,7 +529,9 @@ if ! (( ARGSH_BUILTIN )); then
     :args::error_usage "too many arguments: ${cli[*]}"
 
   # Process trace: record variable state after parsing.
-  declare -F __argsh_trace_args &>/dev/null && __argsh_trace_args "${title}"
+  # This is the last command of :args, so it sets the return status. Without
+  # trace.sh (for example, args.sh sourced directly), it must return 0.
+  ! declare -F __argsh_trace_args &>/dev/null || __argsh_trace_args "${title}"
 }
 
 # @description
