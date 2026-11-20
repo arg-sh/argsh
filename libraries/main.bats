@@ -352,6 +352,34 @@ EOF
   rm -rf "${_tmp}"
 }
 
+@test "argsh::minify: a re-render keeps the mode of the existing output" {
+  local _tmp; _tmp="$(mktemp -d)"
+  minify_fixture "${_tmp}"
+  cat >"${_tmp}/bin/envsubst" <<'EOF'
+#!/usr/bin/env bash
+if [[ "${1:-}" == "--version" ]]; then
+  echo "envsubst (GNU gettext-runtime) 0.22"
+  exit 0
+fi
+content="$(cat)"
+printf '%s\n' "${content//'${data}'/${data}}"
+EOF
+  chmod +x "${_tmp}/bin/envsubst"
+  echo "previous artifact" >"${_tmp}/out"
+  chmod 640 "${_tmp}/out"
+
+  (
+    PATH="${_tmp}/bin:${PATH}" \
+      argsh::minify -t "${_tmp}/template" -o "${_tmp}/out" "${_tmp}/in.sh"
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  grep -q "echo minified" "${_tmp}/out"
+  assert "$(stat -c '%a' "${_tmp}/out")" = "640"
+  rm -rf "${_tmp}"
+}
+
 @test "argsh::minify: failed template render leaves existing output untouched" {
   local _tmp; _tmp="$(mktemp -d)"
   minify_fixture "${_tmp}"
@@ -1747,6 +1775,7 @@ YAML
   status=0
   (
     unset ARGSH_TRACE
+    # shellcheck disable=SC1090
     source "${_script}"
   ) >"${stdout}" 2>"${stderr}" || status=$?
   assert "${status}" -eq 0
@@ -1755,7 +1784,7 @@ YAML
   rm -rf "${_tmp}"
 }
 
-@test "ARGSH_TRACE: sourcing trace.sh twice defines the same functions" {
+@test "ARGSH_TRACE: a second source of trace.sh follows the current ARGSH_TRACE" {
   local _tmp _trace
   _tmp="$(mktemp -d)"
   _trace="${_tmp}/trace.md"
@@ -1791,6 +1820,57 @@ YAML
   ) >"${stdout}" 2>"${stderr}" || status=$?
   assert "${status}" -eq 0
   is_empty stdout
+
+  # Set, then unset: the second source puts the no-op stubs back.
+  status=0
+  (
+    export ARGSH_TRACE="${_trace}"
+    source "${BATS_TEST_DIRNAME}/trace.sh"
+    unset ARGSH_TRACE
+    source "${BATS_TEST_DIRNAME}/trace.sh"
+    __argsh_trace_init
+    __argsh_trace_args "Title"
+    __argsh_trace_usage "func" "cmd"
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+  assert "${status}" -eq 0
+  is_empty stdout
+  assert ! -f "${_trace}"
+
+  # Unset, then set: the second source replaces the stubs.
+  status=0
+  (
+    unset ARGSH_TRACE
+    source "${BATS_TEST_DIRNAME}/trace.sh"
+    export ARGSH_TRACE="${_trace}"
+    source "${BATS_TEST_DIRNAME}/trace.sh"
+    __argsh_trace_init "Alice"
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+  assert "${status}" -eq 0
+  assert -f "${_trace}"
+  [[ "$(cat "${_trace}")" == *"# Process Trace"* ]] || {
+    echo "missing '# Process Trace' header"; cat "${_trace}"; false
+  }
+
+  rm -rf "${_tmp}"
+}
+
+@test "ARGSH_TRACE: the :args trace without an args array closes its block" {
+  local _tmp _trace
+  _tmp="$(mktemp -d)"
+  _trace="${_tmp}/trace.md"
+
+  (
+    export ARGSH_TRACE="${_trace}"
+    source "${BATS_TEST_DIRNAME}/trace.sh"
+    unset args
+    __argsh_trace_args "No args"
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+  assert "${status}" -eq 0
+  # The opening and the closing fence, then the end of the details block.
+  assert "$(grep -c '^  ```$' "${_trace}")" -eq 2
+  grep -q '^  </details>$' "${_trace}" || {
+    echo "missing </details>"; cat "${_trace}"; false
+  }
 
   rm -rf "${_tmp}"
 }

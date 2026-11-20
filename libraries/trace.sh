@@ -157,7 +157,8 @@ else
     # Dump each variable defined in the args array.
     # The args array has pairs: 'field_spec' 'description'.
     # We extract the field name and print its current value.
-    declare -p args &>/dev/null 2>&1 || { __argsh_trace_write "${_indent}\`\`\`"; __argsh_trace_write "${_indent}</details>"; __argsh_trace_write ""; return 0; }
+    # Without an args array the loop runs zero times, and the block closes.
+    declare -p args &>/dev/null || local -a args=()
     local _fi _fname _fval
     for (( _fi=0; _fi < ${#args[@]}; _fi+=2 )); do
       [[ "${args[_fi]}" != "-" ]] || continue

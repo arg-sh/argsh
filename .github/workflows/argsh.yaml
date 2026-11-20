@@ -239,6 +239,14 @@ jobs:
             -e GIT_COMMIT_SHA=${{ github.sha }} \
             -e GIT_VERSION=${{ github.ref_name }} \
             ${{ env.CI_IMAGE }} minify libraries -t argsh.min.tmpl -o argsh.min.sh
+          # minify writes GIT_COMMIT_SHA into the header. github.sha is the
+          # pushed commit on push and the test merge commit on pull_request.
+          # A committed argsh.min.sh cannot name either, so a match shows
+          # that this run built the file the next steps lint and test.
+          grep -qF "ARGSH_COMMIT_SHA=\"${GITHUB_SHA}\"" argsh.min.sh || {
+            echo "::error::argsh.min.sh was not rebuilt by this run"
+            exit 1
+          }
       - name: Lint minified
         run: |
           docker run --rm \
