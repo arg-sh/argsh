@@ -1297,7 +1297,7 @@ YAML
   local _global_lock="${__ARGSH_GLOBAL_LIBS}/.argsh-global.lock"
 
   # Add globally
-  local _add_stderr; _add_stderr="$(mktemp)"
+  local _add_stderr="${BATS_TEST_TMPDIR}/add.stderr"
   argsh::lib::add --global jaml >"${stdout}" 2>"${_add_stderr}" || status=$?
 
   # Check results
@@ -1326,7 +1326,6 @@ YAML
   grep -q "installed" "${_add_stderr}" || {
     echo "add stderr missing 'installed': $(cat "${_add_stderr}")" >&2; false
   }
-  rm -f "${_add_stderr}"
 }
 
 @test "e2e: argsh lib add --expect-digest rejects mismatch" {
