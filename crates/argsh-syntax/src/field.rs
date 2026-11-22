@@ -531,6 +531,17 @@ mod tests {
     }
 
     #[test]
+    fn test_mcp_hidden_before_the_other_modifiers() {
+        let def = parse_field("print-token|t:@+").unwrap();
+        assert!(def.mcp_hidden);
+        assert!(def.is_boolean);
+        let def = parse_field("token|k:@~int!").unwrap();
+        assert!(def.mcp_hidden);
+        assert!(def.required);
+        assert_eq!(def.type_name, "int");
+    }
+
+    #[test]
     fn test_not_mcp_hidden_by_default() {
         assert!(!parse_field("normal|n").unwrap().mcp_hidden);
         assert!(!parse_field("debug|d:+#").unwrap().mcp_hidden);

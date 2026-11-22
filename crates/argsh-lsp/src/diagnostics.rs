@@ -793,6 +793,28 @@ f() {
     }
 
     #[test]
+    fn test_ag016_no_warning_on_an_unmarked_positional() {
+        let content = r#"#!/usr/bin/env bash
+source argsh
+f() {
+  local file dir
+  local -a args=(
+    'file' "File"
+    'dir:~file' "Directory"
+    'token|t:@' "Token"
+  )
+  :args "Test" "${@}"
+}
+"#;
+        let analysis = analyze(content);
+        let diags = generate_diagnostics(&analysis, &empty_imports(), content, None);
+        let ag016: Vec<_> = diags.iter()
+            .filter(|d| d.code == Some(NumberOrString::String("AG016".to_string())))
+            .collect();
+        assert!(ag016.is_empty(), "Expected no AG016, got: {:?}", ag016);
+    }
+
+    #[test]
     fn test_ag016_mcp_hidden_on_a_positional() {
         let content = r#"#!/usr/bin/env bash
 source argsh

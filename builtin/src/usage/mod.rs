@@ -2347,6 +2347,25 @@ mod tests {
     }
 
     #[test]
+    fn test_mcp_tools_call_sends_a_dash_value_and_refuses_a_nul() {
+        // A value that starts with `-` is one element: the parser reads it as
+        // the value of `--name` (the bats test "attrs: an inline value that
+        // starts with a dash stays the value").
+        for (label, value, want) in [
+            ("dash-long", "--print-token", "--name=--print-token\n"),
+            ("dash-short", "-t", "--name=-t\n"),
+            ("dash-equals", "a=b", "--name=a=b\n"),
+        ] {
+            let (output, ran) = agent_tools_call(label, &format!(r#"{{"name":"{}"}}"#, value));
+            assert!(output.contains("\"text\":\"ran\""), "{}: {}", label, output);
+            assert_eq!(ran.as_deref(), Some(want), "{}", label);
+        }
+        // A NUL cannot go into an argv element: refused, and no start
+        let (output, ran) = agent_tools_call("nul", r#"{"name":"a\u0000b"}"#);
+        assert_refused("nul", &output, &ran, -32602, "Flag --name: the value has a NUL character");
+    }
+
+    #[test]
     fn test_mcp_tools_call_refuses_a_string_for_a_boolean_flag() {
         // A string for a boolean would be one more argv element: the parser
         // reads it as the next flag, so `--print-token` would run.

@@ -1225,6 +1225,22 @@ source "${PATH_FIXTURES}/fmt.sh"
   contains 'token=abc count=5 print=1' stdout
 }
 
+@test "attrs: an inline value that starts with a dash stays the value" {
+  (
+    local name print_token
+    local -a args=(
+      'name|n'           "Name"
+      'print-token|t:+@' "Print the token"
+    )
+    :args "Value test" --name=--print-token
+    echo "name=${name} print=${print_token:-0}"
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains 'name=--print-token print=0' stdout
+}
+
 # -----------------------------------------------------------------------------
 # :args::field_value unknown type (covers args.sh line 528)
 
