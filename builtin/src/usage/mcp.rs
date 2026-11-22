@@ -602,7 +602,7 @@ pub(crate) fn tool_argv(
             return Err(refusal(key));
         }
         let Some(flag) = flags.iter().find(|f| f.name == *key && !f.mcp_hidden) else {
-            continue; // Unknown arg — ignore (lenient for LLM hallucinations)
+            continue; // Not a flag of the tool: ignore it (an agent can send extra keys)
         };
         match (flag.is_boolean, value) {
             (true, Json::Bool(true)) => argv.push(format!("--{}", flag.name)),
@@ -674,7 +674,7 @@ pub(crate) fn handle_tools_call_json<W: Write>(
         return;
     }
 
-    // Build CLI args — all path segments, then the flags
+    // Build the argv: all path segments, then the flags
     let cli_args = match tool_argv(&leaf.full_path, &arguments, &leaf.flags, &leaf.refused) {
         Ok(argv) => argv,
         Err(message) => {
