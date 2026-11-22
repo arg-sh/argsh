@@ -13,7 +13,7 @@ use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::process::{Command, Stdio};
 #[allow(unused_imports)]
 use super::{
-    extract_subcommands, extract_flags_for_llm,
+    extract_subcommands, extract_flags_for_llm, agent_flags,
     json_escape, argsh_type_to_json, sanitize_tool_name,
     build_command_tree, flatten_leaves,
     FlagInfo, SubCmd,
@@ -129,7 +129,9 @@ pub fn mcp_main(args: &[String]) -> i32 {
             tool_name: sanitize_tool_name(&cmd_name),
             full_path: Vec::new(),
             desc: title.lines().next().unwrap_or(title).trim().to_string(),
-            refused: refused_flags(&top_flags),
+            // All the flags of the script as the parser reads them, also the
+            // `#` ones: a `#` flag with `:@` is refused too.
+            refused: refused_flags(&agent_flags(&args_arr)),
             flags: top_flags,
             annotations: Vec::new(),
         }]
@@ -143,7 +145,7 @@ pub fn mcp_main(args: &[String]) -> i32 {
                 full_path: leaf.full_path.clone(),
                 desc: leaf.desc.clone(),
                 flags: leaf.flags.clone(),
-                refused: refused_flags(&leaf.flags),
+                refused: leaf.refused.clone(),
                 annotations: leaf.annotations.clone(),
             }
         }).collect()

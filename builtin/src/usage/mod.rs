@@ -504,6 +504,10 @@ pub struct FlagInfo {
     /// `:@` modifier: an agent tool schema (MCP `tools/list`, `docgen llm`)
     /// does not list the flag, and the MCP server refuses a call that sends it.
     pub mcp_hidden: bool,
+    /// `:^` modifier: the entry yields to an entry of the same name without it.
+    pub inherited: bool,
+    /// `#` prefix: `--help` does not show the flag. No agent schema lists it.
+    pub help_hidden: bool,
     /// Every name that the parser accepts: long, short and any `|` alias.
     pub names: Vec<String>,
 }
@@ -558,6 +562,8 @@ pub fn extract_flags(args_arr: &[String]) -> Vec<FlagInfo> {
                 type_name: def.type_name,
                 required: def.required,
                 mcp_hidden: def.is_mcp_hidden,
+                inherited: def.is_inherited,
+                help_hidden: false,
                 names: field::field_names(entry),
             });
         }
@@ -572,6 +578,8 @@ pub fn extract_flags(args_arr: &[String]) -> Vec<FlagInfo> {
             type_name: String::new(),
             required: false,
             mcp_hidden: false,
+            inherited: false,
+            help_hidden: false,
             names: vec!["help".to_string(), "h".to_string()],
         });
     }
@@ -579,18 +587,38 @@ pub fn extract_flags(args_arr: &[String]) -> Vec<FlagInfo> {
     flags
 }
 
+/// The flags of an args array for the agent paths (MCP, `docgen llm`), in
+/// the order of the array and merged by `merge_flags`: every flag entry but
+/// help, also a `#` one (with `help_hidden` set). A `:@` flag stays in the
+/// list with `mcp_hidden` set: the MCP server refuses it by this list.
+pub fn agent_flags(args_arr: &[String]) -> Vec<FlagInfo> {
+    merge_flags(flag_entries(args_arr))
+}
+
 /// Extract visible flags from args array, excluding help (for LLM tool schemas).
-/// A `:@` flag stays in the list with `mcp_hidden` set: the command tree and
-/// the docs read this list too. The agent schema writers (`mcp::format_tool`,
-/// `write_tool_properties`) leave it out.
+/// A `#` flag is not in the list. A `:@` flag stays in the list with
+/// `mcp_hidden` set: the command tree and the docs read this list too. The
+/// agent schema writers (`mcp::format_tool`, `write_tool_properties`) leave
+/// it out.
 pub fn extract_flags_for_llm(args_arr: &[String]) -> Vec<FlagInfo> {
+    without_help_hidden(&agent_flags(args_arr))
+}
+
+/// The flags of a list that `--help` shows (no `#` flag).
+fn without_help_hidden(flags: &[FlagInfo]) -> Vec<FlagInfo> {
+    flags.iter().filter(|f| !f.help_hidden).cloned().collect()
+}
+
+/// One `FlagInfo` for each flag entry of an args array, in their order, not
+/// merged. Not help, a positional or a group separator.
+fn flag_entries(args_arr: &[String]) -> Vec<FlagInfo> {
     let mut flags = Vec::new();
 
     for i in (0..args_arr.len()).step_by(2) {
         let entry = &args_arr[i];
         let desc = args_arr.get(i + 1).map(|s| s.as_str()).unwrap_or("");
 
-        if !entry.contains('|') || entry == "-" || entry.starts_with('#') {
+        if !entry.contains('|') || entry == "-" {
             continue;
         }
 
@@ -606,12 +634,109 @@ pub fn extract_flags_for_llm(args_arr: &[String]) -> Vec<FlagInfo> {
                 type_name: def.type_name,
                 required: def.required,
                 mcp_hidden: def.is_mcp_hidden,
+                inherited: def.is_inherited,
+                help_hidden: entry.starts_with('#'),
                 names: field::field_names(entry),
             });
         }
     }
 
     flags
+}
+
+/// The variable name of a flag: the parser merges the entries of one name.
+fn var_key(flag: &FlagInfo) -> String {
+    flag.name.replace('-', "_")
+}
+
+/// Give `kept` the `:@` bit and the names of `other`, an entry of the same
+/// variable name. The flag is `:@` if any of its entries is (fail closed):
+/// `:usage` of a parent parses the flags of the parent also after the command
+/// name, so the parent's entry can apply although the child's entry wins.
+fn absorb(kept: &mut FlagInfo, other: &FlagInfo) {
+    kept.mcp_hidden |= other.mcp_hidden;
+    for name in &other.names {
+        if !kept.names.contains(name) {
+            kept.names.push(name.clone());
+        }
+    }
+}
+
+/// Merge the entries of each variable name as `field::dedup_inherited` does:
+/// the last entry without `:^` wins, else the last entry. The flag stays at
+/// the place of the entry that wins, and gets the `:@` bit and the names of
+/// all the entries (`absorb`).
+pub fn merge_flags(entries: Vec<FlagInfo>) -> Vec<FlagInfo> {
+    let keys: Vec<String> = entries.iter().map(var_key).collect();
+    let mut merged = Vec::new();
+    for (i, entry) in entries.iter().enumerate() {
+        let same: Vec<usize> = (0..entries.len()).filter(|&j| keys[j] == keys[i]).collect();
+        let winner = same
+            .iter()
+            .rev()
+            .find(|&&j| !entries[j].inherited)
+            .or(same.last());
+        if winner != Some(&i) {
+            continue;
+        }
+        let mut kept = entry.clone();
+        for (j, other) in entries.iter().enumerate() {
+            if j != i && keys[j] == keys[i] {
+                absorb(&mut kept, other);
+            }
+        }
+        merged.push(kept);
+    }
+    merged
+}
+
+/// A `"${args[@]}"` word (also `"${args[@]:-}"`) in a child's args array as
+/// `declare -f` shows it: the entries of the parent go at that place.
+fn is_parent_expansion(word: &str) -> bool {
+    word.starts_with("${args[@]") && word.ends_with('}')
+}
+
+/// The flags of a child command as the parser sees them, from its args array
+/// (as `declare -f` shows it) and the flags of its parent.
+///
+/// - With a parent expansion in the array, or with `args+=(...)` (the entries
+///   of the parent come first), the parser reads the child's entries and the
+///   parent's entries in that order: `merge_flags`.
+/// - Else the parser reads the child's entries only. The list still gets the
+///   flags of the parent that the child does not have (as before), and a flag
+///   of the child gets the `:@` bit and the names of a parent flag of the
+///   same name (`absorb`).
+pub fn child_flags(sub_args: &[String], appended: bool, parent: &[FlagInfo]) -> Vec<FlagInfo> {
+    let mut own = Vec::new();
+    let mut at = if appended { Some(0) } else { None };
+    for word in sub_args {
+        if is_parent_expansion(word) {
+            // The first expansion only, at the start of its pair
+            if at.is_none() {
+                at = Some(own.len() / 2 * 2);
+            }
+        } else {
+            own.push(word.clone());
+        }
+    }
+    match at {
+        Some(at) => {
+            let mut entries = flag_entries(&own[..at]);
+            entries.extend(parent.iter().cloned());
+            entries.extend(flag_entries(&own[at..]));
+            merge_flags(entries)
+        }
+        None => {
+            let mut merged = merge_flags(flag_entries(&own));
+            for p in parent {
+                match merged.iter_mut().find(|f| var_key(f) == var_key(p)) {
+                    Some(f) => absorb(f, p),
+                    None => merged.push(p.clone()),
+                }
+            }
+            merged
+        }
+    }
 }
 
 // -- Command tree walker ------------------------------------------------------
@@ -623,6 +748,7 @@ pub struct CommandNode {
     pub desc: String,           // description
     pub full_path: Vec<String>, // full command path (e.g. ["cluster", "up"])
     pub flags: Vec<FlagInfo>,   // per-command flags from args array (excludes help)
+    pub refused: Vec<FlagInfo>, // `:@` flags, also of a parent: MCP refuses them
     pub children: Vec<CommandNode>, // nested subcommands
     pub hidden: bool,           // #-prefixed entries
     pub annotations: Vec<String>, // e.g. ["readonly", "json"] from @readonly, @json suffixes
@@ -647,6 +773,25 @@ pub fn parse_entry_annotations(entry: &str) -> (String, Vec<String>) {
     }
 }
 
+/// Where `build_tree` finds the function of a command and its body.
+pub(crate) trait Functions {
+    fn exists(&self, name: &str) -> bool;
+    fn body(&self, name: &str) -> Option<String>;
+}
+
+/// The functions of the running shell.
+struct ShellFunctions;
+
+impl Functions for ShellFunctions {
+    fn exists(&self, name: &str) -> bool {
+        shell::function_exists(name)
+    }
+
+    fn body(&self, name: &str) -> Option<String> {
+        get_function_body(name)
+    }
+}
+
 /// Build a command tree by recursively discovering subcommands.
 ///
 /// Starts from the top-level `usage_pairs` and for each subcommand, resolves
@@ -657,7 +802,19 @@ pub fn build_command_tree(
     parent_args: &[String],
     caller: Option<&str>,
 ) -> Vec<CommandNode> {
-    let parent_flags = extract_flags_for_llm(parent_args);
+    build_tree(&ShellFunctions, usage_pairs, &agent_flags(parent_args), caller)
+}
+
+/// The tree below one command. `parent` holds the flags of that command as
+/// the parser sees them, `#` flags too (`agent_flags`). Each child gets them
+/// merged with its own (`child_flags`), and its children get that merged
+/// list: a `:@` flag of any level above stays refused.
+pub(crate) fn build_tree<F: Functions>(
+    funcs: &F,
+    usage_pairs: &[String],
+    parent: &[FlagInfo],
+    caller: Option<&str>,
+) -> Vec<CommandNode> {
     let mut nodes = Vec::new();
 
     for i in (0..usage_pairs.len()).step_by(2) {
@@ -679,80 +836,42 @@ pub fn build_command_tree(
         let entry_cmd_part = entry_no_annot.split(':').next().unwrap_or(&entry_no_annot);
         let name = entry_cmd_part.split('|').next().unwrap_or(entry_cmd_part);
 
-        // Resolve function name using the same logic as :usage dispatch
-        let func_name = resolve_function_name(&entry_no_annot, name, caller);
-        let func_name = match func_name {
-            Some(f) => f,
-            None => {
-                // Can't resolve — treat as leaf with parent flags
-                nodes.push(CommandNode {
-                    name: name.to_string(),
-                    desc: desc.to_string(),
-                    full_path: vec![name.to_string()],
-                    flags: parent_flags.clone(),
-                    children: Vec::new(),
-                    hidden,
-                    annotations: annotations.clone(),
-                });
-                continue;
-            }
-        };
-
-        // Get function body via declare -f
-        let body = get_function_body(&func_name);
-        let body = match body {
-            Some(b) => b,
-            None => {
-                // No body — treat as leaf with parent flags
-                nodes.push(CommandNode {
-                    name: name.to_string(),
-                    desc: desc.to_string(),
-                    full_path: vec![name.to_string()],
-                    flags: parent_flags.clone(),
-                    children: Vec::new(),
-                    hidden,
-                    annotations: annotations.clone(),
-                });
-                continue;
-            }
-        };
-
-        // Parse usage and args arrays from the function body
-        let sub_usage = parse_shell_array_from_body(&body, "usage");
-        let sub_args = parse_shell_array_from_body(&body, "args");
-
-        // Determine flags for this node: its own args if present, else inherit parent
-        let own_flags = if sub_args.is_empty() {
-            parent_flags.clone()
-        } else {
-            // Merge parent flags with own flags (own flags take precedence)
-            let own = extract_flags_for_llm(&sub_args);
-            let mut merged = own;
-            // Add parent flags that aren't overridden by child
-            for f in parent_flags.iter() {
-                if !merged.iter().any(|existing| existing.name == f.name) {
-                    merged.push(f.clone());
-                }
-            }
-            merged
-        };
-
-        if sub_usage.is_empty() {
-            // Leaf node
+        // Resolve the function name with the logic of :usage dispatch. A
+        // command without a function or a body is a leaf with the parent's
+        // flags.
+        let func_name = resolve_function_name(funcs, &entry_no_annot, name, caller);
+        let body = func_name.as_deref().and_then(|f| funcs.body(f));
+        let (Some(func_name), Some(body)) = (func_name, body) else {
             nodes.push(CommandNode {
                 name: name.to_string(),
                 desc: desc.to_string(),
                 full_path: vec![name.to_string()],
-                flags: own_flags,
+                flags: without_help_hidden(parent),
+                refused: mcp::refused_flags(parent),
                 children: Vec::new(),
                 hidden,
                 annotations: annotations.clone(),
             });
+            continue;
+        };
+
+        // Parse usage and args arrays from the function body
+        let sub_usage = parse_shell_array_from_body(&body, "usage");
+        let (sub_args, appended) = parse_shell_array_and_form(&body, "args");
+
+        // The flags of this node: the parent's, merged with its own
+        let all = if sub_args.is_empty() {
+            parent.to_vec()
         } else {
-            // Recurse into children
-            let children = build_command_tree(&sub_usage, &sub_args, Some(&func_name));
-            // Fix up children full_path to include this node's name
-            let children: Vec<CommandNode> = children
+            child_flags(&sub_args, appended, parent)
+        };
+
+        let children = if sub_usage.is_empty() {
+            Vec::new()
+        } else {
+            // Recurse with the merged flags, and put this node's name in
+            // front of each child path
+            build_tree(funcs, &sub_usage, &all, Some(&func_name))
                 .into_iter()
                 .map(|mut child| {
                     let mut path = vec![name.to_string()];
@@ -760,30 +879,36 @@ pub fn build_command_tree(
                     child.full_path = path;
                     child
                 })
-                .collect();
+                .collect()
+        };
 
-            nodes.push(CommandNode {
-                name: name.to_string(),
-                desc: desc.to_string(),
-                full_path: vec![name.to_string()],
-                flags: own_flags,
-                children,
-                hidden,
-                annotations: annotations.clone(),
-            });
-        }
+        nodes.push(CommandNode {
+            name: name.to_string(),
+            desc: desc.to_string(),
+            full_path: vec![name.to_string()],
+            flags: without_help_hidden(&all),
+            refused: mcp::refused_flags(&all),
+            children,
+            hidden,
+            annotations: annotations.clone(),
+        });
     }
 
     nodes
 }
 
 /// Resolve a function name using the same resolution logic as :usage dispatch.
-fn resolve_function_name(entry: &str, name: &str, caller: Option<&str>) -> Option<String> {
+fn resolve_function_name<F: Functions>(
+    funcs: &F,
+    entry: &str,
+    name: &str,
+    caller: Option<&str>,
+) -> Option<String> {
     // Check for explicit :- mapping
     if entry.contains(":-") {
         let func = entry.split(":-").nth(1).unwrap_or("");
         let func = func.strip_prefix('#').unwrap_or(func).to_string();
-        if shell::function_exists(&func) {
+        if funcs.exists(&func) {
             return Some(func);
         }
         return None;
@@ -796,7 +921,7 @@ fn resolve_function_name(entry: &str, name: &str, caller: Option<&str>) -> Optio
     // 4) func (bare)
     if let Some(caller_name) = caller {
         let prefixed = format!("{}::{}", caller_name, name);
-        if shell::function_exists(&prefixed) {
+        if funcs.exists(&prefixed) {
             return Some(prefixed);
         }
 
@@ -804,18 +929,18 @@ fn resolve_function_name(entry: &str, name: &str, caller: Option<&str>) -> Optio
         if let Some(pos) = caller_name.rfind("::") {
             let segment = &caller_name[pos + 2..];
             let seg_prefixed = format!("{}::{}", segment, name);
-            if shell::function_exists(&seg_prefixed) {
+            if funcs.exists(&seg_prefixed) {
                 return Some(seg_prefixed);
             }
         }
     }
 
     let argsh_prefixed = format!("argsh::{}", name);
-    if shell::function_exists(&argsh_prefixed) {
+    if funcs.exists(&argsh_prefixed) {
         return Some(argsh_prefixed);
     }
 
-    if shell::function_exists(name) {
+    if funcs.exists(name) {
         return Some(name.to_string());
     }
 
@@ -836,6 +961,13 @@ fn get_function_body(func_name: &str) -> Option<String> {
 /// Extracts the content of `local -a {name}=(...)` from the indented function
 /// body that bash's `declare -f` produces. Returns alternating key-value pairs.
 pub fn parse_shell_array_from_body(body: &str, array_name: &str) -> Vec<String> {
+    parse_shell_array_and_form(body, array_name).0
+}
+
+/// `parse_shell_array_from_body`, and true if the array is an append
+/// (`{name}+=(...)`): then the words come after the entries that the array
+/// has already.
+pub(crate) fn parse_shell_array_and_form(body: &str, array_name: &str) -> (Vec<String>, bool) {
     // Look for patterns like:
     //     local -a usage=('cmd1' "desc1" 'cmd2' "desc2")
     // or multi-line:
@@ -850,6 +982,7 @@ pub fn parse_shell_array_from_body(body: &str, array_name: &str) -> Vec<String> 
     let needle_append = format!("{}+=(", array_name);
 
     let mut start_pos = None;
+    let mut appended = false;
     for needle in &[&needle_local, &needle_append] {
         for (idx, matched) in body.match_indices(needle.as_str()) {
             // Verify this looks like a local -a or direct assignment context
@@ -861,6 +994,7 @@ pub fn parse_shell_array_from_body(body: &str, array_name: &str) -> Vec<String> 
                 || line_prefix.trim_start().starts_with(array_name)
             {
                 start_pos = Some(idx + matched.len());
+                appended = *needle == &needle_append;
                 break;
             }
         }
@@ -871,7 +1005,7 @@ pub fn parse_shell_array_from_body(body: &str, array_name: &str) -> Vec<String> 
 
     let start = match start_pos {
         Some(p) => p,
-        None => return Vec::new(),
+        None => return (Vec::new(), false),
     };
 
     // Find matching closing paren
@@ -915,11 +1049,11 @@ pub fn parse_shell_array_from_body(body: &str, array_name: &str) -> Vec<String> 
     }
 
     if depth != 0 {
-        return Vec::new(); // coverage:off - defensive_check: unmatched paren in declare -f output
+        return (Vec::new(), false); // coverage:off - defensive_check: unmatched paren in declare -f output
     }
 
     let content = &rest[..end];
-    parse_shell_words(content)
+    (parse_shell_words(content), appended)
 }
 
 /// Parse shell words from array content (handles single and double-quoted strings).
@@ -1026,6 +1160,8 @@ impl Clone for FlagInfo {
             type_name: self.type_name.clone(),
             required: self.required,
             mcp_hidden: self.mcp_hidden,
+            inherited: self.inherited,
+            help_hidden: self.help_hidden,
             names: self.names.clone(),
         }
     }
@@ -1218,6 +1354,7 @@ mod tests {
                 desc: "Start".to_string(),
                 full_path: vec!["serve".to_string()],
                 flags: Vec::new(),
+                refused: Vec::new(),
                 children: Vec::new(),
                 hidden: false,
                 annotations: Vec::new(),
@@ -1227,6 +1364,7 @@ mod tests {
                 desc: "Build".to_string(),
                 full_path: vec!["build".to_string()],
                 flags: Vec::new(),
+                refused: Vec::new(),
                 children: Vec::new(),
                 hidden: false,
                 annotations: Vec::new(),
@@ -1246,12 +1384,14 @@ mod tests {
                 desc: "Cluster".to_string(),
                 full_path: vec!["cluster".to_string()],
                 flags: Vec::new(),
+                refused: Vec::new(),
                 children: vec![
                     CommandNode {
                         name: "up".to_string(),
                         desc: "Start".to_string(),
                         full_path: vec!["cluster".to_string(), "up".to_string()],
                         flags: Vec::new(),
+                        refused: Vec::new(),
                         children: Vec::new(),
                         hidden: false,
                         annotations: Vec::new(),
@@ -1261,6 +1401,7 @@ mod tests {
                         desc: "Stop".to_string(),
                         full_path: vec!["cluster".to_string(), "down".to_string()],
                         flags: Vec::new(),
+                        refused: Vec::new(),
                         children: Vec::new(),
                         hidden: false,
                         annotations: Vec::new(),
@@ -1284,6 +1425,7 @@ mod tests {
                 desc: "Visible".to_string(),
                 full_path: vec!["visible".to_string()],
                 flags: Vec::new(),
+                refused: Vec::new(),
                 children: Vec::new(),
                 hidden: false,
                 annotations: Vec::new(),
@@ -1293,6 +1435,7 @@ mod tests {
                 desc: "Hidden".to_string(),
                 full_path: vec!["hidden".to_string()],
                 flags: Vec::new(),
+                refused: Vec::new(),
                 children: Vec::new(),
                 hidden: true,
                 annotations: Vec::new(),
@@ -1311,6 +1454,7 @@ mod tests {
                 desc: "Start".to_string(),
                 full_path: vec!["serve".to_string()],
                 flags: Vec::new(),
+                refused: Vec::new(),
                 children: Vec::new(),
                 hidden: false,
                 annotations: Vec::new(),
@@ -1320,12 +1464,14 @@ mod tests {
                 desc: "Cluster".to_string(),
                 full_path: vec!["cluster".to_string()],
                 flags: Vec::new(),
+                refused: Vec::new(),
                 children: vec![
                     CommandNode {
                         name: "up".to_string(),
                         desc: "Start".to_string(),
                         full_path: vec!["cluster".to_string(), "up".to_string()],
                         flags: Vec::new(),
+                        refused: Vec::new(),
                         children: Vec::new(),
                         hidden: false,
                         annotations: Vec::new(),
@@ -1402,6 +1548,8 @@ mod tests {
             type_name: "int".to_string(),
             required: false,
             mcp_hidden: false,
+            inherited: false,
+            help_hidden: false,
             names: vec!["port".to_string(), "p".to_string()],
         }];
         let result = mcp::format_tool("serve", "Start server", &flags, &[]);
@@ -2085,5 +2233,217 @@ mod tests {
     fn test_mcp_json_escape_control_characters() {
         assert_eq!(json_escape("a\u{1}b\u{1f}c"), "a\\u0001b\\u001fc");
         assert_eq!(json_escape("q\"\\\n\r\t"), "q\\\"\\\\\\n\\r\\t");
+    }
+
+    // -- `:@` through inheritance and `#` --
+
+    /// Functions for `build_tree` without a shell: name and body.
+    struct FakeFunctions(Vec<(String, String)>);
+
+    impl Functions for FakeFunctions {
+        fn exists(&self, name: &str) -> bool {
+            self.0.iter().any(|(n, _)| n == name)
+        }
+
+        fn body(&self, name: &str) -> Option<String> {
+            self.0.iter().find(|(n, _)| n == name).map(|(_, b)| b.clone())
+        }
+    }
+
+    /// A function as `declare -f` prints it, with these statements.
+    fn declared(name: &str, statements: &[&str]) -> (String, String) {
+        let body: Vec<String> = statements.iter().map(|s| format!("    {};", s)).collect();
+        (name.to_string(), format!("{} () \n{{ \n{}\n}}", name, body.join("\n")))
+    }
+
+    fn words(items: &[&str]) -> Vec<String> {
+        items.iter().map(|s| s.to_string()).collect()
+    }
+
+    /// The tree of a script whose root has `root_args` and the command `login`.
+    fn login_tree(root_args: &[&str], login: &[&str]) -> Vec<CommandNode> {
+        let funcs = FakeFunctions(vec![declared("login", login)]);
+        build_tree(&funcs, &words(&["login", "Log in"]), &agent_flags(&words(root_args)), Some("main"))
+    }
+
+    /// Send a tools/call to a node of the tree, as the probe tool.
+    fn node_tools_call(label: &str, node: &CommandNode, arguments: &str) -> (String, Option<String>) {
+        let dir =
+            std::env::temp_dir().join(format!("argsh-mcp-tree-{}-{}", std::process::id(), label));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut leaf = agent_leaf(&dir, node.flags.clone());
+        leaf.refused = node.refused.clone();
+        let params = format!(r#"{{"name":"app_login","arguments":{}}}"#, arguments);
+        let mut buf = Vec::new();
+        mcp::handle_tools_call_v2(&mut buf, &Some("8".to_string()), &params, "/bin/sh", &[leaf]);
+        let ran = std::fs::read_to_string(dir.join("argv")).ok();
+        std::fs::remove_dir_all(&dir).unwrap();
+        (String::from_utf8(buf).unwrap(), ran)
+    }
+
+    fn refused_names(node: &CommandNode) -> Vec<&str> {
+        node.refused.iter().map(|f| f.name.as_str()).collect()
+    }
+
+    #[test]
+    fn test_mcp_hidden_flag_under_a_yielding_child_entry() {
+        // The child's `:^` entry yields to the parent's `:@` entry.
+        let tree = login_tree(
+            &["print-token|t:+@", "Print the access token"],
+            &[r#"local -a args=('print-token|t:+^' 'Inherited setting' "${args[@]:-}")"#],
+        );
+        let login = &tree[0];
+        assert_eq!(refused_names(login), vec!["print-token"]);
+        assert!(login.flags.iter().all(|f| f.name != "print-token" || f.mcp_hidden));
+        let tool = mcp::format_tool("app_login", "Log in", &login.flags, &[]);
+        assert!(!tool.contains("print-token"), "{}", tool);
+        let (output, ran) = node_tools_call("yield", login, r#"{"print-token":true}"#);
+        assert_refused("yield", &output, &ran, -32602, "Flag not available over MCP: print-token");
+    }
+
+    #[test]
+    fn test_mcp_hidden_flag_stays_when_a_visible_child_entry_wins() {
+        // The child's entry wins at its own parser, but `:usage` of the parent
+        // parses `--print-token` first. The flag stays refused.
+        for (label, login, keys) in [
+            (
+                "after-expansion",
+                r#"local -a args=("${args[@]:-}" 'print-token|t:+' 'Print it')"#,
+                vec!["print-token", "t"],
+            ),
+            (
+                "no-expansion",
+                r#"local -a args=('print-token|p:+' 'Print it')"#,
+                vec!["print-token", "t", "p"],
+            ),
+        ] {
+            let tree = login_tree(&["print-token|t:+@", "Print the access token"], &[login]);
+            let login = &tree[0];
+            assert_eq!(refused_names(login), vec!["print-token"], "{}", label);
+            for key in keys {
+                let (output, ran) =
+                    node_tools_call(&format!("{}-{}", label, key), login, &format!(r#"{{"{}":true}}"#, key));
+                assert_refused(
+                    label,
+                    &output,
+                    &ran,
+                    -32602,
+                    &format!("Flag not available over MCP: {}", key),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_mcp_hidden_flag_of_a_grandparent() {
+        // root (the `:@` flag) -> cluster -> up: three levels.
+        let funcs = FakeFunctions(vec![
+            declared(
+                "cluster",
+                &[
+                    r#"local -a args=('verbose|v:+' 'Verbose output' "${args[@]:-}")"#,
+                    "local -a usage=('up' 'Start the cluster' 'down' 'Stop the cluster')",
+                ],
+            ),
+            declared(
+                "cluster::up",
+                &[r#"local -a args=('nodes|n:~int' 'Nodes' "${args[@]:-}")"#],
+            ),
+            declared(
+                "cluster::down",
+                &[r#"local -a args=('print-token|k:+^' 'Inherited setting' "${args[@]:-}")"#],
+            ),
+        ]);
+        let root = agent_flags(&words(&["print-token|t:+@", "Print the access token"]));
+        let tree = build_tree(&funcs, &words(&["cluster", "Cluster"]), &root, Some("main"));
+        let leaves = flatten_leaves(&tree);
+        assert_eq!(leaves.len(), 2);
+        for leaf in &leaves {
+            assert_eq!(refused_names(leaf), vec!["print-token"], "{:?}", leaf.full_path);
+        }
+        let up = leaves[0];
+        let names: Vec<&str> = up.flags.iter().map(|f| f.name.as_str()).collect();
+        assert_eq!(names, vec!["nodes", "verbose", "print-token"]);
+        let down = leaves[1];
+        assert!(down.refused[0].names.contains(&"k".to_string()), "{:?}", down.refused[0].names);
+        for (label, node, key) in [("up-t", up, "t"), ("down-k", down, "k")] {
+            let (output, ran) = node_tools_call(label, node, &format!(r#"{{"{}":true}}"#, key));
+            assert_refused(label, &output, &ran, -32602, "Flag not available over MCP");
+        }
+        let (output, ran) = node_tools_call("up-ok", up, r#"{"nodes":3,"verbose":true}"#);
+        assert!(output.contains("\"text\":\"ran\""), "{}", output);
+        assert_eq!(ran.as_deref(), Some("--nodes=3\n--verbose\n"));
+    }
+
+    #[test]
+    fn test_mcp_hash_prefixed_hidden_flag_is_refused() {
+        // A `#` flag is not in the schema and not in --help. With `:@` it is
+        // refused, also through a child command.
+        let root = ["#print-token|t:+@", "Print the access token", "name|n", "Name"];
+        let all = agent_flags(&words(&root));
+        assert!(all.iter().any(|f| f.name == "print-token" && f.help_hidden && f.mcp_hidden));
+        let flags = extract_flags_for_llm(&words(&root));
+        assert!(flags.iter().all(|f| f.name != "print-token"));
+        let refused = mcp::refused_flags(&all);
+        assert_eq!(refused.len(), 1);
+        let dir = std::env::temp_dir().join(format!("argsh-mcp-hash-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut leaf = agent_leaf(&dir, flags);
+        leaf.refused = refused;
+        for key in ["print-token", "t"] {
+            let mut buf = Vec::new();
+            let params = format!(r#"{{"name":"app_login","arguments":{{"{}":true}}}}"#, key);
+            mcp::handle_tools_call_v2(
+                &mut buf,
+                &Some("9".to_string()),
+                &params,
+                "/bin/sh",
+                std::slice::from_ref(&leaf),
+            );
+            let output = String::from_utf8(buf).unwrap();
+            let ran = std::fs::read_to_string(dir.join("argv")).ok();
+            assert_refused(key, &output, &ran, -32602, &format!("Flag not available over MCP: {}", key));
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+        let tree = login_tree(&root, &[r#"local -a args=('verbose|v:+' 'Verbose' "${args[@]:-}")"#]);
+        assert_eq!(refused_names(&tree[0]), vec!["print-token"]);
+        assert!(tree[0].flags.iter().all(|f| f.name != "print-token"));
+    }
+
+    #[test]
+    fn test_child_flags_follow_the_place_of_the_parent_expansion() {
+        let parent = agent_flags(&words(&["domain|d", "Parent domain", "verbose|v:+", "Verbose"]));
+        // The expansion first: the child's non-`:^` entry comes later and wins,
+        // and the child's own flags stay (they are not read as pairs of the
+        // wrong words).
+        let flags = child_flags(
+            &words(&["${args[@]:-}", "domain|d", "Child domain", "port|p:~int", "Port"]),
+            false,
+            &parent,
+        );
+        let got: Vec<(&str, &str)> = flags.iter().map(|f| (f.name.as_str(), f.desc.as_str())).collect();
+        assert_eq!(got, vec![("verbose", "Verbose"), ("domain", "Child domain"), ("port", "Port")]);
+        // The expansion last: the parent's entry comes later and wins.
+        let flags = child_flags(&words(&["domain|d", "Child domain", "${args[@]:-}"]), false, &parent);
+        assert_eq!(flags[0].desc, "Parent domain");
+        // A `:^` child entry yields to the parent's entry, wherever it is.
+        let flags = child_flags(&words(&["${args[@]}", "domain|d:^", "Child domain"]), false, &parent);
+        assert_eq!(flags.iter().find(|f| f.name == "domain").unwrap().desc, "Parent domain");
+        // `args+=(...)`: the parent's entries come first.
+        let flags = child_flags(&words(&["domain|d", "Child domain"]), true, &parent);
+        assert_eq!(flags.iter().find(|f| f.name == "domain").unwrap().desc, "Child domain");
+    }
+
+    #[test]
+    fn test_parse_shell_array_and_form() {
+        let local = "f () \n{ \n    local -a args=('a|a' 'A' \"${args[@]:-}\");\n}";
+        assert_eq!(
+            parse_shell_array_and_form(local, "args"),
+            (words(&["a|a", "A", "${args[@]:-}"]), false)
+        );
+        let append = "f () \n{ \n    args+=('a|a' 'A');\n}";
+        assert_eq!(parse_shell_array_and_form(append, "args"), (words(&["a|a", "A"]), true));
     }
 }
