@@ -13,7 +13,7 @@ use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::process::{Command, Stdio};
 #[allow(unused_imports)]
 use super::{
-    extract_subcommands, extract_flags_for_llm, agent_flags,
+    extract_subcommands, extract_flags_for_llm, agent_flags, needs_refused_flag,
     json_escape, argsh_type_to_json, sanitize_tool_name,
     build_command_tree, flatten_leaves,
     FlagInfo, SubCmd,
@@ -296,7 +296,9 @@ pub(crate) fn handle_tools_list_v2<W: Write>(
 ) {
     let mut tools = String::from("{\"tools\":[");
 
-    for (i, leaf) in leaf_tools.iter().enumerate() {
+    // A tool with a required `:@` flag is not for agents: leave it out.
+    let listed = leaf_tools.iter().filter(|leaf| !needs_refused_flag(&leaf.refused));
+    for (i, leaf) in listed.enumerate() {
         if i > 0 {
             tools.push(',');
         }
@@ -654,6 +656,13 @@ pub(crate) fn handle_tools_call_json<W: Write>(
         write_jsonrpc_error(writer, id, -32602, &format!("Unknown tool: {}", tool_name));
         return;
     };
+
+    // The tool needs a `:@` flag, and a call cannot send one: refuse the
+    // call with a fixed text (tools/list does not list the tool).
+    if needs_refused_flag(&leaf.refused) {
+        write_jsonrpc_error(writer, id, -32602, "Tool needs a flag that is not available over MCP");
+        return;
+    }
 
     // A `:@` flag is not in the schema. Refuse a call that sends one, before
     // any child starts: never drop it in silence.

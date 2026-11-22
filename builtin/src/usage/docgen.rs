@@ -8,11 +8,12 @@ use crate::shell;
 use std::ffi::{c_char, c_int};
 use std::io::Write;
 use super::{
-    extract_subcommands, extract_flags, extract_flags_for_llm,
-    json_escape, sanitize_tool_name, write_tool_properties,
+    extract_subcommands, extract_flags, extract_flags_for_llm, agent_flags,
+    json_escape, sanitize_tool_name, write_tool_properties, needs_refused_flag,
     build_command_tree, flatten_leaves, flatten_all,
     FlagInfo, CommandNode,
 };
+use super::mcp::refused_flags;
 
 // -- :usage::docgen builtin registration --------------------------------------
 
@@ -542,8 +543,40 @@ fn generate_yaml<W: Write>(
 
 // -- LLM tool schema generation -----------------------------------------------
 
+/// The tools of an agent schema: name, description and flags. A tool with a
+/// required `:@` flag is not in the list: an agent cannot call it.
+fn llm_tools(
+    cmd_name: &str,
+    title: &str,
+    args_arr: &[String],
+    tree: &[CommandNode],
+) -> Vec<(String, String, Vec<FlagInfo>)> {
+    let leaves = flatten_leaves(tree);
+    let first_line = title.lines().next().unwrap_or(title).trim();
+
+    if leaves.is_empty() {
+        // No subcommands: one tool for the script itself
+        if needs_refused_flag(&refused_flags(&agent_flags(args_arr))) {
+            return Vec::new();
+        }
+        let flags = extract_flags_for_llm(args_arr);
+        return vec![(sanitize_tool_name(cmd_name), first_line.to_string(), flags)];
+    }
+    leaves
+        .iter()
+        .filter(|leaf| !needs_refused_flag(&leaf.refused))
+        .map(|leaf| {
+            let tool_name = sanitize_tool_name(
+                &format!("{}_{}", cmd_name, leaf.full_path.join("_")),
+            );
+            let desc = if leaf.desc.is_empty() { first_line } else { &leaf.desc };
+            (tool_name, desc.to_string(), leaf.flags.clone())
+        })
+        .collect()
+}
+
 /// Generate LLM tool schema in Anthropic Claude format.
-fn generate_llm_claude<W: Write>(
+pub(crate) fn generate_llm_claude<W: Write>(
     out: &mut W,
     cmd_name: &str,
     title: &str,
@@ -551,25 +584,12 @@ fn generate_llm_claude<W: Write>(
     args_arr: &[String],
     tree: &[CommandNode],
 ) {
-    let leaves = flatten_leaves(tree);
-    let first_line = title.lines().next().unwrap_or(title).trim();
+    let tools = llm_tools(cmd_name, title, args_arr, tree);
 
     let _ = writeln!(out, "[");
-
-    if leaves.is_empty() {
-        // No subcommands — single tool for the script itself
-        let flags = extract_flags_for_llm(args_arr);
-        write_claude_tool(out, &sanitize_tool_name(cmd_name), first_line, &flags, true);
-    } else {
-        for (i, leaf) in leaves.iter().enumerate() {
-            let tool_name = sanitize_tool_name(
-                &format!("{}_{}", cmd_name, leaf.full_path.join("_")),
-            );
-            let desc = if leaf.desc.is_empty() { first_line } else { &leaf.desc };
-            write_claude_tool(out, &tool_name, desc, &leaf.flags, i == leaves.len() - 1);
-        }
+    for (i, (name, desc, flags)) in tools.iter().enumerate() {
+        write_claude_tool(out, name, desc, flags, i == tools.len() - 1);
     }
-
     let _ = writeln!(out, "]");
 }
 
@@ -587,7 +607,7 @@ fn write_claude_tool<W: Write>(out: &mut W, name: &str, description: &str, flags
 
 /// Generate LLM tool schema in OpenAI function calling format.
 /// Also used for Gemini and Kimi (OpenAI-compatible).
-fn generate_llm_openai<W: Write>(
+pub(crate) fn generate_llm_openai<W: Write>(
     out: &mut W,
     cmd_name: &str,
     title: &str,
@@ -595,25 +615,12 @@ fn generate_llm_openai<W: Write>(
     args_arr: &[String],
     tree: &[CommandNode],
 ) {
-    let leaves = flatten_leaves(tree);
-    let first_line = title.lines().next().unwrap_or(title).trim();
+    let tools = llm_tools(cmd_name, title, args_arr, tree);
 
     let _ = writeln!(out, "[");
-
-    if leaves.is_empty() {
-        // No subcommands — single tool for the script itself
-        let flags = extract_flags_for_llm(args_arr);
-        write_openai_tool(out, &sanitize_tool_name(cmd_name), first_line, &flags, true);
-    } else {
-        for (i, leaf) in leaves.iter().enumerate() {
-            let tool_name = sanitize_tool_name(
-                &format!("{}_{}", cmd_name, leaf.full_path.join("_")),
-            );
-            let desc = if leaf.desc.is_empty() { first_line } else { &leaf.desc };
-            write_openai_tool(out, &tool_name, desc, &leaf.flags, i == leaves.len() - 1);
-        }
+    for (i, (name, desc, flags)) in tools.iter().enumerate() {
+        write_openai_tool(out, name, desc, flags, i == tools.len() - 1);
     }
-
     let _ = writeln!(out, "]");
 }
 

@@ -24,6 +24,7 @@ pub mod codes {
     pub const AG013: &str = "AG013"; // import could not be resolved
     pub const AG014: &str = "AG014"; // :^ field without ${var:-...} default pattern
     pub const AG015: &str = "AG015"; // # argsh source= path does not exist or is not a directory
+    pub const AG016: &str = "AG016"; // :@ on a positional: agent schemas list flags only
 }
 
 /// Generate LSP diagnostics from a document analysis.
@@ -52,6 +53,7 @@ pub fn generate_diagnostics(
         check_bare_function_resolution(func, analysis, imports, &mut diags);
         check_scope_shadow(func, analysis, content, &mut diags);
         check_inherited_without_default(func, &mut diags);
+        check_mcp_hidden_positional(func, &mut diags);
     }
 
     // Check unresolved imports (only when resolution actually ran — skip if resolveDepth=0)
@@ -645,6 +647,27 @@ fn check_inherited_without_default(func: &FunctionInfo, diags: &mut Vec<Diagnost
     }
 }
 
+/// Warn on `:@` on a positional. The agent schemas (MCP, `docgen llm`) list
+/// flags only, so the modifier has no effect there.
+fn check_mcp_hidden_positional(func: &FunctionInfo, diags: &mut Vec<Diagnostic>) {
+    for entry in &func.args_entries {
+        if entry.spec == "-" { continue; }
+        if let Ok(ref field) = entry.parsed {
+            if field.is_positional && field.mcp_hidden {
+                diags.push(make_diag(
+                    line_range(entry.line),
+                    DiagnosticSeverity::WARNING,
+                    codes::AG016,
+                    format!(
+                        "':@' has no effect on positional '{}': agent schemas list flags only",
+                        field.display_name
+                    ),
+                ));
+            }
+        }
+    }
+}
+
 fn line_range(line: usize) -> Range {
     Range {
         start: Position { line: line as u32, character: 0 },
@@ -767,6 +790,30 @@ f() {
             .filter(|d| d.code == Some(NumberOrString::String("AG014".to_string())))
             .collect();
         assert!(ag014.is_empty(), "AG014 should not fire for non-:^ fields");
+    }
+
+    #[test]
+    fn test_ag016_mcp_hidden_on_a_positional() {
+        let content = r#"#!/usr/bin/env bash
+source argsh
+f() {
+  local file token
+  local -a args=(
+    'file:@' "File"
+    'token|t:@' "Token"
+  )
+  :args "Test" "${@}"
+}
+"#;
+        let analysis = analyze(content);
+        let diags = generate_diagnostics(&analysis, &empty_imports(), content, None);
+        let ag016: Vec<_> = diags.iter()
+            .filter(|d| d.code == Some(NumberOrString::String("AG016".to_string())))
+            .collect();
+        assert_eq!(ag016.len(), 1, "Expected one AG016 (the positional only), got: {:?}", ag016);
+        assert_eq!(ag016[0].severity, Some(DiagnosticSeverity::WARNING));
+        assert_eq!(ag016[0].range.start.line, 5, "{:?}", ag016[0]);
+        assert!(ag016[0].message.contains("'file'"), "{:?}", ag016[0]);
     }
 
     #[test]

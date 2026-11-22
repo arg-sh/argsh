@@ -114,6 +114,7 @@ pub mod resolver;     // Cross-file import resolution
 | AG013 | Warning | Import could not be resolved |
 | AG014 | Warning | `:^` field without `${var:-...}` default (won't inherit parent value) |
 | AG015 | Warning | `# argsh source=` path does not exist or is not a directory |
+| AG016 | Warning | `:@` on a positional: agent schemas list flags only, so it has no effect |
 
 Suppress per-line with `# argsh-ignore=AG004,AG012` or `# argsh disable=AG004`.
 

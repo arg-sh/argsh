@@ -7,9 +7,9 @@ description: "How to lint your scripts"
 In this document, you'll learn how to lint argsh scripts using the built-in
 linter pipeline, which combines two complementary tools:
 
-1. **shellcheck** — general-purpose Bash linter (covers quoting, subshells,
+1. **shellcheck**: general-purpose Bash linter (covers quoting, subshells,
    command substitution, POSIX portability, etc.).
-2. **argsh-lint** — argsh-specific static analysis (AG001–AG010, AG012–AG015;
+2. **argsh-lint**: argsh-specific static analysis (AG001–AG010, AG012–AG016;
    AG011 is reserved) for `:args` / `:usage` declarations, field specs,
    variable declarations, imports, and more.
 
@@ -69,6 +69,7 @@ shellcheck's `SC####`. The full list:
 | [AG013](../../diagnostics/ag013.mdx) | `import` could not be resolved                                 |
 | [AG014](../../diagnostics/ag014.mdx) | Inherited field missing `${var:-}` default pattern             |
 | [AG015](../../diagnostics/ag015.mdx) | `# argsh source=` path not found                               |
+| [AG016](../../diagnostics/ag016.mdx) | `:@` on a positional (agent schemas list flags only)           |
 
 ## Suppressing diagnostics
 

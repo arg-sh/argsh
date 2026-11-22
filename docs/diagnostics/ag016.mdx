@@ -1,0 +1,55 @@
+---
+description: "AG016: the :@ modifier on a positional"
+---
+
+# AG016: `:@` on a Positional
+
+| Property | Value |
+|----------|-------|
+| Code | AG016 |
+| Severity | Warning |
+| Since | v0.11.0 |
+
+## Description
+
+The `:@` modifier keeps a flag out of the agent tool schemas (the MCP
+server's `tools/list` and `docgen llm`), and the MCP server refuses a call
+that sends the flag. The agent schemas list flags only, not positionals. Thus
+`:@` on a positional has no effect: an agent cannot set a positional over MCP
+in either case.
+
+## Example
+
+This triggers AG016:
+
+```bash
+login() {
+  local file
+  local -a args=(
+    # highlight-next-line
+    'file:@' "Credentials file"
+  )
+  :args "Log in" "${@}"
+}
+```
+
+## How to Fix
+
+Remove the `:@` modifier from the positional:
+
+```bash
+    'file' "Credentials file"
+```
+
+## How to Suppress
+
+```bash
+# argsh disable=AG016
+    'file:@' "Credentials file"
+```
+
+Or file-wide:
+
+```bash
+# argsh disable-file=AG016
+```

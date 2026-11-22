@@ -609,6 +609,13 @@ fn without_help_hidden(flags: &[FlagInfo]) -> Vec<FlagInfo> {
     flags.iter().filter(|f| !f.help_hidden).cloned().collect()
 }
 
+/// True if one of the refused (`:@`) flags of a tool is required: an agent
+/// cannot call the tool. No agent schema lists the tool, and MCP refuses a
+/// call of it.
+pub fn needs_refused_flag(refused: &[FlagInfo]) -> bool {
+    refused.iter().any(|f| f.required)
+}
+
 /// One `FlagInfo` for each flag entry of an args array, in their order, not
 /// merged. Not help, a positional or a group separator.
 fn flag_entries(args_arr: &[String]) -> Vec<FlagInfo> {
@@ -2445,5 +2452,79 @@ mod tests {
         );
         let append = "f () \n{ \n    args+=('a|a' 'A');\n}";
         assert_eq!(parse_shell_array_and_form(append, "args"), (words(&["a|a", "A"]), true));
+    }
+
+    // -- A required `:@` flag: the tool is not for agents --
+
+    #[test]
+    fn test_mcp_tool_with_a_hidden_required_flag_is_left_out() {
+        let args = words(&["token|k:~string@!", "The token", "name|n", "Name"]);
+        let all = agent_flags(&args);
+        let refused = mcp::refused_flags(&all);
+        assert!(needs_refused_flag(&refused));
+        let dir = std::env::temp_dir().join(format!("argsh-mcp-required-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut needs = agent_leaf(&dir, extract_flags_for_llm(&args));
+        needs.tool_name = "app_needs".to_string();
+        needs.refused = refused;
+        let plain = agent_leaf(&dir, extract_flags_for_llm(&agent_args()));
+        let leaves = [needs, plain];
+
+        // tools/list: the other tool only, and a valid list
+        let mut buf = Vec::new();
+        mcp::handle_tools_list_v2(&mut buf, &Some("1".to_string()), "App", &leaves);
+        let output = String::from_utf8(buf).unwrap();
+        assert!(!output.contains("app_needs"), "{}", output);
+        assert!(output.contains("\"name\":\"app_login\""), "{}", output);
+        assert!(output.contains("{\"tools\":[{"), "{}", output);
+
+        // tools/call: a fixed error, also with arguments, and no child
+        for arguments in ["{}", r#"{"name":"x"}"#, r#"{"token":"x"}"#] {
+            let mut buf = Vec::new();
+            let params = format!(r#"{{"name":"app_needs","arguments":{}}}"#, arguments);
+            mcp::handle_tools_call_v2(&mut buf, &Some("2".to_string()), &params, "/bin/sh", &leaves);
+            let output = String::from_utf8(buf).unwrap();
+            let ran = std::fs::read_to_string(dir.join("argv")).ok();
+            assert_refused(
+                arguments,
+                &output,
+                &ran,
+                -32602,
+                "\"message\":\"Tool needs a flag that is not available over MCP\"",
+            );
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+
+        // A `:@` flag that is not required: the tool stays.
+        assert!(!needs_refused_flag(&mcp::refused_flags(&agent_flags(&agent_args()))));
+    }
+
+    #[test]
+    fn test_docgen_llm_leaves_out_a_tool_with_a_hidden_required_flag() {
+        let funcs = FakeFunctions(vec![
+            declared("login", &["local -a args=('token|k:~string@!' 'The token')"]),
+            declared("logout", &["local -a args=('all|a:+' 'All sessions')"]),
+        ]);
+        let usage = words(&["login", "Log in", "logout", "Log out"]);
+        let tree = build_tree(&funcs, &usage, &[], Some("main"));
+        for provider in ["claude", "openai"] {
+            let mut out = Vec::new();
+            if provider == "claude" {
+                docgen::generate_llm_claude(&mut out, "app", "App", &usage, &[], &tree);
+            } else {
+                docgen::generate_llm_openai(&mut out, "app", "App", &usage, &[], &tree);
+            }
+            let text = String::from_utf8(out).unwrap();
+            assert!(!text.contains("app_login"), "{}: {}", provider, text);
+            assert!(text.contains("app_logout"), "{}: {}", provider, text);
+            assert!(serde_json::from_str::<serde_json::Value>(&text).is_ok(), "{}: {}", provider, text);
+        }
+        // A script without commands whose own flag is a required `:@` flag
+        let args = words(&["token|k:~string@!", "The token"]);
+        let mut out = Vec::new();
+        docgen::generate_llm_claude(&mut out, "app", "App", &[], &args, &[]);
+        let text = String::from_utf8(out).unwrap();
+        assert_eq!(serde_json::from_str::<serde_json::Value>(&text).unwrap(), serde_json::json!([]));
     }
 }
