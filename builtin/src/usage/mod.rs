@@ -877,16 +877,10 @@ pub(crate) fn build_tree<F: Functions>(
             Vec::new()
         } else {
             // Recurse with the merged flags, and put this node's name in
-            // front of each child path
-            build_tree(funcs, &sub_usage, &all, Some(&func_name))
-                .into_iter()
-                .map(|mut child| {
-                    let mut path = vec![name.to_string()];
-                    path.extend(child.full_path);
-                    child.full_path = path;
-                    child
-                })
-                .collect()
+            // front of the path of each node under it
+            let mut children = build_tree(funcs, &sub_usage, &all, Some(&func_name));
+            prefix_paths(&mut children, name);
+            children
         };
 
         nodes.push(CommandNode {
@@ -902,6 +896,15 @@ pub(crate) fn build_tree<F: Functions>(
     }
 
     nodes
+}
+
+/// Put `name` in front of the path of these nodes and of all the nodes under
+/// them.
+fn prefix_paths(nodes: &mut [CommandNode], name: &str) {
+    for node in nodes {
+        node.full_path.insert(0, name.to_string());
+        prefix_paths(&mut node.children, name);
+    }
 }
 
 /// Resolve a function name using the same resolution logic as :usage dispatch.
@@ -2400,6 +2403,19 @@ mod tests {
         let (output, ran) = node_tools_call("up-ok", up, r#"{"nodes":3,"verbose":true}"#);
         assert!(output.contains("\"text\":\"ran\""), "{}", output);
         assert_eq!(ran.as_deref(), Some("--nodes=3\n--verbose\n"));
+    }
+
+    #[test]
+    fn test_build_tree_gives_the_full_path_at_each_level() {
+        let funcs = FakeFunctions(vec![
+            declared("cluster", &["local -a usage=('node' 'Nodes' 'up' 'Start')"]),
+            declared("cluster::node", &["local -a usage=('add' 'Add a node')"]),
+            declared("cluster::node::add", &["local -a args=('count|c:~int' 'Count')"]),
+            declared("cluster::up", &["local -a args=('wait|w:+' 'Wait')"]),
+        ]);
+        let tree = build_tree(&funcs, &words(&["cluster", "Cluster"]), &[], Some("main"));
+        let paths: Vec<String> = flatten_leaves(&tree).iter().map(|leaf| leaf.full_path.join(" ")).collect();
+        assert_eq!(paths, vec!["cluster node add", "cluster up"]);
     }
 
     #[test]
