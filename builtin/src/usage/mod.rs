@@ -588,9 +588,11 @@ pub fn extract_flags(args_arr: &[String]) -> Vec<FlagInfo> {
 }
 
 /// The flags of an args array for the agent paths (MCP, `docgen llm`), in
-/// the order of the array and merged by `merge_flags`: every flag entry but
-/// help, also a `#` one (with `help_hidden` set). A `:@` flag stays in the
-/// list with `mcp_hidden` set: the MCP server refuses it by this list.
+/// the order of the array and merged by `merge_flags`: every flag entry,
+/// also `help` and a `#` one (with `help_hidden` set). A `:@` flag stays in
+/// the list with `mcp_hidden` set: the MCP server refuses it by this list,
+/// also an explicit `help|h:+@`. No schema lists `help`
+/// (`without_help_hidden`).
 pub fn agent_flags(args_arr: &[String]) -> Vec<FlagInfo> {
     merge_flags(flag_entries(args_arr))
 }
@@ -604,9 +606,10 @@ pub fn extract_flags_for_llm(args_arr: &[String]) -> Vec<FlagInfo> {
     without_help_hidden(&agent_flags(args_arr))
 }
 
-/// The flags of a list that `--help` shows (no `#` flag).
+/// The flags of a list that `--help` shows and that a schema can list: no
+/// `#` flag, and no `help` flag (the parser gives the help itself).
 fn without_help_hidden(flags: &[FlagInfo]) -> Vec<FlagInfo> {
-    flags.iter().filter(|f| !f.help_hidden).cloned().collect()
+    flags.iter().filter(|f| !f.help_hidden && f.name != "help").cloned().collect()
 }
 
 /// True if one of the refused (`:@`) flags of a tool is required: an agent
@@ -624,7 +627,7 @@ pub fn tool_unavailable(unresolved: bool, refused: &[FlagInfo]) -> bool {
 }
 
 /// One `FlagInfo` for each flag entry of an args array, in their order, not
-/// merged. Not help, a positional or a group separator.
+/// merged, also `help`. Not a positional or a group separator.
 fn flag_entries(args_arr: &[String]) -> Vec<FlagInfo> {
     let mut flags = Vec::new();
 
@@ -637,9 +640,6 @@ fn flag_entries(args_arr: &[String]) -> Vec<FlagInfo> {
         }
 
         if let Ok(def) = field::parse_field_spec(entry) {
-            if def.name == "help" {
-                continue;
-            }
             flags.push(FlagInfo {
                 name: def.display_name,
                 short: def.short,
@@ -667,8 +667,12 @@ fn var_key(flag: &FlagInfo) -> String {
 /// variable name. The flag is `:@` if any of its entries is (fail closed):
 /// `:usage` of a parent parses the flags of the parent also after the command
 /// name, so the parent's entry can apply although the child's entry wins.
+/// For the same reason, a required `:@` entry makes the flag required: a
+/// parser needs the flag, and an agent cannot send it (`needs_refused_flag`).
+/// The flag is `:@`, so no schema changes.
 fn absorb(kept: &mut FlagInfo, other: &FlagInfo) {
     kept.mcp_hidden |= other.mcp_hidden;
+    kept.required |= other.mcp_hidden && other.required;
     for name in &other.names {
         if !kept.names.contains(name) {
             kept.names.push(name.clone());
@@ -2629,6 +2633,109 @@ mod tests {
         let tree = login_tree(&root, &[r#"local -a args=('verbose|v:+' 'Verbose' "${args[@]:-}")"#]);
         assert_eq!(refused_names(&tree[0]), vec!["print-token"]);
         assert!(tree[0].flags.iter().all(|f| f.name != "print-token"));
+    }
+
+    #[test]
+    fn test_mcp_required_hidden_parent_flag_keeps_the_tool_out() {
+        // The root needs `--token`, a `:@` flag. An optional child entry of
+        // the same name wins at the child's parser, but `:usage` of the root
+        // still needs the flag: no agent can call the tool.
+        let funcs = FakeFunctions(vec![
+            declared("after", &[r#"local -a args=("${args[@]:-}" 'token|k:~string' 'Token')"#]),
+            declared("alone", &["local -a args=('token|k:~string' 'Token')"]),
+            declared("renamed", &["local -a args=('token|x:~string' 'Token')"]),
+            declared(
+                "cluster",
+                &[
+                    r#"local -a args=("${args[@]:-}" 'token|k:~string' 'Token')"#,
+                    "local -a usage=('up' 'Start')",
+                ],
+            ),
+            declared("cluster::up", &["local -a args=('token|u:~string' 'Token')"]),
+        ]);
+        let usage = words(&["after", "After", "alone", "Alone", "renamed", "Renamed", "cluster", "Cluster"]);
+        let root = agent_flags(&words(&["token|k:~string@!", "The token"]));
+        let tree = build_tree(&funcs, &usage, &root, Some("main"));
+        let leaves = flatten_leaves(&tree);
+        let paths: Vec<String> = leaves.iter().map(|leaf| leaf.full_path.join(" ")).collect();
+        assert_eq!(paths, vec!["after", "alone", "renamed", "cluster up"]);
+        for leaf in &leaves {
+            let token = leaf.refused.iter().find(|f| f.name == "token").expect("refused");
+            assert_eq!(token.desc, "Token", "the child entry wins: {:?}", leaf.full_path);
+            assert!(token.required, "{:?}", leaf.full_path);
+            assert!(tool_unavailable(leaf.unresolved, &leaf.refused), "{:?}", leaf.full_path);
+        }
+        let dir = std::env::temp_dir().join(format!("argsh-mcp-required-parent-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let tools: Vec<mcp::LeafTool> = leaves.iter().map(|leaf| tree_tool(&dir, leaf)).collect();
+        let mut buf = Vec::new();
+        mcp::handle_tools_list_v2(&mut buf, &Some("1".to_string()), "App", &tools);
+        assert!(listed_names(&String::from_utf8(buf).unwrap()).is_empty());
+        for tool in &tools {
+            let (output, ran) = tree_tools_call(&dir, &tools, &tool.tool_name, "{}");
+            assert_refused(&tool.tool_name, &output, &ran, -32602, "Tool is not available over MCP");
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+
+        // The same commands under an optional `:@` root flag stay for agents
+        let root = agent_flags(&words(&["token|k:~string@", "The token"]));
+        let tree = build_tree(&funcs, &usage, &root, Some("main"));
+        for leaf in flatten_leaves(&tree) {
+            assert!(!tool_unavailable(leaf.unresolved, &leaf.refused), "{:?}", leaf.full_path);
+        }
+    }
+
+    /// Send a tools/call with these arguments (JSON text) to the probe tool
+    /// of this args array: the schema flags and the refused flags of it.
+    fn args_tools_call(label: &str, args: &[String], arguments: &str) -> (String, Option<String>) {
+        let dir = std::env::temp_dir().join(format!("argsh-mcp-args-{}-{}", std::process::id(), label));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut leaf = agent_leaf(&dir, extract_flags_for_llm(args));
+        leaf.refused = mcp::refused_flags(&agent_flags(args));
+        let params = format!(r#"{{"name":"app_login","arguments":{}}}"#, arguments);
+        let mut buf = Vec::new();
+        mcp::handle_tools_call_v2(&mut buf, &Some("5".to_string()), &params, "/bin/sh", &[leaf]);
+        let ran = std::fs::read_to_string(dir.join("argv")).ok();
+        std::fs::remove_dir_all(&dir).unwrap();
+        (String::from_utf8(buf).unwrap(), ran)
+    }
+
+    #[test]
+    fn test_mcp_explicit_hidden_help_is_refused() {
+        let args = words(&["help|h|aide:+@", "Show the help", "name|n", "Name"]);
+        let refused = mcp::refused_flags(&agent_flags(&args));
+        assert_eq!(refused.iter().map(|f| f.name.as_str()).collect::<Vec<_>>(), vec!["help"]);
+        let flags = extract_flags_for_llm(&args);
+        assert!(flags.iter().all(|f| f.name != "help"));
+        let tool = mcp::format_tool("app_login", "Log in", &flags, &[]);
+        assert!(!tool.contains("help") && !tool.contains("aide"), "{}", tool);
+        for key in ["help", "h", "aide", "--help", "-h"] {
+            let (output, ran) = args_tools_call(&format!("help{}", key), &args, &format!(r#"{{"{}":true}}"#, key));
+            assert_refused(key, &output, &ran, -32602, &format!("Flag not available over MCP: {}", key));
+        }
+
+        // A required `help` with `:@`: the tool is not for agents
+        let args = words(&["help|h:+@!", "Show the help", "name|n", "Name"]);
+        let dir = std::env::temp_dir().join(format!("argsh-mcp-help-required-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut needs = agent_leaf(&dir, extract_flags_for_llm(&args));
+        needs.refused = mcp::refused_flags(&agent_flags(&args));
+        assert!(tool_unavailable(needs.unresolved, &needs.refused));
+        let mut buf = Vec::new();
+        mcp::handle_tools_list_v2(&mut buf, &Some("1".to_string()), "App", &[needs]);
+        assert!(listed_names(&String::from_utf8(buf).unwrap()).is_empty());
+        std::fs::remove_dir_all(&dir).unwrap();
+
+        // A `help` without `:@` is not refused and not in a schema (as
+        // before): a call with it runs, and the key is not sent.
+        let args = words(&["help|h:+", "Show the help", "name|n", "Name"]);
+        assert!(mcp::refused_flags(&agent_flags(&args)).is_empty());
+        let (output, ran) = args_tools_call("help-plain", &args, r#"{"help":true,"name":"x"}"#);
+        assert!(output.contains("\"text\":\"ran\""), "{}", output);
+        assert_eq!(ran.as_deref(), Some("--name=x\n"));
     }
 
     #[test]
