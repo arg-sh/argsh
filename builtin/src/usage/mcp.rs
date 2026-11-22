@@ -165,75 +165,97 @@ pub fn mcp_main(args: &[String]) -> i32 {
             Ok(l) => l,
             Err(_) => break, // coverage:off - io_error: stdin read errors don't occur in stdio MCP
         };
-        let line = line.trim().to_string();
-        if line.is_empty() {
+        // A line of JSON whitespace only holds no message
+        if line.bytes().all(|c| matches!(c, b' ' | b'\t' | b'\r' | b'\n')) {
             continue;
         }
-
-        let id = extract_json_field(&line, "id");
-        let method = extract_json_string(&line, "method");
-
-        match method.as_deref() {
-            Some("initialize") => {
-                handle_initialize(&mut writer, &id, &cmd_name);
-            }
-            Some("notifications/initialized") => {} // no-op, no response
-            Some("ping") => {
-                handle_ping(&mut writer, &id);
-            }
-            Some("tools/list") => {
-                handle_tools_list_v2(&mut writer, &id, title, &leaf_tools);
-            }
-            Some("tools/call") => {
-                // A call can start the script, so the strict reader reads the
-                // whole request (the other methods use the scanner).
-                match parse_json_strict(&line) {
-                    Ok(request) => {
-                        let params = match &request {
-                            Json::Object(members) => json_member(members, "params").cloned(),
-                            _ => None,
-                        }
-                        .unwrap_or(Json::Object(Vec::new()));
-                        handle_tools_call_json(
-                            &mut writer, &id, &params,
-                            &script_path, &leaf_tools,
-                        );
-                    }
-                    Err((code, message)) => write_jsonrpc_error(&mut writer, &id, code, &message),
-                }
-            }
-            Some("resources/list") => {
-                handle_resources_list(&mut writer, &id, &cmd_name);
-            }
-            Some("resources/read") => {
-                let params = extract_json_field(&line, "params").unwrap_or_default();
-                handle_resources_read(&mut writer, &id, &params, &cmd_name, title, &leaf_tools);
-            }
-            Some("prompts/list") => {
-                handle_prompts_list(&mut writer, &id);
-            }
-            Some("prompts/get") => {
-                let params = extract_json_field(&line, "params").unwrap_or_default();
-                handle_prompts_get(&mut writer, &id, &params, &cmd_name);
-            }
-            Some("logging/setLevel") => {
-                write_jsonrpc_response(&mut writer, &id, "{}");
-            }
-            Some(_) => {
-                // Unknown method
-                write_jsonrpc_error(&mut writer, &id, -32601, "Method not found");
-            }
-            None => {
-                // Notification without method or invalid message — ignore
-                if id.is_some() {
-                    write_jsonrpc_error(&mut writer, &id, -32600, "Invalid request");
-                }
-            }
-        }
+        dispatch(&mut writer, &line, &cmd_name, title, &script_path, &leaf_tools);
         let _ = writer.flush();
     }
 
     0
+}
+
+/// A JSON-RPC message as the strict reader reads it (`read_request`).
+pub(crate) struct Request {
+    /// The id as JSON text (a string, a number or null), or None when the
+    /// message has no id (a notification).
+    pub(crate) id: Option<String>,
+    /// The method, or None when the message has no method that is a string.
+    pub(crate) method: Option<String>,
+    /// The params, or an empty object when the message has none.
+    pub(crate) params: Json,
+}
+
+/// Read one JSON-RPC message (one line) with the strict reader. An error is
+/// a JSON-RPC code and its text, and its answer has the id null: -32700 when
+/// the text is not one JSON value, -32602 for a key that occurs twice in an
+/// object, -32600 when the message is not an object or its id is not a
+/// string, a number or null. A number id goes back in the form that the
+/// reader gives (`Json::Number`).
+pub(crate) fn read_request(line: &str) -> Result<Request, (i32, String)> {
+    let Json::Object(members) = parse_json_strict(line)? else {
+        return Err((-32600, "Invalid request: the message must be an object".to_string()));
+    };
+    let id = match json_member(&members, "id") {
+        None => None,
+        Some(Json::Null) => Some("null".to_string()),
+        Some(Json::Number(number)) => Some(number.clone()),
+        Some(Json::Str(text)) => Some(format!("\"{}\"", json_escape(text))),
+        Some(_) => {
+            return Err((-32600, "Invalid request: the id must be a string, a number or null".to_string()));
+        }
+    };
+    let method = match json_member(&members, "method") {
+        Some(Json::Str(method)) => Some(method.clone()),
+        _ => None,
+    };
+    let params = json_member(&members, "params").cloned().unwrap_or(Json::Object(Vec::new()));
+    Ok(Request { id, method, params })
+}
+
+/// Answer one JSON-RPC message (one line). The strict reader reads the whole
+/// message before any handler runs (`read_request`), and each method reads
+/// its fields from that parsed message.
+pub(crate) fn dispatch<W: Write>(
+    writer: &mut W,
+    line: &str,
+    cmd_name: &str,
+    title: &str,
+    script_path: &str,
+    leaf_tools: &[LeafTool],
+) {
+    let request = match read_request(line) {
+        Ok(request) => request,
+        Err((code, message)) => {
+            write_jsonrpc_error(writer, &None, code, &message);
+            return;
+        }
+    };
+    let id = &request.id;
+    match request.method.as_deref() {
+        Some("initialize") => handle_initialize(writer, id, cmd_name),
+        Some("notifications/initialized") => {} // no-op, no response
+        Some("ping") => handle_ping(writer, id),
+        Some("tools/list") => handle_tools_list_v2(writer, id, title, leaf_tools),
+        Some("tools/call") => {
+            handle_tools_call_json(writer, id, &request.params, script_path, leaf_tools)
+        }
+        Some("resources/list") => handle_resources_list(writer, id, cmd_name),
+        Some("resources/read") => {
+            handle_resources_read(writer, id, &request.params, cmd_name, title, leaf_tools)
+        }
+        Some("prompts/list") => handle_prompts_list(writer, id),
+        Some("prompts/get") => handle_prompts_get(writer, id, &request.params, cmd_name),
+        Some("logging/setLevel") => write_jsonrpc_response(writer, id, "{}"),
+        Some(_) => write_jsonrpc_error(writer, id, -32601, "Method not found"),
+        None => {
+            // Notification without method or invalid message: ignore
+            if id.is_some() {
+                write_jsonrpc_error(writer, id, -32600, "Invalid request");
+            }
+        }
+    }
 }
 
 // -- JSON-RPC helpers ---------------------------------------------------------
@@ -432,13 +454,12 @@ pub(crate) fn handle_resources_list<W: Write>(writer: &mut W, id: &Option<String
 pub(crate) fn handle_resources_read<W: Write>(
     writer: &mut W,
     id: &Option<String>,
-    params: &str,
+    params: &Json,
     cmd_name: &str,
     title: &str,
     leaf_tools: &[LeafTool],
 ) {
-    let uri = extract_json_string(params, "uri");
-    match uri.as_deref() {
+    match json_str(params, "uri") {
         Some("script:///help") => {
             let first_line = title.lines().next().unwrap_or(title).trim();
             let mut help = format!("{}\n\nAvailable commands:\n", first_line);
@@ -488,18 +509,18 @@ pub(crate) fn handle_prompts_list<W: Write>(writer: &mut W, id: &Option<String>)
 }
 
 /// Handle `prompts/get` request.
-pub(crate) fn handle_prompts_get<W: Write>(writer: &mut W, id: &Option<String>, params: &str, cmd_name: &str) {
-    let name = extract_json_string(params, "name");
-    let args_obj = extract_json_field(params, "arguments").unwrap_or_default();
+pub(crate) fn handle_prompts_get<W: Write>(writer: &mut W, id: &Option<String>, params: &Json, cmd_name: &str) {
+    let no_arguments = Json::Object(Vec::new());
+    let args_obj = json_field(params, "arguments").unwrap_or(&no_arguments);
 
-    match name.as_deref() {
+    match json_str(params, "name") {
         Some("run_subcommand") => {
-            let subcmd = extract_json_string(&args_obj, "subcommand").unwrap_or_default();
+            let subcmd = json_str(args_obj, "subcommand").unwrap_or_default();
             if subcmd.is_empty() {
                 write_jsonrpc_error(writer, id, -32602, "Missing required argument: subcommand");
                 return;
             }
-            let extra = extract_json_string(&args_obj, "args").unwrap_or_default();
+            let extra = json_str(args_obj, "args").unwrap_or_default();
             let content = if extra.is_empty() {
                 format!("Run the '{}' subcommand of {}", subcmd, cmd_name)
             } else {
@@ -512,7 +533,7 @@ pub(crate) fn handle_prompts_get<W: Write>(writer: &mut W, id: &Option<String>, 
             write_jsonrpc_response(writer, id, &result);
         }
         Some("get_help") => {
-            let subcmd = extract_json_string(&args_obj, "subcommand").unwrap_or_default();
+            let subcmd = json_str(args_obj, "subcommand").unwrap_or_default();
             let content = if subcmd.is_empty() {
                 format!("Show the full help output for {}", cmd_name)
             } else {
@@ -627,8 +648,9 @@ pub(crate) fn tool_argv(
     Ok(argv)
 }
 
-/// Handle `tools/call` request (v2 — tree-aware, per-leaf flags and full command paths).
-/// `params` is the JSON text of the params: the strict reader reads it.
+/// Handle the params text of a `tools/call` (for the tests: `dispatch` gives
+/// `handle_tools_call_json` the parsed params). The strict reader reads it.
+#[cfg(test)]
 pub(crate) fn handle_tools_call_v2<W: Write>(
     writer: &mut W,
     id: &Option<String>,
@@ -847,13 +869,12 @@ pub fn is_likely_valid_json(s: &str) -> bool {
     stack.is_empty() && !in_string && !expect_value && root_closed_at == Some(bytes.len() - 1)
 }
 
-// -- Strict JSON reader for tools/call ----------------------------------------
+// -- Strict JSON reader -------------------------------------------------------
 //
-// A `tools/call` can start the script, so its request is read with serde_json
-// (all of RFC 8259: the four whitespace characters between tokens, every
-// string escape, the number grammar, no text after the value). The `Json`
-// type keeps the members of an object in their order and refuses a key that
-// occurs twice in any object.
+// Each message is read with serde_json (all of RFC 8259: the four whitespace
+// characters between tokens, every string escape, the number grammar, no
+// text after the value). The `Json` type keeps the members of an object in
+// their order and refuses a key that occurs twice in any object.
 
 /// A JSON value as the strict reader gives it.
 #[derive(Debug, Clone, PartialEq)]
@@ -872,6 +893,22 @@ pub enum Json {
 /// The value of the member `key` of an object.
 pub(crate) fn json_member<'a>(members: &'a [(String, Json)], key: &str) -> Option<&'a Json> {
     members.iter().find(|(k, _)| k == key).map(|(_, v)| v)
+}
+
+/// The member `key` of a JSON value, if the value is an object with it.
+fn json_field<'a>(value: &'a Json, key: &str) -> Option<&'a Json> {
+    match value {
+        Json::Object(members) => json_member(members, key),
+        _ => None,
+    }
+}
+
+/// The string member `key` of a JSON value, if it has one.
+fn json_str<'a>(value: &'a Json, key: &str) -> Option<&'a str> {
+    match json_field(value, key) {
+        Some(Json::Str(text)) => Some(text),
+        _ => None,
+    }
 }
 
 impl<'de> serde::Deserialize<'de> for Json {
@@ -946,203 +983,6 @@ pub fn parse_json_strict(text: &str) -> Result<Json, (i32, String)> {
         serde_json::error::Category::Data => (-32602, format!("Invalid params: {}", e)),
         _ => (-32700, format!("Parse error: {}", e)),
     })
-}
-
-// -- Minimal JSON scanner -----------------------------------------------------
-//
-// The methods that start no script (initialize, resources, prompts) read
-// their fields with this scanner. `tools/call` uses the strict reader above.
-
-/// Extract a raw JSON field value (as a string) from a JSON object.
-/// Returns the raw JSON fragment for the given key.
-/// Only matches keys at the top level of the object (depth 1) to avoid
-/// false positives from nested objects with the same key name.
-pub(crate) fn extract_json_field(json: &str, key: &str) -> Option<String> {
-    let needle = format!("\"{}\"", key);
-    let needle_bytes = needle.as_bytes();
-    let bytes = json.as_bytes();
-    let len = bytes.len();
-    let needle_len = needle_bytes.len();
-
-    let mut in_string = false;
-    let mut escape = false;
-    let mut depth: i32 = 0;
-    let mut i = 0;
-
-    while i < len {
-        let c = bytes[i];
-
-        if in_string {
-            if escape {
-                escape = false;
-            } else if c == b'\\' {
-                escape = true;
-            } else if c == b'"' {
-                in_string = false;
-            }
-            i += 1;
-            continue;
-        }
-
-        match c {
-            b'"' => {
-                // At depth 1, check if this is our key
-                if depth == 1 && i + needle_len <= len && json[i..i + needle_len] == *needle {
-                    let after_key = &json[i + needle_len..];
-                    let after_colon = after_key.trim_start();
-                    if let Some(rest) = after_colon.strip_prefix(':') {
-                        let value_start = rest.trim_start();
-                        return extract_value_at(value_start);
-                    }
-                }
-                in_string = true;
-            }
-            b'{' | b'[' => { depth += 1; }
-            b'}' | b']' => {
-                depth -= 1;
-                if depth <= 0 { return None; }
-            }
-            _ => {}
-        }
-
-        i += 1;
-    }
-
-    None
-}
-
-/// Extract a JSON value starting at the given position.
-fn extract_value_at(value_start: &str) -> Option<String> {
-    if value_start.starts_with('"') {
-        let end = find_string_end(value_start)?;
-        Some(value_start[..end + 1].to_string())
-    } else if value_start.starts_with('{') {
-        let end = find_matching_brace(value_start, '{', '}')?;
-        Some(value_start[..end + 1].to_string())
-    } else if value_start.starts_with('[') {
-        let end = find_matching_brace(value_start, '[', ']')?; // coverage:off - json_defensive: MCP protocol doesn't use array fields
-        Some(value_start[..end + 1].to_string()) // coverage:off
-    } else {
-        let end = value_start.find([',', '}', ']', '\n'])
-            .unwrap_or(value_start.len());
-        let raw = value_start[..end].trim();
-        if raw.is_empty() {
-            None // coverage:off - json_defensive: empty value after colon not possible with valid JSON
-        } else {
-            Some(raw.to_string())
-        }
-    }
-}
-
-/// Extract a JSON string field (unquoted).
-pub(crate) fn extract_json_string(json: &str, key: &str) -> Option<String> {
-    let raw = extract_json_field(json, key)?;
-    if raw.starts_with('"') && raw.ends_with('"') && raw.len() >= 2 {
-        Some(unescape_json_string(&raw[1..raw.len() - 1]))
-    } else {
-        None // coverage:off - json_defensive: extract_json_string only called on string fields
-    }
-}
-
-/// Find the end of a JSON string (position of closing quote).
-fn find_string_end(s: &str) -> Option<usize> {
-    if !s.starts_with('"') { // coverage:off - json_defensive: only called on string-starting positions
-        return None; // coverage:off
-    } // coverage:off
-    let mut i = 1;
-    let bytes = s.as_bytes();
-    while i < bytes.len() {
-        if bytes[i] == b'\\' { // coverage:off - json_string: MCP protocol values don't contain escape sequences
-            i += 2; // coverage:off
-            continue; // coverage:off
-        } // coverage:off
-        if bytes[i] == b'"' {
-            return Some(i);
-        }
-        i += 1;
-    }
-    None // coverage:off - json_defensive: unterminated string in well-formed JSON
-}
-
-/// Find the matching closing brace/bracket.
-fn find_matching_brace(s: &str, open: char, close: char) -> Option<usize> {
-    let mut depth = 0;
-    let mut in_string = false;
-    let mut prev_backslash = false;
-
-    for (i, c) in s.char_indices() {
-        if in_string { // coverage:off - json_brace: string tracking in nested objects; MCP params are shallow
-            if c == '\\' && !prev_backslash { // coverage:off
-                prev_backslash = true; // coverage:off
-                continue; // coverage:off
-            } // coverage:off
-            if c == '"' && !prev_backslash { // coverage:off
-                in_string = false; // coverage:off
-            } // coverage:off
-            prev_backslash = false; // coverage:off
-            continue; // coverage:off
-        }
-        if c == '"' {
-            in_string = true;
-            continue;
-        }
-        if c == open {
-            depth += 1;
-        } else if c == close {
-            depth -= 1;
-            if depth == 0 {
-                return Some(i);
-            }
-        }
-    }
-    None // coverage:off - json_defensive: unmatched brace in well-formed JSON
-}
-
-/// Unescape a JSON string (handles \\, \", \n, \r, \t, \/, \uXXXX).
-fn unescape_json_string(s: &str) -> String {
-    let mut result = String::with_capacity(s.len());
-    let mut chars = s.chars();
-    while let Some(c) = chars.next() {
-        if c == '\\' {
-            match chars.next() {
-                Some('"') => result.push('"'),
-                Some('\\') => result.push('\\'),
-                Some('n') => result.push('\n'), // coverage:off - json_escape: MCP field values don't contain literal \n
-                Some('r') => result.push('\r'), // coverage:off - json_escape: MCP field values don't contain literal \r
-                Some('t') => result.push('\t'), // coverage:off - json_escape: MCP field values don't contain literal \t
-                Some('/') => result.push('/'), // coverage:off - json_escape: MCP field values don't contain \/
-                Some('b') => result.push('\u{0008}'), // coverage:off - json_escape: backspace
-                Some('f') => result.push('\u{000C}'), // coverage:off - json_escape: form feed
-                Some('u') => { // coverage:off - json_escape: unicode escapes
-                    let hex: String = chars.by_ref().take(4).collect(); // coverage:off
-                    if hex.len() == 4 { // coverage:off
-                        if let Ok(code) = u32::from_str_radix(&hex, 16) { // coverage:off
-                            if let Some(ch) = char::from_u32(code) { // coverage:off
-                                result.push(ch); // coverage:off
-                            } else { // coverage:off
-                                result.push_str("\\u"); // coverage:off
-                                result.push_str(&hex); // coverage:off
-                            } // coverage:off
-                        } else { // coverage:off
-                            result.push_str("\\u"); // coverage:off
-                            result.push_str(&hex); // coverage:off
-                        } // coverage:off
-                    } else { // coverage:off
-                        result.push_str("\\u"); // coverage:off
-                        result.push_str(&hex); // coverage:off
-                    } // coverage:off
-                } // coverage:off
-                Some(other) => { // coverage:off - json_escape: unknown escape sequence defensive check
-                    result.push('\\'); // coverage:off
-                    result.push(other); // coverage:off
-                } // coverage:off
-                None => result.push('\\'), // coverage:off - trailing backslash edge case
-            }
-        } else {
-            result.push(c);
-        }
-    }
-    result
 }
 
 // Unit tests for MCP pure functions live in mod.rs::tests to avoid linker

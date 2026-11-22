@@ -1783,7 +1783,7 @@ mod tests {
         let mut buf = Vec::new();
         let id = Some("1".to_string());
         let params = r#"{"name":"run_subcommand","arguments":{"subcommand":"serve","args":"--port 8080"}}"#;
-        mcp::handle_prompts_get(&mut buf, &id, params, "myapp");
+        mcp::handle_prompts_get(&mut buf, &id, &json(params), "myapp");
         let output = String::from_utf8(buf).unwrap();
         assert!(output.contains("Run the 'serve' subcommand of myapp"));
         assert!(output.contains("With arguments: --port 8080"));
@@ -1794,7 +1794,7 @@ mod tests {
         let mut buf = Vec::new();
         let id = Some("1".to_string());
         let params = r#"{"name":"get_help","arguments":{}}"#;
-        mcp::handle_prompts_get(&mut buf, &id, params, "myapp");
+        mcp::handle_prompts_get(&mut buf, &id, &json(params), "myapp");
         let output = String::from_utf8(buf).unwrap();
         assert!(output.contains("Show the full help output for myapp"));
     }
@@ -1804,7 +1804,7 @@ mod tests {
         let mut buf = Vec::new();
         let id = Some("1".to_string());
         let params = r#"{"name":"get_help","arguments":{"subcommand":"serve"}}"#;
-        mcp::handle_prompts_get(&mut buf, &id, params, "myapp");
+        mcp::handle_prompts_get(&mut buf, &id, &json(params), "myapp");
         let output = String::from_utf8(buf).unwrap();
         assert!(output.contains("Show help for the 'serve' subcommand of myapp"));
     }
@@ -1814,7 +1814,7 @@ mod tests {
         let mut buf = Vec::new();
         let id = Some("1".to_string());
         let params = r#"{"name":"nonexistent","arguments":{}}"#;
-        mcp::handle_prompts_get(&mut buf, &id, params, "myapp");
+        mcp::handle_prompts_get(&mut buf, &id, &json(params), "myapp");
         let output = String::from_utf8(buf).unwrap();
         assert!(output.contains("Unknown prompt"));
     }
@@ -1942,41 +1942,124 @@ mod tests {
         let mut buf = Vec::new();
         let id = Some("1".to_string());
         let params = r#"{"name":"run_subcommand","arguments":{}}"#;
-        mcp::handle_prompts_get(&mut buf, &id, params, "myapp");
+        mcp::handle_prompts_get(&mut buf, &id, &json(params), "myapp");
         let output = String::from_utf8(buf).unwrap();
         assert!(output.contains("-32602"));
         assert!(output.contains("Missing required argument: subcommand"));
     }
 
-    #[test]
-    fn test_mcp_extract_json_field_nested() {
-        let json = r#"{"jsonrpc":"2.0","method":"prompts/get","params":{"name":"get_help","arguments":{"subcommand":"serve"}}}"#;
-        let params = mcp::extract_json_field(json, "params").unwrap();
-        assert!(params.contains("\"name\":\"get_help\""));
-        let name = mcp::extract_json_string(&params, "name").unwrap();
-        assert_eq!(name, "get_help");
-        let args = mcp::extract_json_field(&params, "arguments").unwrap();
-        let subcmd = mcp::extract_json_string(&args, "subcommand").unwrap();
-        assert_eq!(subcmd, "serve");
+    /// The parsed JSON of a test text.
+    fn json(text: &str) -> mcp::Json {
+        mcp::parse_json_strict(text).expect(text)
+    }
+
+    /// Send these lines to `mcp::dispatch` with the probe tool of
+    /// `agent_args`. Returns the answers and the argv of the child, or None
+    /// when no child ran.
+    fn dispatch_lines(label: &str, lines: &[&str]) -> (Vec<String>, Option<String>) {
+        let dir =
+            std::env::temp_dir().join(format!("argsh-mcp-dispatch-{}-{}", std::process::id(), label));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let tools = vec![agent_leaf(&dir, extract_flags_for_llm(&agent_args()))];
+        let mut buf = Vec::new();
+        for line in lines {
+            mcp::dispatch(&mut buf, line, "app", "App", "/bin/sh", &tools);
+        }
+        let ran = std::fs::read_to_string(dir.join("argv")).ok();
+        std::fs::remove_dir_all(&dir).unwrap();
+        (String::from_utf8(buf).unwrap().lines().map(str::to_string).collect(), ran)
     }
 
     #[test]
-    fn test_mcp_scanner_reads_all_json_whitespace() {
-        // The dispatch reads "method" and "id" with the scanner, also for a
-        // tools/call. JSON whitespace before and after the colon is valid.
-        for ws in [" ", "\t", "\r", "\n", " \r\n\t "] {
-            let json = format!(
-                "{{\"jsonrpc\":\"2.0\",\"id\"{ws}:{ws}5{ws},\"method\"{ws}:{ws}\"tools/call\"{ws}}}",
-                ws = ws
-            );
-            assert_eq!(
-                mcp::extract_json_string(&json, "method").as_deref(),
-                Some("tools/call"),
-                "{:?}",
-                json
-            );
-            assert_eq!(mcp::extract_json_field(&json, "id").as_deref(), Some("5"), "{:?}", json);
+    fn test_mcp_dispatch_reads_the_whole_message() {
+        // A member with a non-ASCII key before "id", and escaped keys: a
+        // normal answer (the strict reader decodes each key).
+        let (answers, _) = dispatch_lines(
+            "keys",
+            &[
+                r#"{"😀":0,"id":1,"method":"ping"}"#,
+                r#"{"\ud83d\ude00":0,"id":1,"method":"ping"}"#,
+                r#"{"id":2,"\u006dethod":"ping"}"#,
+                r#"{"\u0069d":3,"method":"ping"}"#,
+            ],
+        );
+        assert_eq!(
+            answers,
+            vec![
+                r#"{"jsonrpc":"2.0","id":1,"result":{}}"#,
+                r#"{"jsonrpc":"2.0","id":1,"result":{}}"#,
+                r#"{"jsonrpc":"2.0","id":2,"result":{}}"#,
+                r#"{"jsonrpc":"2.0","id":3,"result":{}}"#,
+            ]
+        );
+        // A string, a number or null goes back as the id
+        for (id, want) in [(r#""a\"b""#, r#""a\"b""#), ("7", "7"), ("-1.5", "-1.5"), ("null", "null")] {
+            let (answers, _) = dispatch_lines("id", &[&format!(r#"{{"id":{},"method":"ping"}}"#, id)]);
+            assert_eq!(answers, vec![format!(r#"{{"jsonrpc":"2.0","id":{},"result":{{}}}}"#, want)], "{}", id);
         }
+        // An id of another type: an invalid request with the id null, and
+        // no child starts
+        for id in ["{}", "[1]", "true"] {
+            let line = format!(
+                r#"{{"id":{},"method":"tools/call","params":{{"name":"app_login","arguments":{{}}}}}}"#,
+                id
+            );
+            let (answers, ran) = dispatch_lines("bad-id", &[&line]);
+            assert_eq!(answers.len(), 1, "{}", id);
+            assert!(
+                answers[0].starts_with(r#"{"jsonrpc":"2.0","id":null,"error":{"code":-32600,"#),
+                "{}: {}",
+                id,
+                answers[0]
+            );
+            assert_eq!(ran, None, "{}", id);
+        }
+        // A message that the strict reader refuses: an error with the id
+        // null before any handler, also for a call
+        for (line, code) in [
+            (r#"{"id":4,"method":"ping""#, -32700),
+            (r#"{"id":4,"method":"ping"} x"#, -32700),
+            ("\u{feff}{\"id\":4,\"method\":\"ping\"}", -32700),
+            ("\u{a0}{\"id\":4,\"method\":\"ping\"}", -32700),
+            (r#"{"id":4,"method":"tools/call","method":"ping","params":{"name":"app_login"}}"#, -32602),
+            (r#"{"id":4,"method":"tools/call","params":{"name":"app_login","arguments":{"t":true,"t":1}}}"#, -32602),
+            (r#"[{"id":4,"method":"ping"}]"#, -32600),
+        ] {
+            let (answers, ran) = dispatch_lines("refused", &[line]);
+            assert_eq!(answers.len(), 1, "{}", line);
+            let start = format!(r#"{{"jsonrpc":"2.0","id":null,"error":{{"code":{},"#, code);
+            assert!(answers[0].starts_with(&start), "{}: {}", line, answers[0]);
+            assert_eq!(ran, None, "{}", line);
+        }
+        // A method that is not a string: an invalid request, and no answer
+        // without an id
+        let (answers, _) = dispatch_lines("method", &[r#"{"id":5,"method":7}"#, r#"{"method":7}"#]);
+        assert_eq!(answers, vec![r#"{"jsonrpc":"2.0","id":5,"error":{"code":-32600,"message":"Invalid request"}}"#]);
+        // A call with a non-ASCII member before "id" runs, and a call with
+        // escaped keys gets the checks of its arguments
+        let (answers, ran) = dispatch_lines(
+            "call",
+            &[r#"{"😀":0,"id":6,"method":"tools/call","params":{"name":"app_login","arguments":{"name":"x"}}}"#],
+        );
+        assert!(answers[0].starts_with(r#"{"jsonrpc":"2.0","id":6,"result":"#), "{}", answers[0]);
+        assert_eq!(ran.as_deref(), Some("--name=x\n"));
+        let (answers, ran) = dispatch_lines(
+            "call-hidden",
+            &[r#"{"id":7,"\u006dethod":"tools/call","params":{"name":"app_login","arguments":{"\u0074":true}}}"#],
+        );
+        assert!(answers[0].contains("Flag not available over MCP: t"), "{}", answers[0]);
+        assert_eq!(ran, None);
+        // The other methods read their params from the same message
+        let (answers, _) = dispatch_lines(
+            "params",
+            &[
+                r#"{"id":8,"method":"resources/read","params":{"\u0075ri":"script:///help"}}"#,
+                r#"{"id":9,"method":"prompts/get","params":{"name":"get_help","arguments":{"subcommand":"login"}}}"#,
+            ],
+        );
+        assert!(answers[0].contains("Available commands:"), "{}", answers[0]);
+        assert!(answers[1].contains("Show help for the 'login' subcommand of app"), "{}", answers[1]);
     }
 
     #[test]
@@ -2005,7 +2088,7 @@ mod tests {
         ];
         mcp::handle_resources_read(
             &mut buf, &id,
-            r#"{"uri":"script:///help"}"#,
+            &json(r#"{"uri":"script:///help"}"#),
             "app", "My app", &tools,
         );
         let output = String::from_utf8(buf).unwrap();
@@ -2021,7 +2104,7 @@ mod tests {
         let tools = vec![];
         mcp::handle_resources_read(
             &mut buf, &id,
-            r#"{"uri":"script:///version"}"#,
+            &json(r#"{"uri":"script:///version"}"#),
             "app", "My app", &tools,
         );
         let output = String::from_utf8(buf).unwrap();
@@ -2036,7 +2119,7 @@ mod tests {
         let tools = vec![];
         mcp::handle_resources_read(
             &mut buf, &id,
-            r#"{"uri":"script:///nonexistent"}"#,
+            &json(r#"{"uri":"script:///nonexistent"}"#),
             "app", "My app", &tools,
         );
         let output = String::from_utf8(buf).unwrap();
@@ -2909,7 +2992,7 @@ mod tests {
         mcp::handle_resources_read(
             &mut buf,
             &Some("4".to_string()),
-            r#"{"uri":"script:///help"}"#,
+            &json(r#"{"uri":"script:///help"}"#),
             "app",
             "App",
             tools,
