@@ -1795,6 +1795,25 @@ mod tests {
     }
 
     #[test]
+    fn test_mcp_scanner_reads_all_json_whitespace() {
+        // The dispatch reads "method" and "id" with the scanner, also for a
+        // tools/call. JSON whitespace before and after the colon is valid.
+        for ws in [" ", "\t", "\r", "\n", " \r\n\t "] {
+            let json = format!(
+                "{{\"jsonrpc\":\"2.0\",\"id\"{ws}:{ws}5{ws},\"method\"{ws}:{ws}\"tools/call\"{ws}}}",
+                ws = ws
+            );
+            assert_eq!(
+                mcp::extract_json_string(&json, "method").as_deref(),
+                Some("tools/call"),
+                "{:?}",
+                json
+            );
+            assert_eq!(mcp::extract_json_field(&json, "id").as_deref(), Some("5"), "{:?}", json);
+        }
+    }
+
+    #[test]
     fn test_mcp_resources_read_help() {
         let mut buf = Vec::new();
         let id = Some("1".to_string());
