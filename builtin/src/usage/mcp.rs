@@ -129,6 +129,7 @@ pub fn mcp_main(args: &[String]) -> i32 {
             tool_name: sanitize_tool_name(&cmd_name),
             full_path: Vec::new(),
             desc: title.lines().next().unwrap_or(title).trim().to_string(),
+            refused: refused_flags(&top_flags),
             flags: top_flags,
             annotations: Vec::new(),
         }]
@@ -142,6 +143,7 @@ pub fn mcp_main(args: &[String]) -> i32 {
                 full_path: leaf.full_path.clone(),
                 desc: leaf.desc.clone(),
                 flags: leaf.flags.clone(),
+                refused: refused_flags(&leaf.flags),
                 annotations: leaf.annotations.clone(),
             }
         }).collect()
@@ -178,11 +180,22 @@ pub fn mcp_main(args: &[String]) -> i32 {
                 handle_tools_list_v2(&mut writer, &id, title, &leaf_tools);
             }
             Some("tools/call") => {
-                let params = extract_json_field(&line, "params").unwrap_or_default();
-                handle_tools_call_v2(
-                    &mut writer, &id, &params,
-                    &script_path, &leaf_tools,
-                );
+                // A call can start the script, so the strict reader reads the
+                // whole request (the other methods use the scanner).
+                match parse_json_strict(&line) {
+                    Ok(request) => {
+                        let params = match &request {
+                            Json::Object(members) => json_member(members, "params").cloned(),
+                            _ => None,
+                        }
+                        .unwrap_or(Json::Object(Vec::new()));
+                        handle_tools_call_json(
+                            &mut writer, &id, &params,
+                            &script_path, &leaf_tools,
+                        );
+                    }
+                    Err((code, message)) => write_jsonrpc_error(&mut writer, &id, code, &message),
+                }
             }
             Some("resources/list") => {
                 handle_resources_list(&mut writer, &id, &cmd_name);
@@ -259,8 +272,17 @@ pub(crate) struct LeafTool {
     pub(crate) tool_name: String,
     pub(crate) full_path: Vec<String>,
     pub(crate) desc: String,
+    /// The flags of the schema (`format_tool` leaves out the `:@` ones).
     pub(crate) flags: Vec<FlagInfo>,
+    /// The flags that a call must not send: the `:@` flags. A call that
+    /// names one of them by any name gets an error, and no script starts.
+    pub(crate) refused: Vec<FlagInfo>,
     pub(crate) annotations: Vec<String>,
+}
+
+/// The `:@` flags of a flag list: the flags that MCP refuses.
+pub(crate) fn refused_flags(flags: &[FlagInfo]) -> Vec<FlagInfo> {
+    flags.iter().filter(|f| f.mcp_hidden).cloned().collect()
 }
 
 /// Handle `tools/list` request (v2 — tree-aware, per-leaf flags).
@@ -523,7 +545,78 @@ pub(crate) fn mcp_hidden_flag<'a>(key: &str, flags: &'a [FlagInfo]) -> Option<&'
     })
 }
 
+/// The text of the refusal of a `:@` flag. It names the key as the call sent it.
+fn refusal(key: &str) -> String {
+    format!("Flag not available over MCP: {}", key)
+}
+
+/// The tool name and the arguments of the params of a `tools/call`. An error
+/// is a JSON-RPC code and its text.
+pub(crate) fn tools_call_request(
+    params: &Json,
+) -> Result<(String, Vec<(String, Json)>), (i32, String)> {
+    let Json::Object(members) = params else {
+        return Err((-32602, "Params must be an object".to_string()));
+    };
+    let name = match json_member(members, "name") {
+        Some(Json::Str(name)) => name.clone(),
+        _ => return Err((-32602, "Missing tool name".to_string())),
+    };
+    let arguments = match json_member(members, "arguments") {
+        None => Vec::new(),
+        Some(Json::Object(arguments)) => arguments.clone(),
+        Some(_) => return Err((-32602, "Arguments must be an object".to_string())),
+    };
+    Ok((name, arguments))
+}
+
+/// The argv of a `tools/call`: the command path, then one element for each
+/// argument that names a visible flag by its long name.
+///
+/// - A boolean flag takes a JSON boolean only: `true` gives `--name`, and
+///   `false` gives nothing.
+/// - A value flag takes a JSON string or number only, as ONE element
+///   `--name=value`. Both parsers read the value after the first `=` of that
+///   element and never read it as a flag (`shared::parse_flag_at`, and
+///   `:args::parse_flag` with `:args::field_set_flag` in `args.sh`). So a
+///   value cannot become an option, also when a parent command parses the
+///   element first (`:usage` reads the flags of the parent after the command).
+/// - An argument that names a `:@` flag (by any name, see `mcp_hidden_flag`)
+///   is an error. The call refuses it before this function too: this is the
+///   second guard.
+/// - An argument with another name is ignored (an agent can send a name that
+///   is not in the schema).
+pub(crate) fn tool_argv(
+    full_path: &[String],
+    arguments: &[(String, Json)],
+    flags: &[FlagInfo],
+    refused: &[FlagInfo],
+) -> Result<Vec<String>, String> {
+    let mut argv = full_path.to_vec();
+    for (key, value) in arguments {
+        if mcp_hidden_flag(key, refused).is_some() {
+            return Err(refusal(key));
+        }
+        let Some(flag) = flags.iter().find(|f| f.name == *key && !f.mcp_hidden) else {
+            continue; // Unknown arg — ignore (lenient for LLM hallucinations)
+        };
+        match (flag.is_boolean, value) {
+            (true, Json::Bool(true)) => argv.push(format!("--{}", flag.name)),
+            (true, Json::Bool(false)) => {}
+            (true, _) => return Err(format!("Flag --{} takes a boolean", key)),
+            (false, Json::Str(s)) if s.contains('\0') => {
+                return Err(format!("Flag --{}: the value has a NUL character", key));
+            }
+            (false, Json::Str(s)) => argv.push(format!("--{}={}", flag.name, s)),
+            (false, Json::Number(n)) => argv.push(format!("--{}={}", flag.name, n)),
+            (false, _) => return Err(format!("Flag --{} takes a string or a number", key)),
+        }
+    }
+    Ok(argv)
+}
+
 /// Handle `tools/call` request (v2 — tree-aware, per-leaf flags and full command paths).
+/// `params` is the JSON text of the params: the strict reader reads it.
 pub(crate) fn handle_tools_call_v2<W: Write>(
     writer: &mut W,
     id: &Option<String>,
@@ -531,68 +624,53 @@ pub(crate) fn handle_tools_call_v2<W: Write>(
     script_path: &str,
     leaf_tools: &[LeafTool],
 ) {
-    // Extract tool name and arguments from params
-    let tool_name = match extract_json_string(params, "name") {
-        Some(n) => n,
-        None => {
-            write_jsonrpc_error(writer, id, -32602, "Missing tool name");
+    match parse_json_strict(params) {
+        Ok(params) => handle_tools_call_json(writer, id, &params, script_path, leaf_tools),
+        Err((code, message)) => write_jsonrpc_error(writer, id, code, &message),
+    }
+}
+
+/// Handle the params of a `tools/call`. The script starts only when the
+/// request, the tool and each argument are valid.
+pub(crate) fn handle_tools_call_json<W: Write>(
+    writer: &mut W,
+    id: &Option<String>,
+    params: &Json,
+    script_path: &str,
+    leaf_tools: &[LeafTool],
+) {
+    let (tool_name, arguments) = match tools_call_request(params) {
+        Ok(request) => request,
+        Err((code, message)) => {
+            write_jsonrpc_error(writer, id, code, &message);
             return;
         }
     };
 
     // Find matching leaf tool
-    let leaf = leaf_tools.iter().find(|t| t.tool_name == tool_name);
-    let leaf = match leaf {
-        Some(l) => l,
-        None => {
-            write_jsonrpc_error(writer, id, -32602, &format!("Unknown tool: {}", tool_name));
-            return;
-        }
+    let Some(leaf) = leaf_tools.iter().find(|t| t.tool_name == tool_name) else {
+        write_jsonrpc_error(writer, id, -32602, &format!("Unknown tool: {}", tool_name));
+        return;
     };
-
-    // Parse arguments
-    let args_json = extract_json_field(params, "arguments").unwrap_or_default();
-    let arg_pairs = parse_flat_json_object(&args_json);
 
     // A `:@` flag is not in the schema. Refuse a call that sends one, before
     // any child starts: never drop it in silence.
-    if let Some(flag) = arg_pairs
+    if let Some((key, _)) = arguments
         .iter()
-        .find_map(|(key, _)| mcp_hidden_flag(key, &leaf.flags))
+        .find(|(key, _)| mcp_hidden_flag(key, &leaf.refused).is_some())
     {
-        write_jsonrpc_error(
-            writer,
-            id,
-            -32602,
-            &format!("Flag not available over MCP: --{}", flag.name),
-        );
+        write_jsonrpc_error(writer, id, -32602, &refusal(key));
         return;
     }
 
-    // Build CLI args — prepend all path segments then flags
-    let mut cli_args: Vec<String> = leaf.full_path.clone();
-    for (key, value) in &arg_pairs {
-        let flag = leaf.flags.iter().find(|f| f.name == *key && !f.mcp_hidden);
-        if flag.is_none() {
-            continue; // Unknown arg — ignore (lenient for LLM hallucinations)
+    // Build CLI args — all path segments, then the flags
+    let cli_args = match tool_argv(&leaf.full_path, &arguments, &leaf.flags, &leaf.refused) {
+        Ok(argv) => argv,
+        Err(message) => {
+            write_jsonrpc_error(writer, id, -32602, &message);
+            return;
         }
-        match value {
-            JsonValue::Bool(true) => {
-                cli_args.push(format!("--{}", key));
-            }
-            JsonValue::Bool(false) | JsonValue::Null => {
-                // Omit
-            }
-            JsonValue::Str(s) => {
-                cli_args.push(format!("--{}", key));
-                cli_args.push(s.clone());
-            }
-            JsonValue::Number(n) => {
-                cli_args.push(format!("--{}", key));
-                cli_args.push(n.clone());
-            }
-        }
-    }
+    };
 
     // Execute
     let (exit_code, stdout_text, stderr_text) = execute_tool(script_path, &cli_args);
@@ -645,122 +723,6 @@ pub(crate) fn handle_tools_call_v2<W: Write>(
         )
     };
     write_jsonrpc_response(writer, id, &result);
-}
-
-/// Handle `tools/call` request (legacy — kept for backward compatibility).
-#[allow(dead_code)]
-fn handle_tools_call<W: Write>(
-    writer: &mut W,
-    id: &Option<String>,
-    params: &str,
-    script_path: &str,
-    cmd_name: &str,
-    subcmds: &[SubCmd],
-    flags: &[FlagInfo],
-) {
-    // Extract tool name and arguments from params
-    let tool_name = match extract_json_string(params, "name") {
-        Some(n) => n,
-        None => {
-            write_jsonrpc_error(writer, id, -32602, "Missing tool name");
-            return;
-        }
-    };
-
-    // Resolve tool name → subcommand
-    let subcommand = resolve_tool(&tool_name, cmd_name, subcmds);
-    if subcommand.is_none() && !subcmds.is_empty() {
-        write_jsonrpc_error(writer, id, -32602, &format!("Unknown tool: {}", tool_name));
-        return;
-    }
-
-    // Parse arguments
-    let args_json = extract_json_field(params, "arguments").unwrap_or_default();
-    let arg_pairs = parse_flat_json_object(&args_json);
-
-    // Build CLI args
-    let cli_args = build_cli_args(subcommand.as_deref(), &arg_pairs, flags);
-
-    // Execute
-    let (exit_code, stdout_text, stderr_text) = execute_tool(script_path, &cli_args);
-
-    // Format response
-    let is_error = exit_code != 0;
-    let text = if is_error && !stderr_text.is_empty() { // coverage:off - error_path: test fixtures always succeed
-        format!("{}\n{}", stdout_text, stderr_text) // coverage:off
-    } else {
-        stdout_text
-    };
-    let text = text.trim_end_matches('\n');
-
-    let result = format!(
-        "{{\"content\":[{{\"type\":\"text\",\"text\":\"{}\"}}],\"isError\":{}}}",
-        json_escape(text),
-        is_error
-    );
-    write_jsonrpc_response(writer, id, &result);
-}
-
-/// Resolve a tool name to a subcommand name.
-fn resolve_tool(tool_name: &str, cmd_name: &str, subcmds: &[SubCmd]) -> Option<String> {
-    if subcmds.is_empty() { // coverage:off - tools_call: no-subcommand scripts not tested via fixture
-        // No-subcommands script — tool name should match the script itself // coverage:off
-        if tool_name == sanitize_tool_name(cmd_name) { // coverage:off
-            return Some(String::new()); // coverage:off
-        } // coverage:off
-        return None; // coverage:off
-    } // coverage:off
-    for cmd in subcmds {
-        let expected = sanitize_tool_name(&format!("{}_{}", cmd_name, cmd.name));
-        if tool_name == expected {
-            return Some(cmd.name.clone());
-        }
-    }
-    None
-}
-
-/// Build CLI arguments from JSON key-value pairs.
-fn build_cli_args(
-    subcommand: Option<&str>,
-    arg_pairs: &[(String, JsonValue)],
-    flags: &[FlagInfo],
-) -> Vec<String> {
-    let mut args = Vec::new();
-
-    // Prepend subcommand if present
-    if let Some(sub) = subcommand {
-        if !sub.is_empty() {
-            args.push(sub.to_string());
-        }
-    }
-
-    for (key, value) in arg_pairs {
-        // Find matching flag
-        let flag = flags.iter().find(|f| f.name == *key);
-        let _flag = match flag {
-            Some(f) => f,
-            None => continue, // Unknown arg — ignore (lenient for LLM hallucinations)
-        };
-
-        match value {
-            JsonValue::Bool(true) => {
-                args.push(format!("--{}", key));
-            }
-            JsonValue::Bool(false) | JsonValue::Null => {
-                // Omit
-            }
-            JsonValue::Str(s) => {
-                args.push(format!("--{}", key));
-                args.push(s.clone());
-            }
-            JsonValue::Number(n) => {
-                args.push(format!("--{}", key));
-                args.push(n.clone());
-            }
-        }
-    }
-
-    args
 }
 
 /// Execute a tool by spawning the script as a subprocess.
@@ -865,19 +827,111 @@ pub fn is_likely_valid_json(s: &str) -> bool {
     stack.is_empty() && !in_string && !expect_value && root_closed_at == Some(bytes.len() - 1)
 }
 
-// -- Minimal JSON parsing -----------------------------------------------------
+// -- Strict JSON reader for tools/call ----------------------------------------
 //
-// CLI flags are always flat key-value pairs (no nesting, no arrays).
-// This parser handles: strings, numbers, booleans, null.
+// A `tools/call` can start the script, so its request is read with serde_json
+// (all of RFC 8259: the four whitespace characters between tokens, every
+// string escape, the number grammar, no text after the value). The `Json`
+// type keeps the members of an object in their order and refuses a key that
+// occurs twice in any object.
 
-/// JSON value types for flat objects.
-#[derive(Debug)]
-pub enum JsonValue {
-    Str(String),
-    Number(String),
-    Bool(bool),
+/// A JSON value as the strict reader gives it.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Json {
     Null,
+    Bool(bool),
+    /// The number in its decimal form (serde_json reads it as an i64, a u64
+    /// or an f64).
+    Number(String),
+    Str(String),
+    Array(Vec<Json>),
+    /// The members in their order. No key occurs twice.
+    Object(Vec<(String, Json)>),
 }
+
+/// The value of the member `key` of an object.
+pub(crate) fn json_member<'a>(members: &'a [(String, Json)], key: &str) -> Option<&'a Json> {
+    members.iter().find(|(k, _)| k == key).map(|(_, v)| v)
+}
+
+impl<'de> serde::Deserialize<'de> for Json {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        deserializer.deserialize_any(JsonVisitor)
+    }
+}
+
+struct JsonVisitor;
+
+impl<'de> serde::de::Visitor<'de> for JsonVisitor {
+    type Value = Json;
+
+    fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str("a JSON value")
+    }
+
+    fn visit_unit<E>(self) -> Result<Json, E> {
+        Ok(Json::Null)
+    }
+
+    fn visit_bool<E>(self, b: bool) -> Result<Json, E> {
+        Ok(Json::Bool(b))
+    }
+
+    fn visit_i64<E>(self, n: i64) -> Result<Json, E> {
+        Ok(Json::Number(n.to_string()))
+    }
+
+    fn visit_u64<E>(self, n: u64) -> Result<Json, E> {
+        Ok(Json::Number(n.to_string()))
+    }
+
+    fn visit_f64<E>(self, n: f64) -> Result<Json, E> {
+        Ok(Json::Number(n.to_string()))
+    }
+
+    fn visit_str<E>(self, s: &str) -> Result<Json, E> {
+        Ok(Json::Str(s.to_owned()))
+    }
+
+    fn visit_string<E>(self, s: String) -> Result<Json, E> {
+        Ok(Json::Str(s))
+    }
+
+    fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut seq: A) -> Result<Json, A::Error> {
+        let mut items = Vec::new();
+        while let Some(item) = seq.next_element()? {
+            items.push(item);
+        }
+        Ok(Json::Array(items))
+    }
+
+    fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<Json, A::Error> {
+        let mut members: Vec<(String, Json)> = Vec::new();
+        while let Some(key) = map.next_key::<String>()? {
+            if members.iter().any(|(k, _)| *k == key) {
+                return Err(serde::de::Error::custom(format!("duplicate key: {}", key)));
+            }
+            let value = map.next_value()?;
+            members.push((key, value));
+        }
+        Ok(Json::Object(members))
+    }
+}
+
+/// Read a JSON text that holds exactly one value. An error is a JSON-RPC code
+/// and its text: -32700 when the text is not JSON, -32602 for a key that
+/// occurs twice in an object.
+pub fn parse_json_strict(text: &str) -> Result<Json, (i32, String)> {
+    serde_json::from_str::<Json>(text).map_err(|e| match e.classify() {
+        serde_json::error::Category::Data => (-32602, format!("Invalid params: {}", e)),
+        _ => (-32700, format!("Parse error: {}", e)),
+    })
+}
+
+// -- Minimal JSON scanner -----------------------------------------------------
+//
+// The methods that start no script (initialize, resources, prompts) read
+// their fields with this scanner. `tools/call` uses the strict reader above.
 
 /// Extract a raw JSON field value (as a string) from a JSON object.
 /// Returns the raw JSON fragment for the given key.
@@ -1069,107 +1123,6 @@ fn unescape_json_string(s: &str) -> String {
         }
     }
     result
-}
-
-/// Parse a flat JSON object into key-value pairs.
-pub fn parse_flat_json_object(json: &str) -> Vec<(String, JsonValue)> {
-    let mut pairs = Vec::new();
-    let trimmed = json.trim();
-    if !trimmed.starts_with('{') || !trimmed.ends_with('}') {
-        return pairs;
-    }
-    let inner = &trimmed[1..trimmed.len() - 1];
-
-    let mut pos = 0;
-    let bytes = inner.as_bytes();
-
-    while pos < bytes.len() {
-        // Skip whitespace and commas
-        while pos < bytes.len() && (bytes[pos] == b' ' || bytes[pos] == b',' || bytes[pos] == b'\n' || bytes[pos] == b'\r' || bytes[pos] == b'\t') {
-            pos += 1;
-        }
-        if pos >= bytes.len() {
-            break;
-        }
-
-        // Expect opening quote for key
-        if bytes[pos] != b'"' { // coverage:off - json_defensive: valid JSON objects have quoted keys
-            break; // coverage:off
-        } // coverage:off
-        let key_start = pos;
-        let key_end = match find_string_end(&inner[key_start..]) {
-            Some(end) => key_start + end,
-            None => break, // coverage:off - json_defensive: unterminated key string
-        };
-        let key = unescape_json_string(&inner[key_start + 1..key_end]);
-        pos = key_end + 1;
-
-        // Skip whitespace and colon
-        while pos < bytes.len() && (bytes[pos] == b' ' || bytes[pos] == b'\t') {
-            pos += 1;
-        }
-        if pos >= bytes.len() || bytes[pos] != b':' { // coverage:off - json_defensive: valid JSON has colon between key and value
-            break; // coverage:off
-        } // coverage:off
-        pos += 1;
-        while pos < bytes.len() && (bytes[pos] == b' ' || bytes[pos] == b'\t') {
-            pos += 1;
-        }
-
-        // Parse value
-        if pos >= bytes.len() { // coverage:off - json_defensive: value always follows colon
-            break; // coverage:off
-        } // coverage:off
-
-        let (value, new_pos) = parse_json_value(&inner[pos..]);
-        pos += new_pos;
-
-        pairs.push((key, value));
-    }
-
-    pairs
-}
-
-/// Parse a single JSON value, returning the value and number of bytes consumed
-/// (relative to the original input, including any leading whitespace).
-fn parse_json_value(s: &str) -> (JsonValue, usize) {
-    let original_len = s.len();
-    let trimmed = s.trim_start();
-    let offset = original_len - trimmed.len();
-
-    if trimmed.starts_with('"') {
-        // String
-        if let Some(end) = find_string_end(trimmed) {
-            let val = unescape_json_string(&trimmed[1..end]);
-            return (JsonValue::Str(val), offset + end + 1);
-        } // coverage:off - json_defensive: find_string_end always succeeds for quoted values
-    } else if trimmed.starts_with("true") {
-        return (JsonValue::Bool(true), offset + 4);
-    } else if trimmed.starts_with("false") {
-        return (JsonValue::Bool(false), offset + 5);
-    } else if trimmed.starts_with("null") {
-        return (JsonValue::Null, offset + 4);
-    } else if trimmed.starts_with('{') { // coverage:off - json_defensive: nested objects not used in MCP argument values
-        // Nested object — skip over it // coverage:off
-        if let Some(end) = find_matching_brace(trimmed, '{', '}') { // coverage:off
-            return (JsonValue::Str(trimmed[..end + 1].to_string()), offset + end + 1); // coverage:off
-        } // coverage:off
-    } else if trimmed.starts_with('[') { // coverage:off - json_defensive: arrays not used in MCP argument values
-        // Array — skip over it // coverage:off
-        if let Some(end) = find_matching_brace(trimmed, '[', ']') { // coverage:off
-            return (JsonValue::Str(trimmed[..end + 1].to_string()), offset + end + 1); // coverage:off
-        } // coverage:off
-    } else {
-        // Number or other literal
-        let end = trimmed.find(|c: char| c == ',' || c == '}' || c == ']' || c.is_whitespace())
-            .unwrap_or(trimmed.len());
-        let raw = &trimmed[..end];
-        if !raw.is_empty() {
-            return (JsonValue::Number(raw.to_string()), offset + end);
-        }
-    }
-
-    (JsonValue::Null, offset + 1) // coverage:off - json_defensive: fallback for malformed JSON
 }
 
 // Unit tests for MCP pure functions live in mod.rs::tests to avoid linker

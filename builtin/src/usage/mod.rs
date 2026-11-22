@@ -1033,13 +1033,22 @@ impl Clone for FlagInfo {
 
 // -- Shared JSON/LLM helpers --------------------------------------------------
 
-/// Escape a string for JSON string output.
+/// Escape a string for JSON string output. Every control character gets an
+/// escape: an MCP error can echo a key that a caller sent.
 pub fn json_escape(s: &str) -> String {
-    s.replace('\\', "\\\\")
-        .replace('"', "\\\"")
-        .replace('\n', "\\n")
-        .replace('\r', "\\r")
-        .replace('\t', "\\t")
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out
 }
 
 /// Map argsh type names to JSON Schema types.
@@ -1521,6 +1530,7 @@ mod tests {
                 full_path: vec!["serve".to_string()],
                 desc: "Start the server".to_string(),
                 flags: Vec::new(),
+                refused: Vec::new(),
                 annotations: vec!["readonly".to_string()],
             },
             mcp::LeafTool {
@@ -1528,6 +1538,7 @@ mod tests {
                 full_path: vec!["status".to_string()],
                 desc: "Get status".to_string(),
                 flags: Vec::new(),
+                refused: Vec::new(),
                 annotations: vec!["json".to_string()],
             },
         ];
@@ -1638,6 +1649,7 @@ mod tests {
                 full_path: vec!["serve".to_string()],
                 desc: "Start server".to_string(),
                 flags: vec![],
+                refused: Vec::new(),
                 annotations: vec![],
             },
             mcp::LeafTool {
@@ -1645,6 +1657,7 @@ mod tests {
                 full_path: vec!["build".to_string()],
                 desc: "Build project".to_string(),
                 flags: vec![],
+                refused: Vec::new(),
                 annotations: vec![],
             },
         ];
@@ -1691,43 +1704,68 @@ mod tests {
 
     // -- The `:@` modifier: a flag that agents do not get --
 
-    /// A command with a `:@` flag (with a short name and an alias) and a normal flag.
+    /// A command with a `:@` flag (with a short name and an alias), a value
+    /// flag and a boolean flag.
     fn agent_args() -> Vec<String> {
         [
             "print-token|t|show-token:+@",
             "Print the access token",
             "name|n",
             "Name to log in as",
+            "verbose|v:+",
+            "Verbose output",
         ]
         .iter()
         .map(|s| s.to_string())
         .collect()
     }
 
-    /// Send a tools/call to a tool whose "script" is `/bin/sh -c <probe>`. The
-    /// probe writes its argv to `<dir>/argv` and prints "ran", so the test can
-    /// see if a child started. Returns the JSON-RPC output and the argv of the
-    /// child, or None when no child ran.
-    fn agent_tools_call(label: &str, arguments: &str) -> (String, Option<String>) {
+    /// The tool of `agent_tools_call`: its "script" is `/bin/sh -c <probe>`.
+    /// The probe writes its argv to `<dir>/argv` and prints "ran", so a test
+    /// can see if a child started.
+    fn agent_leaf(dir: &std::path::Path, flags: Vec<FlagInfo>) -> mcp::LeafTool {
+        let probe = format!(
+            "printf '%s\\n' \"$@\" > '{}'; echo ran",
+            dir.join("argv").display()
+        );
+        mcp::LeafTool {
+            tool_name: "app_login".to_string(),
+            full_path: vec!["-c".to_string(), probe, "probe".to_string()],
+            desc: "Log in".to_string(),
+            refused: mcp::refused_flags(&flags),
+            flags,
+            annotations: vec![],
+        }
+    }
+
+    /// Send a tools/call with these params (JSON text) to the probe tool.
+    /// Returns the JSON-RPC output and the argv of the child, or None when no
+    /// child ran.
+    fn agent_tools_call_params(label: &str, params: &str) -> (String, Option<String>) {
         let dir =
             std::env::temp_dir().join(format!("argsh-mcp-hidden-{}-{}", std::process::id(), label));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let argv = dir.join("argv");
-        let probe = format!("printf '%s\\n' \"$@\" > '{}'; echo ran", argv.display());
-        let leaf = vec![mcp::LeafTool {
-            tool_name: "app_login".to_string(),
-            full_path: vec!["-c".to_string(), probe, "probe".to_string()],
-            desc: "Log in".to_string(),
-            flags: extract_flags_for_llm(&agent_args()),
-            annotations: vec![],
-        }];
-        let params = format!(r#"{{"name":"app_login","arguments":{}}}"#, arguments);
+        let leaf = vec![agent_leaf(&dir, extract_flags_for_llm(&agent_args()))];
         let mut buf = Vec::new();
-        mcp::handle_tools_call_v2(&mut buf, &Some("7".to_string()), &params, "/bin/sh", &leaf);
-        let ran = std::fs::read_to_string(&argv).ok();
+        mcp::handle_tools_call_v2(&mut buf, &Some("7".to_string()), params, "/bin/sh", &leaf);
+        let ran = std::fs::read_to_string(dir.join("argv")).ok();
         std::fs::remove_dir_all(&dir).unwrap();
         (String::from_utf8(buf).unwrap(), ran)
+    }
+
+    /// Send a tools/call with these arguments (JSON text) to the probe tool.
+    fn agent_tools_call(label: &str, arguments: &str) -> (String, Option<String>) {
+        let params = format!(r#"{{"name":"app_login","arguments":{}}}"#, arguments);
+        agent_tools_call_params(label, &params)
+    }
+
+    /// Assert a JSON-RPC error with this code and text, and that no child ran.
+    fn assert_refused(what: &str, output: &str, ran: &Option<String>, code: i32, text: &str) {
+        assert!(output.contains(&format!("\"code\":{}", code)), "{}: {}", what, output);
+        assert!(output.contains(text), "{}: {}", what, output);
+        assert!(!output.contains("\"result\""), "{}: {}", what, output);
+        assert_eq!(*ran, None, "{}: a child ran", what);
     }
 
     #[test]
@@ -1779,6 +1817,7 @@ mod tests {
             tool_name: "app_login".to_string(),
             full_path: vec!["login".to_string()],
             desc: "Log in".to_string(),
+            refused: mcp::refused_flags(&flags),
             flags,
             annotations: vec![],
         }];
@@ -1822,14 +1861,13 @@ mod tests {
     #[test]
     fn test_mcp_tools_call_refuses_a_hidden_flag_by_long_name() {
         let (output, ran) = agent_tools_call("long", r#"{"print-token":true}"#);
-        assert!(output.contains("-32602"), "{}", output);
-        assert!(
-            output.contains("Flag not available over MCP: --print-token"),
-            "{}",
-            output
+        assert_refused(
+            "long name",
+            &output,
+            &ran,
+            -32602,
+            "\"message\":\"Flag not available over MCP: print-token\"",
         );
-        assert!(!output.contains("\"result\""), "{}", output);
-        assert_eq!(ran, None, "a child ran");
     }
 
     #[test]
@@ -1839,42 +1877,213 @@ mod tests {
             ("short-mixed", r#"{"name":"x","t":true}"#),
         ] {
             let (output, ran) = agent_tools_call(label, arguments);
-            assert!(
-                output.contains("Flag not available over MCP: --print-token"),
-                "{}: {}",
+            assert_refused(
                 arguments,
-                output
+                &output,
+                &ran,
+                -32602,
+                "\"message\":\"Flag not available over MCP: t\"",
             );
-            assert_eq!(ran, None, "{}: a child ran", arguments);
         }
     }
 
     #[test]
     fn test_mcp_tools_call_refuses_a_hidden_flag_by_alias_or_dashes() {
-        for (label, arguments) in [
-            ("alias", r#"{"show-token":true}"#),
-            ("long-dashes", r#"{"--print-token":true}"#),
-            ("short-dash", r#"{"-t":true}"#),
-            ("short-inline", r#"{"-tx":true}"#),
-            ("value", r#"{"print-token=1":true}"#),
-            ("variable", r#"{"print_token":true}"#),
+        // The refusal names the key as the call sent it.
+        for (label, arguments, key) in [
+            ("alias", r#"{"show-token":true}"#, "show-token"),
+            ("long-dashes", r#"{"--print-token":true}"#, "--print-token"),
+            ("short-dash", r#"{"-t":true}"#, "-t"),
+            ("short-inline", r#"{"-tx":true}"#, "-tx"),
+            ("value", r#"{"print-token=1":true}"#, "print-token=1"),
+            ("variable", r#"{"print_token":true}"#, "print_token"),
+            ("dashed-alias-value", r#"{"--show-token=yes":"1"}"#, "--show-token=yes"),
         ] {
             let (output, ran) = agent_tools_call(label, arguments);
-            assert!(
-                output.contains("Flag not available over MCP: --print-token"),
-                "{}: {}",
+            assert_refused(
                 arguments,
-                output
+                &output,
+                &ran,
+                -32602,
+                &format!("\"message\":\"Flag not available over MCP: {}\"", key),
             );
-            assert_eq!(ran, None, "{}: a child ran", arguments);
         }
     }
 
     #[test]
     fn test_mcp_tools_call_runs_without_the_hidden_flag() {
-        let (output, ran) = agent_tools_call("normal", r#"{"name":"x"}"#);
+        let (output, ran) = agent_tools_call("normal", r#"{"name":"x","verbose":true}"#);
         assert!(output.contains("\"text\":\"ran\""), "{}", output);
         assert!(output.contains("\"isError\":false"), "{}", output);
-        assert_eq!(ran.as_deref(), Some("--name\nx\n"));
+        // A value is one element `--name=value`.
+        assert_eq!(ran.as_deref(), Some("--name=x\n--verbose\n"));
+    }
+
+    #[test]
+    fn test_mcp_tools_call_refuses_a_string_for_a_boolean_flag() {
+        // A string for a boolean would be one more argv element: the parser
+        // reads it as the next flag, so `--print-token` would run.
+        for (label, arguments) in [
+            ("bool-string", r#"{"verbose":"--print-token"}"#),
+            ("bool-short-string", r#"{"verbose":"-t"}"#),
+            ("bool-number", r#"{"verbose":1}"#),
+            ("bool-null", r#"{"verbose":null}"#),
+            ("bool-object", r#"{"verbose":{"a":true}}"#),
+            ("bool-array", r#"{"verbose":[true]}"#),
+        ] {
+            let (output, ran) = agent_tools_call(label, arguments);
+            assert_refused(
+                arguments,
+                &output,
+                &ran,
+                -32602,
+                "\"message\":\"Flag --verbose takes a boolean\"",
+            );
+        }
+    }
+
+    #[test]
+    fn test_mcp_tools_call_refuses_a_boolean_for_a_value_flag() {
+        for (label, arguments) in [
+            ("value-true", r#"{"name":true}"#),
+            ("value-false", r#"{"name":false}"#),
+            ("value-null", r#"{"name":null}"#),
+            ("value-object", r#"{"name":{"a":"b"}}"#),
+            ("value-array", r#"{"name":["--print-token"]}"#),
+        ] {
+            let (output, ran) = agent_tools_call(label, arguments);
+            assert_refused(
+                arguments,
+                &output,
+                &ran,
+                -32602,
+                "\"message\":\"Flag --name takes a string or a number\"",
+            );
+        }
+    }
+
+    #[test]
+    fn test_mcp_tools_call_refuses_a_duplicate_key() {
+        let (output, ran) = agent_tools_call("dup-args", r#"{"name":"x","name":"--print-token"}"#);
+        assert_refused("arguments", &output, &ran, -32602, "duplicate key: name");
+        let (output, ran) = agent_tools_call_params(
+            "dup-params",
+            r#"{"name":"app_login","arguments":{},"arguments":{"t":true}}"#,
+        );
+        assert_refused("params", &output, &ran, -32602, "duplicate key: arguments");
+        let (output, ran) = agent_tools_call("dup-nested", r#"{"name":{"a":1,"a":2}}"#);
+        assert_refused("nested", &output, &ran, -32602, "duplicate key: a");
+    }
+
+    #[test]
+    fn test_mcp_tools_call_reads_all_json_whitespace() {
+        // A newline or a CR before the colon: the call is refused, it does
+        // not run without the check.
+        for (label, arguments, key) in [
+            ("lf-colon", "{\"print-token\"\n:true}", "print-token"),
+            ("cr-colon", "{\"print-token\"\r:true}", "print-token"),
+            ("ws-comma", "{\"name\":\"x\"\r\n,\t\"t\"\n:\ttrue}", "t"),
+        ] {
+            let (output, ran) = agent_tools_call(label, arguments);
+            assert_refused(
+                label,
+                &output,
+                &ran,
+                -32602,
+                &format!("\"message\":\"Flag not available over MCP: {}\"", key),
+            );
+        }
+        let (output, ran) =
+            agent_tools_call("ws-ok", "{\n\"name\"\r:\t\"x\"\n,\"verbose\" : true\r\n}");
+        assert!(output.contains("\"text\":\"ran\""), "{}", output);
+        assert_eq!(ran.as_deref(), Some("--name=x\n--verbose\n"));
+    }
+
+    #[test]
+    fn test_mcp_tools_call_refuses_a_request_it_cannot_read() {
+        for (label, params, code, text) in [
+            ("unterminated", r#"{"name":"app_login","arguments":{"name":"x"}"#, -32700, "Parse error"),
+            ("trailing", r#"{"name":"app_login","arguments":{}} {"#, -32700, "Parse error"),
+            ("bad-escape", r#"{"name":"app_login","arguments":{"name":"\q"}}"#, -32700, "Parse error"),
+            ("lone-surrogate", r#"{"name":"app_login","arguments":{"name":"\ud800"}}"#, -32700, "Parse error"),
+            ("not-object", r#"["app_login"]"#, -32602, "Params must be an object"),
+            ("args-array", r#"{"name":"app_login","arguments":[{"t":true}]}"#, -32602, "Arguments must be an object"),
+            ("name-number", r#"{"name":7,"arguments":{}}"#, -32602, "Missing tool name"),
+        ] {
+            let (output, ran) = agent_tools_call_params(label, params);
+            assert_refused(label, &output, &ran, code, text);
+        }
+    }
+
+    #[test]
+    fn test_mcp_tool_argv_alone() {
+        let flags = extract_flags_for_llm(&agent_args());
+        let refused = mcp::refused_flags(&flags);
+        let path = vec!["login".to_string()];
+        let s = |v: &str| mcp::Json::Str(v.to_string());
+        let n = |v: &str| mcp::Json::Number(v.to_string());
+        let arg = |k: &str, v: mcp::Json| (k.to_string(), v);
+
+        // A value that looks like a flag stays the value of its flag.
+        let argv = mcp::tool_argv(
+            &path,
+            &[
+                arg("verbose", mcp::Json::Bool(true)),
+                arg("name", s("--print-token")),
+            ],
+            &flags,
+            &refused,
+        );
+        assert_eq!(argv, Ok(vec!["login".into(), "--verbose".into(), "--name=--print-token".into()]));
+        // A number, `false`, and a key that no flag has
+        let argv = mcp::tool_argv(
+            &path,
+            &[
+                arg("name", n("-5")),
+                arg("verbose", mcp::Json::Bool(false)),
+                arg("other", s("x")),
+            ],
+            &flags,
+            &refused,
+        );
+        assert_eq!(argv, Ok(vec!["login".into(), "--name=-5".into()]));
+        // The second guard: a `:@` flag is an error here too, by any name.
+        for key in ["print-token", "t", "show-token", "--print-token", "print_token"] {
+            let argv = mcp::tool_argv(
+                &path,
+                &[arg("name", s("x")), arg(key, mcp::Json::Bool(true))],
+                &flags,
+                &refused,
+            );
+            assert_eq!(argv, Err(format!("Flag not available over MCP: {}", key)), "{}", key);
+        }
+        // A NUL cannot go into an argv element.
+        let argv = mcp::tool_argv(&path, &[arg("name", s("a\0b"))], &flags, &refused);
+        assert_eq!(argv, Err("Flag --name: the value has a NUL character".to_string()));
+    }
+
+    #[test]
+    fn test_mcp_parse_json_strict() {
+        use mcp::Json;
+        assert_eq!(
+            mcp::parse_json_strict(r#" {"a":1.5,"b":-3,"c":10,"d":1.0,"e":"\ud83d\ude00\n"} "#),
+            Ok(Json::Object(vec![
+                ("a".into(), Json::Number("1.5".into())),
+                ("b".into(), Json::Number("-3".into())),
+                ("c".into(), Json::Number("10".into())),
+                ("d".into(), Json::Number("1".into())),
+                ("e".into(), Json::Str("\u{1f600}\n".into())),
+            ]))
+        );
+        assert_eq!(mcp::parse_json_strict("[]"), Ok(Json::Array(vec![])));
+        assert_eq!(mcp::parse_json_strict("01").map_err(|e| e.0), Err(-32700));
+        assert_eq!(mcp::parse_json_strict(r#"{"a":1,}"#).map_err(|e| e.0), Err(-32700));
+        assert_eq!(mcp::parse_json_strict(r#"{"a":1,"a":1}"#).map_err(|e| e.0), Err(-32602));
+    }
+
+    #[test]
+    fn test_mcp_json_escape_control_characters() {
+        assert_eq!(json_escape("a\u{1}b\u{1f}c"), "a\\u0001b\\u001fc");
+        assert_eq!(json_escape("q\"\\\n\r\t"), "q\\\"\\\\\\n\\r\\t");
     }
 }
