@@ -285,17 +285,25 @@ The MCP server applies these rules:
 
 - **Inheritance.** A child command gets the flags of its parent (see [`:^`](/development/fundamentals/command-line-parser)). `:usage` of the parent also reads the parent's flags after the command name. Thus a flag is `:@` for a command if any entry of that name is `:@`: in the command, in its parent or higher up.
 - **`#` flags.** A `#` flag is not in `--help` and not in a schema. With `:@`, a call that sends it by name is refused too.
-- **Required flags.** A tool with a required `:@` flag (`:@` with `!`) cannot get that flag from an agent. `tools/list` and `docgen llm` leave the tool out, and a `tools/call` of it gets `-32602` with the text `Tool needs a flag that is not available over MCP`.
+- **`help`.** No schema lists `help`. An explicit `help` entry with `:@` (for example `help|h:+@`) is refused by each of its names.
+- **Required flags.** A tool with a required `:@` flag (`:@` with `!`, also in an entry of the same name in a parent) cannot get that flag from an agent. `tools/list`, `docgen llm` and the `script:///help` resource leave the tool out, and a `tools/call` of it gets `-32602` with the text `Tool is not available over MCP`. The script does not start.
+- **Arrays that the server can read.** The server reads the `args` and `usage` arrays of each command from the text of its function (as `declare -f` prints it). It knows a command only when that text sets each array one time, and each word is literal:
+  - the statement is `local -a args=(...)` or `args=(...)` (a `local -a args` with no value can come before it), or `args+=(...)` with no `local` of `args` (then the words come after the entries of the parent);
+  - each word is quoted text or plain characters, with no `$`, backquote, glob, brace or tilde character. The one exception is `"${args[@]}"` (or `"${args[@]:-}"`): the place of the entries of the parent.
+
+  Any other use of the word `args` (or `usage`) in the function makes the command unresolved, also in a string: a second assignment, `args+=` after an assignment, `args[0]=...`, `readarray`, `mapfile`, `read -a`, `unset`, `eval`, `declare` and so on. An unresolved command and all the commands under it are not for agents: the server treats them as a tool with a required `:@` flag.
 
 ### What `:@` does not do
 
 - The name of the flag is not secret. `--help`, the other `docgen` formats and the shell completion show it.
 - `docgen llm` writes a schema only. A program that reads the schema and runs the script itself does not refuse a `:@` flag: only the MCP server of argsh refuses it.
 - The stdout and stderr of the script go to the agent as they are. A command that an agent can call must not print a secret.
+- The server does not read the text of other functions. A function that the command calls can change `args` (the variables of bash have dynamic scope), and so can a file that the command sources. Set the arrays of a command in its own function only.
+- The server reads the arrays of the script itself (the function that calls `:usage` with `mcp`) from the shell when the server starts. It does not see a change to these arrays after that `:usage` call.
 
 ### How a call becomes an argv
 
-The MCP server reads a `tools/call` with a strict JSON parser. It accepts all JSON whitespace (space, tab, CR, LF). A key that occurs two times in one object gets `-32602`, and text that is not JSON gets `-32700`. In each case, the script does not start.
+The MCP server reads each message with a strict JSON parser, also the method and the id. It accepts all JSON whitespace (space, tab, CR, LF) and each string escape, also in a key. A key that occurs two times in one object gets `-32602`, and text that is not one JSON value gets `-32700`. A message that is not an object, or an id that is not a string, a number or null, gets `-32600`. In each case, no method runs and the script does not start.
 
 Each argument becomes at most one argv element:
 
@@ -307,7 +315,10 @@ Each argument becomes at most one argv element:
 | value flag | string or number | `--name=value` (one element) |
 | value flag | any other value (also `null` and a boolean) | error `-32602` |
 
-The parser reads the text after the first `=` as the value, also when it starts with `-`. Thus a value cannot become a flag. A key that is not a flag of the tool is ignored.
+The parser reads the text after the first `=` of a value flag as the value, also when it starts with `-`. Thus a value cannot become a flag. (A long boolean flag takes no value after `=`: the parser ignores that text, and the server never sends one.)
+
+- A key that is not a flag of the tool is ignored before the type check: its value can be of any type.
+- A number goes to the script in the form of the JSON parser: `1e2` becomes `100`, and a very large number can lose digits. Send a string for an exact value.
 
 ## Structured Output
 
