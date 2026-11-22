@@ -319,8 +319,9 @@ fn handle_tools_list<W: Write>(
     write_jsonrpc_response(writer, id, &tools);
 }
 
-/// Format a single MCP tool definition.
+/// Format a single MCP tool definition. A `:@` flag is not listed.
 pub(crate) fn format_tool(name: &str, description: &str, flags: &[FlagInfo], annotations: &[String]) -> String {
+    let flags: Vec<&FlagInfo> = flags.iter().filter(|f| !f.mcp_hidden).collect();
     let mut s = String::from("{");
     s.push_str(&format!("\"name\":\"{}\",", json_escape(name)));
     s.push_str(&format!("\"title\":\"{}\",", json_escape(description)));
@@ -347,7 +348,7 @@ pub(crate) fn format_tool(name: &str, description: &str, flags: &[FlagInfo], ann
 
         s.push_str("},\"required\":[");
         let mut first = true;
-        for flag in flags {
+        for flag in &flags {
             if flag.required { // coverage:off - required_flags: test fixtures don't use required flags
                 if !first { // coverage:off
                     s.push(','); // coverage:off
@@ -495,8 +496,35 @@ pub(crate) fn handle_prompts_get<W: Write>(writer: &mut W, id: &Option<String>, 
     }
 }
 
+/// The `:@` flag that a `tools/call` argument names, if any. The key is read
+/// as the parser reads a flag (`shared::parse_flag_at`): up to a `=`, after
+/// `--`, or the first character after a single `-`. A bare key is a name, as
+/// the call sends it as `--<key>`. The key matches any name of the flag (long,
+/// short or alias), and also its variable form (`_` for `-`).
+pub(crate) fn mcp_hidden_flag<'a>(key: &str, flags: &'a [FlagInfo]) -> Option<&'a FlagInfo> {
+    let part = key.split('=').next().unwrap_or(key);
+    let name = if let Some(long) = part.strip_prefix("--") {
+        long
+    } else if let Some(short) = part.strip_prefix('-') {
+        short
+            .chars()
+            .next()
+            .map_or(short, |c| &short[..c.len_utf8()])
+    } else {
+        part
+    };
+    if name.is_empty() {
+        return None;
+    }
+    flags.iter().filter(|f| f.mcp_hidden).find(|f| {
+        f.names
+            .iter()
+            .any(|n| n == name || n.replace('-', "_") == name)
+    })
+}
+
 /// Handle `tools/call` request (v2 — tree-aware, per-leaf flags and full command paths).
-fn handle_tools_call_v2<W: Write>(
+pub(crate) fn handle_tools_call_v2<W: Write>(
     writer: &mut W,
     id: &Option<String>,
     params: &str,
@@ -526,10 +554,25 @@ fn handle_tools_call_v2<W: Write>(
     let args_json = extract_json_field(params, "arguments").unwrap_or_default();
     let arg_pairs = parse_flat_json_object(&args_json);
 
+    // A `:@` flag is not in the schema. Refuse a call that sends one, before
+    // any child starts: never drop it in silence.
+    if let Some(flag) = arg_pairs
+        .iter()
+        .find_map(|(key, _)| mcp_hidden_flag(key, &leaf.flags))
+    {
+        write_jsonrpc_error(
+            writer,
+            id,
+            -32602,
+            &format!("Flag not available over MCP: --{}", flag.name),
+        );
+        return;
+    }
+
     // Build CLI args — prepend all path segments then flags
     let mut cli_args: Vec<String> = leaf.full_path.clone();
     for (key, value) in &arg_pairs {
-        let flag = leaf.flags.iter().find(|f| f.name == *key);
+        let flag = leaf.flags.iter().find(|f| f.name == *key && !f.mcp_hidden);
         if flag.is_none() {
             continue; // Unknown arg — ignore (lenient for LLM hallucinations)
         }

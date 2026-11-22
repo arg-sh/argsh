@@ -449,7 +449,7 @@ pub fn print_flags_section<W: Write>(out: &mut W, args_arr: &[String], _fw: usiz
         let desc = args_with_help.get(i + 1).map(|s| s.as_str()).unwrap_or("");
 
         // Hidden (# prefix or :# modifier)
-        if entry.starts_with('#') || field::parse_field(entry).map(|f| f.is_hidden).unwrap_or(false) {
+        if hidden_from_help(entry) {
             continue;
         }
 
@@ -476,6 +476,15 @@ pub fn print_flags_section<W: Write>(out: &mut W, args_arr: &[String], _fw: usiz
     }
 }
 
+/// A flag that `--help` does not show: a `#` prefix or the `:#` modifier.
+/// The `:@` modifier does not hide a flag from `--help`.
+pub fn hidden_from_help(entry: &str) -> bool {
+    entry.starts_with('#')
+        || field::parse_field_spec(entry)
+            .map(|f| f.is_hidden)
+            .unwrap_or(false)
+}
+
 // -- Shared types -------------------------------------------------------------
 
 /// Extracted subcommand info from usage pairs.
@@ -492,6 +501,11 @@ pub struct FlagInfo {
     pub is_boolean: bool,
     pub type_name: String,
     pub required: bool,
+    /// `:@` modifier: an agent tool schema (MCP `tools/list`, `docgen llm`)
+    /// does not list the flag, and the MCP server refuses a call that sends it.
+    pub mcp_hidden: bool,
+    /// Every name that the parser accepts: long, short and any `|` alias.
+    pub names: Vec<String>,
 }
 
 // -- Shared extraction helpers ------------------------------------------------
@@ -543,6 +557,8 @@ pub fn extract_flags(args_arr: &[String]) -> Vec<FlagInfo> {
                 is_boolean: def.is_boolean,
                 type_name: def.type_name,
                 required: def.required,
+                mcp_hidden: def.is_mcp_hidden,
+                names: field::field_names(entry),
             });
         }
     }
@@ -555,6 +571,8 @@ pub fn extract_flags(args_arr: &[String]) -> Vec<FlagInfo> {
             is_boolean: true,
             type_name: String::new(),
             required: false,
+            mcp_hidden: false,
+            names: vec!["help".to_string(), "h".to_string()],
         });
     }
 
@@ -562,6 +580,9 @@ pub fn extract_flags(args_arr: &[String]) -> Vec<FlagInfo> {
 }
 
 /// Extract visible flags from args array, excluding help (for LLM tool schemas).
+/// A `:@` flag stays in the list with `mcp_hidden` set: the command tree and
+/// the docs read this list too. The agent schema writers (`mcp::format_tool`,
+/// `write_tool_properties`) leave it out.
 pub fn extract_flags_for_llm(args_arr: &[String]) -> Vec<FlagInfo> {
     let mut flags = Vec::new();
 
@@ -573,7 +594,7 @@ pub fn extract_flags_for_llm(args_arr: &[String]) -> Vec<FlagInfo> {
             continue;
         }
 
-        if let Ok(def) = field::parse_field(entry) {
+        if let Ok(def) = field::parse_field_spec(entry) {
             if def.name == "help" {
                 continue;
             }
@@ -584,6 +605,8 @@ pub fn extract_flags_for_llm(args_arr: &[String]) -> Vec<FlagInfo> {
                 is_boolean: def.is_boolean,
                 type_name: def.type_name,
                 required: def.required,
+                mcp_hidden: def.is_mcp_hidden,
+                names: field::field_names(entry),
             });
         }
     }
@@ -1002,6 +1025,8 @@ impl Clone for FlagInfo {
             is_boolean: self.is_boolean,
             type_name: self.type_name.clone(),
             required: self.required,
+            mcp_hidden: self.mcp_hidden,
+            names: self.names.clone(),
         }
     }
 }
@@ -1037,7 +1062,9 @@ pub fn sanitize_tool_name(s: &str) -> String {
 }
 
 /// Write JSON Schema properties and required array (shared by all LLM providers).
+/// A `:@` flag is not written: the schema is for an agent.
 pub fn write_tool_properties<W: Write>(out: &mut W, flags: &[FlagInfo], indent: &str) {
+    let flags: Vec<&FlagInfo> = flags.iter().filter(|f| !f.mcp_hidden).collect();
     let _ = writeln!(out, "{}\"properties\": {{", indent);
     for (i, flag) in flags.iter().enumerate() {
         let json_type = argsh_type_to_json(&flag.type_name, flag.is_boolean);
@@ -1365,6 +1392,8 @@ mod tests {
             is_boolean: false,
             type_name: "int".to_string(),
             required: false,
+            mcp_hidden: false,
+            names: vec!["port".to_string(), "p".to_string()],
         }];
         let result = mcp::format_tool("serve", "Start server", &flags, &[]);
         assert!(result.contains("\"port\":{\"type\":\"integer\""));
@@ -1658,5 +1687,194 @@ mod tests {
         let output = String::from_utf8(buf).unwrap();
         assert!(output.contains("-32602"));
         assert!(output.contains("Unknown resource URI"));
+    }
+
+    // -- The `:@` modifier: a flag that agents do not get --
+
+    /// A command with a `:@` flag (with a short name and an alias) and a normal flag.
+    fn agent_args() -> Vec<String> {
+        [
+            "print-token|t|show-token:+@",
+            "Print the access token",
+            "name|n",
+            "Name to log in as",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect()
+    }
+
+    /// Send a tools/call to a tool whose "script" is `/bin/sh -c <probe>`. The
+    /// probe writes its argv to `<dir>/argv` and prints "ran", so the test can
+    /// see if a child started. Returns the JSON-RPC output and the argv of the
+    /// child, or None when no child ran.
+    fn agent_tools_call(label: &str, arguments: &str) -> (String, Option<String>) {
+        let dir =
+            std::env::temp_dir().join(format!("argsh-mcp-hidden-{}-{}", std::process::id(), label));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let argv = dir.join("argv");
+        let probe = format!("printf '%s\\n' \"$@\" > '{}'; echo ran", argv.display());
+        let leaf = vec![mcp::LeafTool {
+            tool_name: "app_login".to_string(),
+            full_path: vec!["-c".to_string(), probe, "probe".to_string()],
+            desc: "Log in".to_string(),
+            flags: extract_flags_for_llm(&agent_args()),
+            annotations: vec![],
+        }];
+        let params = format!(r#"{{"name":"app_login","arguments":{}}}"#, arguments);
+        let mut buf = Vec::new();
+        mcp::handle_tools_call_v2(&mut buf, &Some("7".to_string()), &params, "/bin/sh", &leaf);
+        let ran = std::fs::read_to_string(&argv).ok();
+        std::fs::remove_dir_all(&dir).unwrap();
+        (String::from_utf8(buf).unwrap(), ran)
+    }
+
+    #[test]
+    fn test_mcp_hidden_flag_stays_in_help() {
+        let def = field::parse_field_spec("print-token|t:+@").unwrap();
+        assert!(def.is_mcp_hidden);
+        assert!(!def.is_hidden);
+        assert!(!hidden_from_help("print-token|t:+@"));
+        // `#` and `:#` still hide a flag from --help
+        assert!(hidden_from_help("#debug|d:+"));
+        assert!(hidden_from_help("debug|d:+#"));
+        assert!(!hidden_from_help("name|n"));
+    }
+
+    #[test]
+    fn test_mcp_hidden_flag_parses_on_the_command_line() {
+        let def = field::parse_field_spec("print-token|t|show-token:+@").unwrap();
+        assert!(def.is_boolean);
+        assert_eq!(def.short.as_deref(), Some("t"));
+        // `@` ends a type name, in any order with the other modifiers
+        let def = field::parse_field_spec("token|k:~string@!").unwrap();
+        assert!(def.is_mcp_hidden && def.required);
+        assert_eq!(def.type_name, "string");
+        assert!(!field::parse_field_spec("name|n").unwrap().is_mcp_hidden);
+        // The parser finds the flag by each of its names
+        let args = agent_args();
+        for name in ["print-token", "t", "show-token"] {
+            assert_eq!(
+                field::field_lookup(name, &args),
+                Some(0),
+                "lookup of {}",
+                name
+            );
+        }
+        assert_eq!(
+            field::field_names("print-token|t|show-token:+@"),
+            vec!["print-token", "t", "show-token"]
+        );
+    }
+
+    #[test]
+    fn test_mcp_hidden_flag_absent_from_tools_list() {
+        let flags = extract_flags_for_llm(&agent_args());
+        // The command tree and the docs keep the flag, marked
+        assert!(flags
+            .iter()
+            .any(|f| f.name == "print-token" && f.mcp_hidden));
+        let leaf_tools = vec![mcp::LeafTool {
+            tool_name: "app_login".to_string(),
+            full_path: vec!["login".to_string()],
+            desc: "Log in".to_string(),
+            flags,
+            annotations: vec![],
+        }];
+        let mut buf = Vec::new();
+        mcp::handle_tools_list_v2(&mut buf, &Some("1".to_string()), "App", &leaf_tools);
+        let output = String::from_utf8(buf).unwrap();
+        assert!(
+            output.contains("\"name\":{\"type\":\"string\""),
+            "normal flag missing: {}",
+            output
+        );
+        assert!(
+            !output.contains("print-token"),
+            "hidden flag listed: {}",
+            output
+        );
+        assert!(
+            !output.contains("show-token"),
+            "hidden flag alias listed: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_mcp_hidden_flag_absent_from_docgen_llm_schema() {
+        let mut buf = Vec::new();
+        write_tool_properties(&mut buf, &extract_flags_for_llm(&agent_args()), "");
+        let output = String::from_utf8(buf).unwrap();
+        assert!(
+            output.contains("\"name\": {"),
+            "normal flag missing: {}",
+            output
+        );
+        assert!(
+            !output.contains("print-token"),
+            "hidden flag listed: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_mcp_tools_call_refuses_a_hidden_flag_by_long_name() {
+        let (output, ran) = agent_tools_call("long", r#"{"print-token":true}"#);
+        assert!(output.contains("-32602"), "{}", output);
+        assert!(
+            output.contains("Flag not available over MCP: --print-token"),
+            "{}",
+            output
+        );
+        assert!(!output.contains("\"result\""), "{}", output);
+        assert_eq!(ran, None, "a child ran");
+    }
+
+    #[test]
+    fn test_mcp_tools_call_refuses_a_hidden_flag_by_short_name() {
+        for (label, arguments) in [
+            ("short", r#"{"t":true}"#),
+            ("short-mixed", r#"{"name":"x","t":true}"#),
+        ] {
+            let (output, ran) = agent_tools_call(label, arguments);
+            assert!(
+                output.contains("Flag not available over MCP: --print-token"),
+                "{}: {}",
+                arguments,
+                output
+            );
+            assert_eq!(ran, None, "{}: a child ran", arguments);
+        }
+    }
+
+    #[test]
+    fn test_mcp_tools_call_refuses_a_hidden_flag_by_alias_or_dashes() {
+        for (label, arguments) in [
+            ("alias", r#"{"show-token":true}"#),
+            ("long-dashes", r#"{"--print-token":true}"#),
+            ("short-dash", r#"{"-t":true}"#),
+            ("short-inline", r#"{"-tx":true}"#),
+            ("value", r#"{"print-token=1":true}"#),
+            ("variable", r#"{"print_token":true}"#),
+        ] {
+            let (output, ran) = agent_tools_call(label, arguments);
+            assert!(
+                output.contains("Flag not available over MCP: --print-token"),
+                "{}: {}",
+                arguments,
+                output
+            );
+            assert_eq!(ran, None, "{}: a child ran", arguments);
+        }
+    }
+
+    #[test]
+    fn test_mcp_tools_call_runs_without_the_hidden_flag() {
+        let (output, ran) = agent_tools_call("normal", r#"{"name":"x"}"#);
+        assert!(output.contains("\"text\":\"ran\""), "{}", output);
+        assert!(output.contains("\"isError\":false"), "{}", output);
+        assert_eq!(ran.as_deref(), Some("--name\nx\n"));
     }
 }

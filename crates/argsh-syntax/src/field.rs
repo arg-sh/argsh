@@ -40,6 +40,9 @@ pub struct FieldDef {
     pub is_positional: bool,
     /// `:^` modifier — field yields to non-`:^` duplicates (inherited).
     pub is_inherited: bool,
+    /// `:@` modifier: the flag is not offered to agents (no MCP or `docgen llm`
+    /// tool schema lists it). `--help` still shows it.
+    pub mcp_hidden: bool,
     /// Raw spec string, preserved for diagnostics.
     pub raw: String,
 }
@@ -73,6 +76,7 @@ pub fn field_name(field: &str, asref: bool) -> String {
 /// - `:~type` — typed parameter (int, float, file, boolean, string, or custom)
 /// - `:!` — required
 /// - `:#` — hidden (also `#` prefix on name)
+/// - `:@` — not offered to agents (MCP, `docgen llm`); `--help` still shows it
 /// - Error on conflicting modifiers (`:+` with `:~type`)
 /// - Error on unknown modifiers
 pub fn parse_field(spec: &str) -> Result<FieldDef, FieldError> {
@@ -101,6 +105,7 @@ pub fn parse_field(spec: &str) -> Result<FieldDef, FieldError> {
     let mut required = false;
     let mut saw_hidden_mod = false;
     let mut is_inherited = false;
+    let mut mcp_hidden = false;
 
     if let Some(colon_pos) = spec.find(':') {
         let mods = &spec[colon_pos + 1..];
@@ -133,7 +138,14 @@ pub fn parse_field(spec: &str) -> Result<FieldDef, FieldError> {
                     // Collect type name until next modifier or separator
                     let mut tname = String::new();
                     while let Some(&tc) = chars.peek() {
-                        if tc == '+' || tc == '~' || tc == '!' || tc == '#' || tc == '^' || tc == ':' {
+                        if tc == '+'
+                            || tc == '~'
+                            || tc == '!'
+                            || tc == '#'
+                            || tc == '^'
+                            || tc == '@'
+                            || tc == ':'
+                        {
                             break;
                         }
                         tname.push(tc);
@@ -156,6 +168,10 @@ pub fn parse_field(spec: &str) -> Result<FieldDef, FieldError> {
                 }
                 '^' => {
                     is_inherited = true;
+                    chars.next();
+                }
+                '@' => {
+                    mcp_hidden = true;
                     chars.next();
                 }
                 _ => {
@@ -182,6 +198,7 @@ pub fn parse_field(spec: &str) -> Result<FieldDef, FieldError> {
         hidden: hidden || saw_hidden_mod,
         is_positional,
         is_inherited,
+        mcp_hidden,
         raw,
     })
 }
@@ -494,5 +511,28 @@ mod tests {
     fn test_not_inherited_by_default() {
         let def = parse_field("normal|n").unwrap();
         assert!(!def.is_inherited);
+    }
+
+    #[test]
+    fn test_mcp_hidden_modifier() {
+        let def = parse_field("print-token|t:+@").unwrap();
+        assert!(def.mcp_hidden);
+        assert!(def.is_boolean);
+        assert!(!def.hidden, ":@ does not hide the flag from --help");
+        assert_eq!(def.short, Some("t".to_string()));
+    }
+
+    #[test]
+    fn test_mcp_hidden_ends_a_type_name() {
+        let def = parse_field("token|k:~string@!").unwrap();
+        assert!(def.mcp_hidden);
+        assert!(def.required);
+        assert_eq!(def.type_name, "string");
+    }
+
+    #[test]
+    fn test_not_mcp_hidden_by_default() {
+        assert!(!parse_field("normal|n").unwrap().mcp_hidden);
+        assert!(!parse_field("debug|d:+#").unwrap().mcp_hidden);
     }
 }
