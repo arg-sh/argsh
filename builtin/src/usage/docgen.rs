@@ -9,7 +9,7 @@ use std::ffi::{c_char, c_int};
 use std::io::Write;
 use super::{
     extract_subcommands, extract_flags, extract_flags_for_llm, agent_flags,
-    json_escape, sanitize_tool_name, write_tool_properties, needs_refused_flag,
+    json_escape, sanitize_tool_name, write_tool_properties, needs_refused_flag, tool_unavailable,
     build_command_tree, flatten_leaves, flatten_all,
     FlagInfo, CommandNode,
 };
@@ -543,8 +543,8 @@ fn generate_yaml<W: Write>(
 
 // -- LLM tool schema generation -----------------------------------------------
 
-/// The tools of an agent schema: name, description and flags. A tool with a
-/// required `:@` flag is not in the list: an agent cannot call it.
+/// The tools of an agent schema: name, description and flags. A tool that is
+/// not for agents (`tool_unavailable`) is not in the list.
 fn llm_tools(
     cmd_name: &str,
     title: &str,
@@ -564,7 +564,7 @@ fn llm_tools(
     }
     leaves
         .iter()
-        .filter(|leaf| !needs_refused_flag(&leaf.refused))
+        .filter(|leaf| !tool_unavailable(leaf.unresolved, &leaf.refused))
         .map(|leaf| {
             let tool_name = sanitize_tool_name(
                 &format!("{}_{}", cmd_name, leaf.full_path.join("_")),

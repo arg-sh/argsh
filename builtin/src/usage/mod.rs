@@ -610,10 +610,17 @@ fn without_help_hidden(flags: &[FlagInfo]) -> Vec<FlagInfo> {
 }
 
 /// True if one of the refused (`:@`) flags of a tool is required: an agent
-/// cannot call the tool. No agent schema lists the tool, and MCP refuses a
-/// call of it.
+/// cannot call the tool (`tool_unavailable`).
 pub fn needs_refused_flag(refused: &[FlagInfo]) -> bool {
     refused.iter().any(|f| f.required)
+}
+
+/// True if a tool is not for agents: the tree cannot read the flags of its
+/// command (`unresolved`, see `read_array`), or the tool needs a refused flag
+/// (`needs_refused_flag`). No agent schema and no MCP output lists the tool,
+/// and MCP refuses a call of it with a fixed text.
+pub fn tool_unavailable(unresolved: bool, refused: &[FlagInfo]) -> bool {
+    unresolved || needs_refused_flag(refused)
 }
 
 /// One `FlagInfo` for each flag entry of an args array, in their order, not
@@ -697,10 +704,11 @@ pub fn merge_flags(entries: Vec<FlagInfo>) -> Vec<FlagInfo> {
     merged
 }
 
-/// A `"${args[@]}"` word (also `"${args[@]:-}"`) in a child's args array as
-/// `declare -f` shows it: the entries of the parent go at that place.
+/// The word that `literal_words` gives for `"${args[@]}"` (also
+/// `"${args[@]:-}"`) in a child's args array: the entries of the parent go
+/// at that place.
 fn is_parent_expansion(word: &str) -> bool {
-    word.starts_with("${args[@]") && word.ends_with('}')
+    matches!(word, "${args[@]}" | "${args[@]:-}")
 }
 
 /// The flags of a child command as the parser sees them, from its args array
@@ -756,6 +764,7 @@ pub struct CommandNode {
     pub full_path: Vec<String>, // full command path (e.g. ["cluster", "up"])
     pub flags: Vec<FlagInfo>,   // per-command flags from args array (excludes help)
     pub refused: Vec<FlagInfo>, // `:@` flags, also of a parent: MCP refuses them
+    pub unresolved: bool,       // the tree cannot read the arrays (`read_array`): not for agents
     pub children: Vec<CommandNode>, // nested subcommands
     pub hidden: bool,           // #-prefixed entries
     pub annotations: Vec<String>, // e.g. ["readonly", "json"] from @readonly, @json suffixes
@@ -855,6 +864,7 @@ pub(crate) fn build_tree<F: Functions>(
                 full_path: vec![name.to_string()],
                 flags: without_help_hidden(parent),
                 refused: mcp::refused_flags(parent),
+                unresolved: false,
                 children: Vec::new(),
                 hidden,
                 annotations: annotations.clone(),
@@ -862,18 +872,27 @@ pub(crate) fn build_tree<F: Functions>(
             continue;
         };
 
-        // Parse usage and args arrays from the function body
-        let sub_usage = parse_shell_array_from_body(&body, "usage");
-        let (sub_args, appended) = parse_shell_array_and_form(&body, "args");
-
-        // The flags of this node: the parent's, merged with its own
-        let all = if sub_args.is_empty() {
-            parent.to_vec()
-        } else {
-            child_flags(&sub_args, appended, parent)
+        // Read the usage and args arrays from the function text. If the tree
+        // cannot know one of them (`read_array`), the command and all the
+        // commands under it are unresolved: they are not for agents.
+        let usage_text = read_array(&body, "usage");
+        let args_text = read_array(&body, "args");
+        let unresolved = matches!(usage_text, ArrayText::Unresolved)
+            || matches!(args_text, ArrayText::Unresolved);
+        let sub_usage = match usage_text {
+            ArrayText::Literal(words, _) => words,
+            _ => Vec::new(),
         };
 
-        let children = if sub_usage.is_empty() {
+        // The flags of this node: the parent's, merged with its own
+        let all = match args_text {
+            ArrayText::Literal(words, appended) if !words.is_empty() => {
+                child_flags(&words, appended, parent)
+            }
+            _ => parent.to_vec(),
+        };
+
+        let mut children = if sub_usage.is_empty() {
             Vec::new()
         } else {
             // Recurse with the merged flags, and put this node's name in
@@ -882,6 +901,9 @@ pub(crate) fn build_tree<F: Functions>(
             prefix_paths(&mut children, name);
             children
         };
+        if unresolved {
+            set_unresolved(&mut children);
+        }
 
         nodes.push(CommandNode {
             name: name.to_string(),
@@ -889,6 +911,7 @@ pub(crate) fn build_tree<F: Functions>(
             full_path: vec![name.to_string()],
             flags: without_help_hidden(&all),
             refused: mcp::refused_flags(&all),
+            unresolved,
             children,
             hidden,
             annotations: annotations.clone(),
@@ -896,6 +919,14 @@ pub(crate) fn build_tree<F: Functions>(
     }
 
     nodes
+}
+
+/// Mark these nodes and all the nodes under them unresolved.
+fn set_unresolved(nodes: &mut [CommandNode]) {
+    for node in nodes {
+        node.unresolved = true;
+        set_unresolved(&mut node.children);
+    }
 }
 
 /// Put `name` in front of the path of these nodes and of all the nodes under
@@ -966,166 +997,283 @@ fn get_function_body(func_name: &str) -> Option<String> {
     shell::exec_capture(&format!("declare -f -- {}", func_name), "__argsh_r")
 }
 
-/// Parse a shell array from a `declare -f` function body.
-///
-/// Extracts the content of `local -a {name}=(...)` from the indented function
-/// body that bash's `declare -f` produces. Returns alternating key-value pairs.
-pub fn parse_shell_array_from_body(body: &str, array_name: &str) -> Vec<String> {
-    parse_shell_array_and_form(body, array_name).0
+/// How the text of a function sets one array (`args` or `usage`).
+#[derive(Debug, PartialEq)]
+pub(crate) enum ArrayText {
+    /// The text does not set the array.
+    Absent,
+    /// The text sets the array one time, and all its words are literal: the
+    /// words, and true for an append (`args+=(...)`: the words come after
+    /// the entries that the array has already).
+    Literal(Vec<String>, bool),
+    /// The tree cannot know the array: the text sets it in a different way.
+    Unresolved,
 }
 
-/// `parse_shell_array_from_body`, and true if the array is an append
-/// (`{name}+=(...)`): then the words come after the entries that the array
-/// has already.
-pub(crate) fn parse_shell_array_and_form(body: &str, array_name: &str) -> (Vec<String>, bool) {
-    // Look for patterns like:
-    //     local -a usage=('cmd1' "desc1" 'cmd2' "desc2")
-    // or multi-line:
-    //     local -a usage=(
-    //         'cmd1' "desc1"
-    //         'cmd2' "desc2"
-    //     )
-    // Also handle `args+=(...)`-style appends and `local -a verbose args=(...)`
-    // where there are extra variable names between `-a` and the target array.
+/// The arrays that the tree reads from the text of a function.
+const TREE_ARRAYS: [&str; 2] = ["args", "usage"];
 
-    let needle_local = format!("{}=(", array_name);
-    let needle_append = format!("{}+=(", array_name);
-
-    let mut start_pos = None;
-    let mut appended = false;
-    for needle in &[&needle_local, &needle_append] {
-        for (idx, matched) in body.match_indices(needle.as_str()) {
-            // Verify this looks like a local -a or direct assignment context
-            let prefix = &body[..idx];
-            let last_line_start = prefix.rfind('\n').map(|p| p + 1).unwrap_or(0);
-            let line_prefix = &body[last_line_start..idx];
-            // Accept: "    local -a usage=", "    local -a verbose args=", "    args+=", etc.
-            if line_prefix.contains("local") || line_prefix.trim_start().is_empty()
-                || line_prefix.trim_start().starts_with(array_name)
-            {
-                start_pos = Some(idx + matched.len());
-                appended = *needle == &needle_append;
-                break;
-            }
+/// Read the array `name` (`args` or `usage`) from the text of a function, as
+/// `declare -f` prints it. The tree knows the array (`Literal`) only when the
+/// text sets it one time, with one of these statements, and all the words
+/// are literal (`literal_words`):
+///
+/// - `local -a name=(...)` (more names and the option `-r` can come before
+///   the array) or `name=(...)`. A `local -a name` with no value can come
+///   before it.
+/// - `args+=(...)`, with no `local` of the array (a `local` empties it): the
+///   words come after the entries of the parent. Not for `usage`.
+///
+/// Any other use of the word `name` makes the array `Unresolved`, also in a
+/// string: a second statement, `name+=`, `name[...]=`, `readarray`,
+/// `mapfile`, `read -a`, `printf -v`, `eval`, `unset`, `declare` and so on.
+/// These uses do not count: the function name on the first line, `:name`
+/// (the call of `:args` or `:usage`), the read `"${name[@]}"` (also
+/// `"${name[@]:-}"`), and the words of an `args` or `usage` statement (a
+/// description, for example).
+///
+/// Limits: a function that this text calls can also change the array (the
+/// variables of bash have dynamic scope), and so can a file that it sources.
+/// The tree does not read those texts.
+pub(crate) fn read_array(body: &str, name: &str) -> ArrayText {
+    let sets = array_sets(body, name);
+    let statement_words: Vec<std::ops::Range<usize>> = TREE_ARRAYS
+        .iter()
+        .flat_map(|array| array_sets(body, array))
+        .map(|set| set.words)
+        .collect();
+    let header = match body.find('\n') {
+        Some(end) if body[..end].trim_end().ends_with("()") => end,
+        _ => 0,
+    };
+    let first_set = sets.first().map_or(usize::MAX, |set| set.at);
+    let mut declared = false;
+    for at in name_offsets(body, name) {
+        let counted = at >= header
+            && !sets.iter().any(|set| set.at == at)
+            && !statement_words.iter().any(|words| words.contains(&at))
+            && !body[..at].ends_with(':')
+            && !is_array_read(body, at, name);
+        if !counted {
+            continue;
         }
-        if start_pos.is_some() {
-            break;
+        if at < first_set && plain_local(&line_words(body, at)) {
+            declared = true;
+            continue;
+        }
+        return ArrayText::Unresolved;
+    }
+    match sets.as_slice() {
+        [] if declared => ArrayText::Unresolved,
+        [] => ArrayText::Absent,
+        [set] if set.append && (declared || name != "args") => ArrayText::Unresolved,
+        [set] => match literal_words(&body[set.words.clone()], name == "args") {
+            Some(words) => ArrayText::Literal(words, set.append),
+            None => ArrayText::Unresolved,
+        },
+        _ => ArrayText::Unresolved,
+    }
+}
+
+/// A statement that sets an array: `name=(...)` or `name+=(...)`.
+struct ArraySet {
+    /// The place of the array name.
+    at: usize,
+    /// The text between the parentheses.
+    words: std::ops::Range<usize>,
+    append: bool,
+}
+
+/// The statements of a function text that set the array `name` in a form
+/// that the tree reads: at the start of a line, or after `local` with
+/// options and names only (`plain_local`).
+fn array_sets(body: &str, name: &str) -> Vec<ArraySet> {
+    let mut sets = Vec::new();
+    for at in name_offsets(body, name) {
+        let rest = &body[at + name.len()..];
+        let (append, open) = if rest.starts_with("=(") {
+            (false, 2)
+        } else if rest.starts_with("+=(") {
+            (true, 3)
+        } else {
+            continue;
+        };
+        let prefix: Vec<&str> = body[line_start(body, at)..at].split_whitespace().collect();
+        if !prefix.is_empty() && !plain_local(&prefix) {
+            continue;
+        }
+        let start = at + name.len() + open;
+        if let Some(end) = closing_paren(body, start) {
+            sets.push(ArraySet { at, words: start..end, append });
         }
     }
+    sets
+}
 
-    let start = match start_pos {
-        Some(p) => p,
-        None => return (Vec::new(), false),
-    };
-
-    // Find matching closing paren
-    let rest = &body[start..];
+/// The place of the `)` that closes an array statement whose words start at
+/// `start`. Quoted text can hold a parenthesis, and a backslash escapes the
+/// character after it.
+fn closing_paren(body: &str, start: usize) -> Option<usize> {
+    let bytes = body.as_bytes();
     let mut depth = 1;
-    let mut end = 0;
-    let bytes = rest.as_bytes();
-    let mut i = 0;
+    let mut i = start;
     while i < bytes.len() {
         match bytes[i] {
             b'(' => depth += 1,
             b')' => {
                 depth -= 1;
                 if depth == 0 {
-                    end = i;
-                    break;
+                    return Some(i);
                 }
             }
             b'\'' => {
-                // Skip single-quoted string
                 i += 1;
                 while i < bytes.len() && bytes[i] != b'\'' {
                     i += 1;
                 }
             }
             b'"' => {
-                // Skip double-quoted string
                 i += 1;
-                while i < bytes.len() {
+                while i < bytes.len() && bytes[i] != b'"' {
                     if bytes[i] == b'\\' {
-                        i += 1; // skip escaped char
-                    } else if bytes[i] == b'"' {
-                        break;
+                        i += 1;
                     }
                     i += 1;
                 }
             }
+            b'\\' => i += 1,
             _ => {}
         }
         i += 1;
     }
-
-    if depth != 0 {
-        return (Vec::new(), false); // coverage:off - defensive_check: unmatched paren in declare -f output
-    }
-
-    let content = &rest[..end];
-    (parse_shell_words(content), appended)
+    None
 }
 
-/// Parse shell words from array content (handles single and double-quoted strings).
-fn parse_shell_words(content: &str) -> Vec<String> {
-    let mut words = Vec::new();
+/// The places of the word `name` in `text`: not next to a letter, a digit
+/// or `_`.
+fn name_offsets(text: &str, name: &str) -> Vec<usize> {
+    let bytes = text.as_bytes();
+    let part = |at: usize| bytes[at].is_ascii_alphanumeric() || bytes[at] == b'_';
+    text.match_indices(name)
+        .map(|(at, _)| at)
+        .filter(|&at| at == 0 || !part(at - 1))
+        .filter(|&at| at + name.len() >= bytes.len() || !part(at + name.len()))
+        .collect()
+}
+
+/// The start of the line that holds the place `at`.
+fn line_start(text: &str, at: usize) -> usize {
+    text[..at].rfind('\n').map_or(0, |i| i + 1)
+}
+
+/// The words of the line that holds the place `at`, without a last `;`.
+fn line_words(text: &str, at: usize) -> Vec<&str> {
+    let end = text[at..].find('\n').map_or(text.len(), |i| at + i);
+    text[line_start(text, at)..end]
+        .trim()
+        .trim_end_matches(';')
+        .split_whitespace()
+        .collect()
+}
+
+/// True for the words of a `local` statement with no value: `local`, then
+/// only the options `-a` and `-r` and variable names.
+fn plain_local(words: &[&str]) -> bool {
+    words.first() == Some(&"local")
+        && words[1..]
+            .iter()
+            .all(|word| matches!(*word, "-a" | "-r" | "-ar" | "-ra") || is_identifier(word))
+}
+
+/// True for a variable name: a letter or `_`, then letters, digits and `_`.
+fn is_identifier(word: &str) -> bool {
+    let mut chars = word.chars();
+    chars.next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// True if the word `name` at `at` is the read `"${name[@]}"` (also
+/// `"${name[@]:-}"`).
+fn is_array_read(text: &str, at: usize, name: &str) -> bool {
+    let after = &text[at + name.len()..];
+    text[..at].ends_with("\"${") && (after.starts_with("[@]}\"") || after.starts_with("[@]:-}\""))
+}
+
+/// The words of an array statement (the text between its parentheses), if
+/// all of them are literal: quoted text and plain characters, with no
+/// expansion (no `$`, no backquote, no glob, brace or tilde character).
+/// With `parent`, the word `"${args[@]}"` (also `"${args[@]:-}"`) is the one
+/// exception: it gives `${args[@]}` (`${args[@]:-}`), the place of the
+/// entries of the parent (`child_flags`).
+fn literal_words(content: &str, parent: bool) -> Option<Vec<String>> {
     let bytes = content.as_bytes();
+    let space = |c: u8| matches!(c, b' ' | b'\t' | b'\n' | b'\r');
+    let mut words = Vec::new();
     let mut i = 0;
-
-    while i < bytes.len() {
-        // Skip whitespace
-        while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t' || bytes[i] == b'\n' || bytes[i] == b'\r') {
+    loop {
+        while i < bytes.len() && space(bytes[i]) {
             i += 1;
         }
-        if i >= bytes.len() {
-            break;
+        if i == bytes.len() {
+            return Some(words);
         }
-
-        if bytes[i] == b'\'' {
-            // Single-quoted string
-            i += 1;
-            let start = i;
-            while i < bytes.len() && bytes[i] != b'\'' {
-                i += 1;
-            }
-            words.push(String::from_utf8_lossy(&bytes[start..i]).to_string());
-            if i < bytes.len() {
-                i += 1; // skip closing quote
-            }
-        } else if bytes[i] == b'"' {
-            // Double-quoted string
-            i += 1;
-            let mut word = String::new();
-            while i < bytes.len() && bytes[i] != b'"' {
-                if bytes[i] == b'\\' && i + 1 < bytes.len() {
-                    // Handle escape
-                    i += 1;
-                    word.push(bytes[i] as char);
-                } else {
-                    word.push(bytes[i] as char);
+        let expansion = ["\"${args[@]}\"", "\"${args[@]:-}\""]
+            .into_iter()
+            .find(|word| content[i..].starts_with(word))
+            .filter(|word| parent && bytes.get(i + word.len()).is_none_or(|&c| space(c)));
+        if let Some(word) = expansion {
+            words.push(word[1..word.len() - 1].to_string());
+            i += word.len();
+            continue;
+        }
+        let start = i;
+        let mut word = Vec::new();
+        while i < bytes.len() && !space(bytes[i]) {
+            match bytes[i] {
+                b'\'' => {
+                    let end = i + 1 + bytes[i + 1..].iter().position(|&c| c == b'\'')?;
+                    word.extend_from_slice(&bytes[i + 1..end]);
+                    i = end + 1;
                 }
-                i += 1;
-            }
-            words.push(word);
-            if i < bytes.len() {
-                i += 1; // skip closing quote
-            }
-        } else if bytes[i] != b'#' {
-            // Unquoted word (stop at whitespace)
-            let start = i;
-            while i < bytes.len() && bytes[i] != b' ' && bytes[i] != b'\t' && bytes[i] != b'\n' && bytes[i] != b'\r' {
-                i += 1;
-            }
-            words.push(String::from_utf8_lossy(&bytes[start..i]).to_string());
-        } else {
-            // Comment — skip rest of line
-            while i < bytes.len() && bytes[i] != b'\n' {
-                i += 1;
+                b'"' => {
+                    i += 1;
+                    while *bytes.get(i)? != b'"' {
+                        match bytes[i] {
+                            b'$' | b'`' => return None,
+                            b'\\' => {
+                                let next = *bytes.get(i + 1)?;
+                                match next {
+                                    b'$' | b'`' | b'"' | b'\\' => word.push(next),
+                                    b'\n' => {}
+                                    _ => word.extend_from_slice(&[b'\\', next]),
+                                }
+                                i += 2;
+                            }
+                            c => {
+                                word.push(c);
+                                i += 1;
+                            }
+                        }
+                    }
+                    i += 1;
+                }
+                b'\\' => {
+                    let next = *bytes.get(i + 1)?;
+                    if next != b'\n' {
+                        word.push(next);
+                    }
+                    i += 2;
+                }
+                b'#' if i == start => return None,
+                c if c.is_ascii_alphanumeric() || c >= 0x80 || b"_-.,/:@%+=^!#".contains(&c) => {
+                    word.push(c);
+                    i += 1;
+                }
+                _ => return None,
             }
         }
+        words.push(String::from_utf8_lossy(&word).into_owned());
     }
-
-    words
 }
 
 /// Flatten a command tree to leaf nodes only (nodes with no children).
@@ -1254,31 +1402,31 @@ mod tests {
 
     #[test]
     fn test_parse_shell_words_single_quoted() {
-        let words = parse_shell_words("'hello' 'world'");
+        let words = shell_words("'hello' 'world'");
         assert_eq!(words, vec!["hello", "world"]);
     }
 
     #[test]
     fn test_parse_shell_words_double_quoted() {
-        let words = parse_shell_words("\"hello\" \"world\"");
+        let words = shell_words("\"hello\" \"world\"");
         assert_eq!(words, vec!["hello", "world"]);
     }
 
     #[test]
     fn test_parse_shell_words_mixed() {
-        let words = parse_shell_words("'cmd1' \"Description of cmd1\" 'cmd2' \"Description of cmd2\"");
+        let words = shell_words("'cmd1' \"Description of cmd1\" 'cmd2' \"Description of cmd2\"");
         assert_eq!(words, vec!["cmd1", "Description of cmd1", "cmd2", "Description of cmd2"]);
     }
 
     #[test]
     fn test_parse_shell_words_unquoted() {
-        let words = parse_shell_words("hello world");
+        let words = shell_words("hello world");
         assert_eq!(words, vec!["hello", "world"]);
     }
 
     #[test]
     fn test_parse_shell_words_multiline() {
-        let words = parse_shell_words("'cmd1' \"desc1\"\n    'cmd2' \"desc2\"");
+        let words = shell_words("'cmd1' \"desc1\"\n    'cmd2' \"desc2\"");
         assert_eq!(words, vec!["cmd1", "desc1", "cmd2", "desc2"]);
     }
 
@@ -1290,7 +1438,7 @@ mod tests {
     :usage "Cluster management" "${@}";
     "${usage[@]}"
 }"#;
-        let result = parse_shell_array_from_body(body, "usage");
+        let result = array_words(body, "usage");
         assert_eq!(result, vec!["up", "Start cluster", "down", "Stop cluster"]);
     }
 
@@ -1303,7 +1451,7 @@ mod tests {
     :args "Start the server" "${@}";
     echo "serving on port ${port:-8080}"
 }"#;
-        let result = parse_shell_array_from_body(body, "args");
+        let result = array_words(body, "args");
         assert_eq!(result, vec!["port|p:int", "Port number"]);
     }
 
@@ -1317,7 +1465,7 @@ mod tests {
     );
     :usage "My app" "${@}"
 }"#;
-        let result = parse_shell_array_from_body(body, "usage");
+        let result = array_words(body, "usage");
         assert_eq!(result, vec!["serve", "Start the server", "build", "Build the project"]);
     }
 
@@ -1327,8 +1475,7 @@ mod tests {
 {
     echo hello
 }"#;
-        let result = parse_shell_array_from_body(body, "usage");
-        assert!(result.is_empty());
+        assert_eq!(read_array(body, "usage"), ArrayText::Absent);
     }
 
     #[test]
@@ -1340,7 +1487,7 @@ mod tests {
     local -a verbose args=('verbose|v:+' "Enable verbose" 'config|c' "Config file");
     :args "test" "${@}"
 }"#;
-        let result = parse_shell_array_from_body(body, "args");
+        let result = array_words(body, "args");
         assert_eq!(result, vec!["verbose|v:+", "Enable verbose", "config|c", "Config file"]);
     }
 
@@ -1352,7 +1499,7 @@ mod tests {
     args+=('target|t' "Deploy target");
     :args "Deploy the app" "${@}"
 }"#;
-        let result = parse_shell_array_from_body(body, "args");
+        let result = array_words(body, "args");
         assert_eq!(result, vec!["target|t", "Deploy target"]);
     }
 
@@ -1365,6 +1512,7 @@ mod tests {
                 full_path: vec!["serve".to_string()],
                 flags: Vec::new(),
                 refused: Vec::new(),
+                unresolved: false,
                 children: Vec::new(),
                 hidden: false,
                 annotations: Vec::new(),
@@ -1375,6 +1523,7 @@ mod tests {
                 full_path: vec!["build".to_string()],
                 flags: Vec::new(),
                 refused: Vec::new(),
+                unresolved: false,
                 children: Vec::new(),
                 hidden: false,
                 annotations: Vec::new(),
@@ -1395,6 +1544,7 @@ mod tests {
                 full_path: vec!["cluster".to_string()],
                 flags: Vec::new(),
                 refused: Vec::new(),
+                unresolved: false,
                 children: vec![
                     CommandNode {
                         name: "up".to_string(),
@@ -1402,6 +1552,7 @@ mod tests {
                         full_path: vec!["cluster".to_string(), "up".to_string()],
                         flags: Vec::new(),
                         refused: Vec::new(),
+                        unresolved: false,
                         children: Vec::new(),
                         hidden: false,
                         annotations: Vec::new(),
@@ -1412,6 +1563,7 @@ mod tests {
                         full_path: vec!["cluster".to_string(), "down".to_string()],
                         flags: Vec::new(),
                         refused: Vec::new(),
+                        unresolved: false,
                         children: Vec::new(),
                         hidden: false,
                         annotations: Vec::new(),
@@ -1436,6 +1588,7 @@ mod tests {
                 full_path: vec!["visible".to_string()],
                 flags: Vec::new(),
                 refused: Vec::new(),
+                unresolved: false,
                 children: Vec::new(),
                 hidden: false,
                 annotations: Vec::new(),
@@ -1446,6 +1599,7 @@ mod tests {
                 full_path: vec!["hidden".to_string()],
                 flags: Vec::new(),
                 refused: Vec::new(),
+                unresolved: false,
                 children: Vec::new(),
                 hidden: true,
                 annotations: Vec::new(),
@@ -1465,6 +1619,7 @@ mod tests {
                 full_path: vec!["serve".to_string()],
                 flags: Vec::new(),
                 refused: Vec::new(),
+                unresolved: false,
                 children: Vec::new(),
                 hidden: false,
                 annotations: Vec::new(),
@@ -1475,6 +1630,7 @@ mod tests {
                 full_path: vec!["cluster".to_string()],
                 flags: Vec::new(),
                 refused: Vec::new(),
+                unresolved: false,
                 children: vec![
                     CommandNode {
                         name: "up".to_string(),
@@ -1482,6 +1638,7 @@ mod tests {
                         full_path: vec!["cluster".to_string(), "up".to_string()],
                         flags: Vec::new(),
                         refused: Vec::new(),
+                        unresolved: false,
                         children: Vec::new(),
                         hidden: false,
                         annotations: Vec::new(),
@@ -1689,6 +1846,7 @@ mod tests {
                 desc: "Start the server".to_string(),
                 flags: Vec::new(),
                 refused: Vec::new(),
+                unresolved: false,
                 annotations: vec!["readonly".to_string()],
             },
             mcp::LeafTool {
@@ -1697,6 +1855,7 @@ mod tests {
                 desc: "Get status".to_string(),
                 flags: Vec::new(),
                 refused: Vec::new(),
+                unresolved: false,
                 annotations: vec!["json".to_string()],
             },
         ];
@@ -1827,6 +1986,7 @@ mod tests {
                 desc: "Start server".to_string(),
                 flags: vec![],
                 refused: Vec::new(),
+                unresolved: false,
                 annotations: vec![],
             },
             mcp::LeafTool {
@@ -1835,6 +1995,7 @@ mod tests {
                 desc: "Build project".to_string(),
                 flags: vec![],
                 refused: Vec::new(),
+                unresolved: false,
                 annotations: vec![],
             },
         ];
@@ -1910,6 +2071,7 @@ mod tests {
             full_path: vec!["-c".to_string(), probe, "probe".to_string()],
             desc: "Log in".to_string(),
             refused: mcp::refused_flags(&flags),
+            unresolved: false,
             flags,
             annotations: vec![],
         }
@@ -1995,6 +2157,7 @@ mod tests {
             full_path: vec!["login".to_string()],
             desc: "Log in".to_string(),
             refused: mcp::refused_flags(&flags),
+            unresolved: false,
             flags,
             annotations: vec![],
         }];
@@ -2279,10 +2442,24 @@ mod tests {
         }
     }
 
-    /// A function as `declare -f` prints it, with these statements.
+    /// A function as `declare -f` prints it, with these statements
+    /// (`test_declared_prints_as_bash_does`).
     fn declared(name: &str, statements: &[&str]) -> (String, String) {
-        let body: Vec<String> = statements.iter().map(|s| format!("    {};", s)).collect();
-        (name.to_string(), format!("{} () \n{{ \n{}\n}}", name, body.join("\n")))
+        let body: Vec<String> = statements.iter().map(|s| format!("    {}", s)).collect();
+        (name.to_string(), format!("{} () \n{{ \n{}\n}}", name, body.join(";\n")))
+    }
+
+    /// The words of a literal array text (`literal_words`).
+    fn shell_words(content: &str) -> Vec<String> {
+        literal_words(content, false).expect("literal words")
+    }
+
+    /// The words of the array `name` of a function text that sets it one time.
+    fn array_words(body: &str, name: &str) -> Vec<String> {
+        match read_array(body, name) {
+            ArrayText::Literal(words, _) => words,
+            other => panic!("{}: {:?}", name, other),
+        }
     }
 
     fn words(items: &[&str]) -> Vec<String> {
@@ -2479,14 +2656,298 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_shell_array_and_form() {
+    fn test_read_array_gives_the_words_and_the_form() {
         let local = "f () \n{ \n    local -a args=('a|a' 'A' \"${args[@]:-}\");\n}";
         assert_eq!(
-            parse_shell_array_and_form(local, "args"),
-            (words(&["a|a", "A", "${args[@]:-}"]), false)
+            read_array(local, "args"),
+            ArrayText::Literal(words(&["a|a", "A", "${args[@]:-}"]), false)
         );
         let append = "f () \n{ \n    args+=('a|a' 'A');\n}";
-        assert_eq!(parse_shell_array_and_form(append, "args"), (words(&["a|a", "A"]), true));
+        assert_eq!(read_array(append, "args"), ArrayText::Literal(words(&["a|a", "A"]), true));
+    }
+
+    // -- A command whose arrays the tree cannot read: not for agents --
+
+    #[test]
+    fn test_declared_prints_as_bash_does() {
+        // `declare -f login` of bash 5.3 for this function
+        let bash = "login () \n{ \n    local print_token;\n    local -a args=(\"print-token|t:+\" \"Print the access token\");\n    args+=(\"print-token|t:+@\" \"Print the access token\");\n    :args \"Log in\" \"${@}\"\n}";
+        let (_, text) = declared(
+            "login",
+            &[
+                "local print_token",
+                r#"local -a args=("print-token|t:+" "Print the access token")"#,
+                r#"args+=("print-token|t:+@" "Print the access token")"#,
+                r#":args "Log in" "${@}""#,
+            ],
+        );
+        assert_eq!(text, bash);
+    }
+
+    #[test]
+    fn test_read_array_knows_one_literal_statement_only() {
+        let set = "local -a args=('a|a:+' 'A')";
+        let known = |w: &[&str], append: bool| ArrayText::Literal(words(w), append);
+        for (label, statements, want) in [
+            ("one", vec![set, r#":args 'X' "${@}""#], known(&["a|a:+", "A"], false)),
+            ("more names", vec!["local -a verbose args=('v|v:+' 'V')"], known(&["v|v:+", "V"], false)),
+            ("no value first", vec!["local -a args", "args=('a|a:+' 'A')"], known(&["a|a:+", "A"], false)),
+            ("append", vec!["args+=('a|a:+' 'A')"], known(&["a|a:+", "A"], true)),
+            (
+                "parent",
+                vec![r#"local -a args=('a|a:+' 'A' "${args[@]}")"#],
+                known(&["a|a:+", "A", "${args[@]}"], false),
+            ),
+            (
+                "escapes",
+                vec![r#"local -a args=('it'\''s' "a\"b\$c" plain)"#],
+                known(&["it's", "a\"b$c", "plain"], false),
+            ),
+            (
+                "mentions",
+                vec![
+                    "local -a usage=('run' 'Run with args')",
+                    "local -a args=('a|a:+' 'Show the usage')",
+                    r#"helper "${args[@]}""#,
+                ],
+                known(&["a|a:+", "Show the usage"], false),
+            ),
+            ("then append", vec![set, "args+=('a|a:+@' 'A')"], ArrayText::Unresolved),
+            ("indexed", vec![set, "args[0]='a|a:+@'"], ArrayText::Unresolved),
+            ("second", vec![set, set], ArrayText::Unresolved),
+            ("no value then append", vec!["local -a args", "args+=('a|a:+' 'A')"], ArrayText::Unresolved),
+            ("no value after", vec![set, "local -a args"], ArrayText::Unresolved),
+            ("dollar", vec![r#"local -a args=("a|$short:+" 'A')"#], ArrayText::Unresolved),
+            ("dynamic words", vec![r#"local -a args=('a|a:+' 'A' "${extra[@]}")"#], ArrayText::Unresolved),
+            ("backquote", vec!["local -a args=(`printf a` 'A')"], ArrayText::Unresolved),
+            ("substitution", vec!["local -a args=($(printf a) 'A')"], ArrayText::Unresolved),
+            ("glob", vec!["local -a args=('a|a:+' *)"], ArrayText::Unresolved),
+            ("tilde", vec!["local -a args=('a|a:+' ~)"], ArrayText::Unresolved),
+            ("brace", vec!["local -a args=(a{b,c} 'A')"], ArrayText::Unresolved),
+            ("unquoted parent", vec!["local -a args=('a|a:+' 'A' ${args[@]})"], ArrayText::Unresolved),
+            ("parent pattern", vec![r#"local -a args=('a|a:+' 'A' "${args[@]/a/b}")"#], ArrayText::Unresolved),
+            ("declare", vec!["declare -a args=('a|a:+' 'A')"], ArrayText::Unresolved),
+            ("readarray", vec![set, "readarray -t args < /dev/null"], ArrayText::Unresolved),
+            ("mapfile", vec![set, "mapfile args"], ArrayText::Unresolved),
+            ("read", vec![set, "read -ra args"], ArrayText::Unresolved),
+            ("unset", vec![set, r#"unset "args[0]""#], ArrayText::Unresolved),
+            ("nameref", vec![set, "declare -n ref=args"], ArrayText::Unresolved),
+            ("eval", vec![set, r#"eval "args+=(x)""#], ArrayText::Unresolved),
+            ("printf", vec![set, r#"printf -v "args[1]" %s x"#], ArrayText::Unresolved),
+            ("text", vec![set, r#"echo "no args""#], ArrayText::Unresolved),
+            ("absent", vec!["echo hi", r#":args 'X' "${@}""#], ArrayText::Absent),
+        ] {
+            let (_, body) = declared("cmd", &statements);
+            assert_eq!(read_array(&body, "args"), want, "{}: {}", label, body);
+        }
+        for (label, statements, want) in [
+            (
+                "dispatch",
+                vec!["local -a usage=('a' 'A')", r#":usage 'X' "${@}""#, r#""${usage[@]}""#],
+                known(&["a", "A"], false),
+            ),
+            ("append", vec!["usage+=('b' 'B')"], ArrayText::Unresolved),
+            ("indexed", vec!["local -a usage=('a' 'A')", "usage[0]='a:-other'"], ArrayText::Unresolved),
+            ("parent", vec![r#"local -a usage=('a' 'A' "${args[@]}")"#], ArrayText::Unresolved),
+        ] {
+            let (_, body) = declared("cmd", &statements);
+            assert_eq!(read_array(&body, "usage"), want, "usage {}: {}", label, body);
+        }
+        // The function name on the first line is not a use of the array
+        let (_, body) = declared("args", &[set]);
+        assert_eq!(read_array(&body, "args"), known(&["a|a:+", "A"], false));
+    }
+
+    /// The probe tool (`agent_leaf`) of a leaf of the tree: `app_<path>`,
+    /// with the flags, the refused flags and the state of the node.
+    fn tree_tool(dir: &std::path::Path, node: &CommandNode) -> mcp::LeafTool {
+        let mut tool = agent_leaf(dir, node.flags.clone());
+        tool.tool_name = format!("app_{}", node.full_path.join("_"));
+        tool.desc = node.desc.clone();
+        tool.refused = node.refused.clone();
+        tool.unresolved = node.unresolved;
+        tool
+    }
+
+    /// Send a tools/call to one of these tools (`tree_tool`, made for `dir`).
+    /// Returns the JSON-RPC output and the argv of the child, if one ran.
+    fn tree_tools_call(
+        dir: &std::path::Path,
+        tools: &[mcp::LeafTool],
+        name: &str,
+        arguments: &str,
+    ) -> (String, Option<String>) {
+        let _ = std::fs::remove_file(dir.join("argv"));
+        let params = format!(r#"{{"name":"{}","arguments":{}}}"#, name, arguments);
+        let mut buf = Vec::new();
+        mcp::handle_tools_call_v2(&mut buf, &Some("3".to_string()), &params, "/bin/sh", tools);
+        let ran = std::fs::read_to_string(dir.join("argv")).ok();
+        (String::from_utf8(buf).unwrap(), ran)
+    }
+
+    /// The names of the tools of a tools/list answer.
+    fn listed_names(output: &str) -> Vec<String> {
+        let answer: serde_json::Value = serde_json::from_str(output.trim()).expect(output);
+        answer["result"]["tools"]
+            .as_array()
+            .expect(output)
+            .iter()
+            .map(|tool| tool["name"].as_str().unwrap().to_string())
+            .collect()
+    }
+
+    /// The text of the `script:///help` resource for these tools.
+    fn help_text(tools: &[mcp::LeafTool]) -> String {
+        let mut buf = Vec::new();
+        mcp::handle_resources_read(
+            &mut buf,
+            &Some("4".to_string()),
+            r#"{"uri":"script:///help"}"#,
+            "app",
+            "App",
+            tools,
+        );
+        let answer: serde_json::Value = serde_json::from_slice(&buf).unwrap();
+        answer["result"]["contents"][0]["text"].as_str().unwrap().to_string()
+    }
+
+    /// The tools of the `docgen llm` output of each writer.
+    fn llm_names(tree: &[CommandNode], usage: &[String]) -> Vec<Vec<String>> {
+        let mut all = Vec::new();
+        for openai in [false, true] {
+            let mut out = Vec::new();
+            if openai {
+                docgen::generate_llm_openai(&mut out, "app", "App", usage, &[], tree);
+            } else {
+                docgen::generate_llm_claude(&mut out, "app", "App", usage, &[], tree);
+            }
+            let tools: serde_json::Value = serde_json::from_slice(&out).unwrap();
+            let names = tools
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|tool| {
+                    let name = if openai { &tool["function"]["name"] } else { &tool["name"] };
+                    name.as_str().unwrap().to_string()
+                })
+                .collect();
+            all.push(names);
+        }
+        all
+    }
+
+    #[test]
+    fn test_mcp_command_with_a_changed_args_array_is_left_out() {
+        // Each command changes its args array after the first statement, or
+        // has a word that bash expands (as `declare -f` prints it). The tree
+        // cannot know the flags of the parser, so the tool is not for
+        // agents, also a command under such a command (`cluster node add`).
+        let funcs = FakeFunctions(vec![
+            declared(
+                "login",
+                &[
+                    "local print_token",
+                    r#"local -a args=("print-token|t:+" "Print the access token")"#,
+                    r#"args+=("print-token|t:+@" "Print the access token")"#,
+                    r#":args "Log in" "${@}""#,
+                ],
+            ),
+            declared(
+                "logout",
+                &[
+                    "local all",
+                    r#"local -a args=("all|a:+" "All sessions")"#,
+                    r#"args[0]="all|a:+@""#,
+                    r#":args "Log out" "${@}""#,
+                ],
+            ),
+            declared(
+                "whoami",
+                &[
+                    r#"local -a args=("print-token|t:+${hide}" "Print the access token")"#,
+                    r#":args "Who am I" "${@}""#,
+                ],
+            ),
+            declared(
+                "status",
+                &[r#"local -a args=("name|${short}" "Name")"#, r#":args "Status" "${@}""#],
+            ),
+            declared(
+                "cluster",
+                &[
+                    r#"local -a args=("verbose|v:+" "Verbose output" "${args[@]:-}")"#,
+                    r#"args+=("token|k:~string@" "The token")"#,
+                    r#"local -a usage=("node" "Nodes")"#,
+                    r#":usage "Cluster" "${@}""#,
+                    r#""${usage[@]}""#,
+                ],
+            ),
+            declared(
+                "cluster::node",
+                &[
+                    r#"local -a usage=("add" "Add a node")"#,
+                    r#":usage "Nodes" "${@}""#,
+                    r#""${usage[@]}""#,
+                ],
+            ),
+            declared(
+                "cluster::node::add",
+                &[r#"local -a args=("count|c:~int" "Count" "${args[@]:-}")"#, r#":args "Add" "${@}""#],
+            ),
+            declared(
+                "version",
+                &[r#"local -a args=("short|s:+" "Short output")"#, r#":args "Version" "${@}""#],
+            ),
+        ]);
+        let usage = words(&[
+            "login", "Log in", "logout", "Log out", "whoami", "Who am I", "status", "Show the status",
+            "cluster", "Cluster", "version", "Version",
+        ]);
+        let tree = build_tree(&funcs, &usage, &[], Some("main"));
+        let leaves = flatten_leaves(&tree);
+        let state: Vec<(String, bool)> = leaves
+            .iter()
+            .map(|leaf| (leaf.full_path.join(" "), tool_unavailable(leaf.unresolved, &leaf.refused)))
+            .collect();
+        let want = [
+            ("login", true),
+            ("logout", true),
+            ("whoami", true),
+            ("status", true),
+            ("cluster node add", true),
+            ("version", false),
+        ];
+        assert_eq!(state, want.map(|(path, out)| (path.to_string(), out)));
+
+        let dir = std::env::temp_dir().join(format!("argsh-mcp-unresolved-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let tools: Vec<mcp::LeafTool> = leaves.iter().map(|leaf| tree_tool(&dir, leaf)).collect();
+
+        // tools/list, the help resource and each `docgen llm` writer
+        let mut buf = Vec::new();
+        mcp::handle_tools_list_v2(&mut buf, &Some("1".to_string()), "App", &tools);
+        assert_eq!(listed_names(&String::from_utf8(buf).unwrap()), vec!["app_version"]);
+        let help = help_text(&tools);
+        assert!(help.contains("Version"), "{}", help);
+        for desc in ["Log in", "Log out", "Who am I", "Show the status", "Add a node"] {
+            assert!(!help.contains(desc), "{}: {}", desc, help);
+        }
+        for names in llm_names(&tree, &usage) {
+            assert_eq!(names, vec!["app_version"]);
+        }
+
+        // tools/call: a fixed error, also with the changed flag, and no child
+        for name in ["app_login", "app_logout", "app_whoami", "app_status", "app_cluster_node_add"] {
+            for arguments in ["{}", r#"{"print-token":true}"#, r#"{"all":true}"#, r#"{"count":2}"#] {
+                let (output, ran) = tree_tools_call(&dir, &tools, name, arguments);
+                assert_refused(name, &output, &ran, -32602, "\"message\":\"Tool is not available over MCP\"");
+            }
+        }
+        let (output, ran) = tree_tools_call(&dir, &tools, "app_version", r#"{"short":true}"#);
+        assert!(output.contains("\"text\":\"ran\""), "{}", output);
+        assert_eq!(ran.as_deref(), Some("--short\n"));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     // -- A required `:@` flag: the tool is not for agents --
@@ -2526,7 +2987,7 @@ mod tests {
                 &output,
                 &ran,
                 -32602,
-                "\"message\":\"Tool needs a flag that is not available over MCP\"",
+                "\"message\":\"Tool is not available over MCP\"",
             );
         }
         std::fs::remove_dir_all(&dir).unwrap();

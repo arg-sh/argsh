@@ -13,7 +13,7 @@ use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::process::{Command, Stdio};
 #[allow(unused_imports)]
 use super::{
-    extract_subcommands, extract_flags_for_llm, agent_flags, needs_refused_flag,
+    extract_subcommands, extract_flags_for_llm, agent_flags, tool_unavailable,
     json_escape, argsh_type_to_json, sanitize_tool_name,
     build_command_tree, flatten_leaves,
     FlagInfo, SubCmd,
@@ -132,6 +132,8 @@ pub fn mcp_main(args: &[String]) -> i32 {
             // All the flags of the script as the parser reads them, also the
             // `#` ones: a `#` flag with `:@` is refused too.
             refused: refused_flags(&agent_flags(&args_arr)),
+            // The flags of the script are its args array as it is now
+            unresolved: false,
             flags: top_flags,
             annotations: Vec::new(),
         }]
@@ -146,6 +148,7 @@ pub fn mcp_main(args: &[String]) -> i32 {
                 desc: leaf.desc.clone(),
                 flags: leaf.flags.clone(),
                 refused: leaf.refused.clone(),
+                unresolved: leaf.unresolved,
                 annotations: leaf.annotations.clone(),
             }
         }).collect()
@@ -279,6 +282,9 @@ pub(crate) struct LeafTool {
     /// The flags that a call must not send: the `:@` flags. A call that
     /// names one of them by any name gets an error, and no script starts.
     pub(crate) refused: Vec<FlagInfo>,
+    /// The tree cannot read the arrays of the command (`read_array`): the
+    /// tool is not for agents (`tool_unavailable`).
+    pub(crate) unresolved: bool,
     pub(crate) annotations: Vec<String>,
 }
 
@@ -296,8 +302,8 @@ pub(crate) fn handle_tools_list_v2<W: Write>(
 ) {
     let mut tools = String::from("{\"tools\":[");
 
-    // A tool with a required `:@` flag is not for agents: leave it out.
-    let listed = leaf_tools.iter().filter(|leaf| !needs_refused_flag(&leaf.refused));
+    // A tool that is not for agents (`tool_unavailable`): leave it out.
+    let listed = leaf_tools.iter().filter(|leaf| !tool_unavailable(leaf.unresolved, &leaf.refused));
     for (i, leaf) in listed.enumerate() {
         if i > 0 {
             tools.push(',');
@@ -436,7 +442,9 @@ pub(crate) fn handle_resources_read<W: Write>(
         Some("script:///help") => {
             let first_line = title.lines().next().unwrap_or(title).trim();
             let mut help = format!("{}\n\nAvailable commands:\n", first_line);
-            for tool in leaf_tools {
+            // Not a tool that is not for agents (`tool_unavailable`)
+            let listed = leaf_tools.iter().filter(|tool| !tool_unavailable(tool.unresolved, &tool.refused));
+            for tool in listed {
                 help.push_str(&format!("  {:20} {}\n", tool.full_path.join(" "), tool.desc));
             }
             help.push_str(&format!("\nUse \"{} <command> --help\" for more information.", cmd_name));
@@ -657,10 +665,11 @@ pub(crate) fn handle_tools_call_json<W: Write>(
         return;
     };
 
-    // The tool needs a `:@` flag, and a call cannot send one: refuse the
-    // call with a fixed text (tools/list does not list the tool).
-    if needs_refused_flag(&leaf.refused) {
-        write_jsonrpc_error(writer, id, -32602, "Tool needs a flag that is not available over MCP");
+    // The tool is not for agents (`tool_unavailable`: its flags are not
+    // known, or it needs a `:@` flag): refuse the call with a fixed text
+    // (tools/list does not list the tool).
+    if tool_unavailable(leaf.unresolved, &leaf.refused) {
+        write_jsonrpc_error(writer, id, -32602, "Tool is not available over MCP");
         return;
     }
 
