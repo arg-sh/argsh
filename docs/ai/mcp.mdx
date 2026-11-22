@@ -218,7 +218,7 @@ The agent sends:
 {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"myapp_cluster_up","arguments":{"nodes":5}}}
 ```
 
-argsh reconstructs the CLI call: `./myapp cluster up --nodes 5`, captures the output, and returns:
+argsh reconstructs the CLI call: `./myapp cluster up --nodes=5`, captures the output, and returns:
 
 ```json
 {
@@ -273,13 +273,41 @@ local -a args=(
 )
 ```
 
-The tool's `inputSchema` lists `name`, but not `print-token`. A `tools/call` that sends the flag by any of its names (`print-token`, `t` or an alias, with or without dashes) gets an error, and argsh does not run the script:
+The tool's `inputSchema` lists `name`, but not `print-token`. A `tools/call` that sends the flag by any of its names (`print-token`, `t` or an alias, with or without dashes) gets an error, and argsh does not run the script. The error names the key as the call sent it:
 
 ```json
-{"jsonrpc":"2.0","id":4,"error":{"code":-32602,"message":"Flag not available over MCP: --print-token"}}
+{"jsonrpc":"2.0","id":4,"error":{"code":-32602,"message":"Flag not available over MCP: t"}}
 ```
 
-`--help` still shows the flag, and it works on the command line. The `docgen llm` schemas do not list it either. See the [command line parser](/development/fundamentals/command-line-parser) for the modifier and its limit on the pure-bash path.
+`--help` still shows the flag, and it works on the command line. The `docgen llm` schemas do not list it either.
+
+The MCP server applies these rules:
+
+- **Inheritance.** A child command gets the flags of its parent (see [`:^`](/development/fundamentals/command-line-parser)). `:usage` of the parent also reads the parent's flags after the command name. Thus a flag is `:@` for a command if any entry of that name is `:@`: in the command, in its parent or higher up.
+- **`#` flags.** A `#` flag is not in `--help` and not in a schema. With `:@`, a call that sends it by name is refused too.
+- **Required flags.** A tool with a required `:@` flag (`:@` with `!`) cannot get that flag from an agent. `tools/list` and `docgen llm` leave the tool out, and a `tools/call` of it gets `-32602` with the text `Tool needs a flag that is not available over MCP`.
+
+### What `:@` does not do
+
+- The name of the flag is not secret. `--help`, the other `docgen` formats and the shell completion show it.
+- `docgen llm` writes a schema only. A program that reads the schema and runs the script itself does not refuse a `:@` flag: only the MCP server of argsh refuses it.
+- The stdout and stderr of the script go to the agent as they are. A command that an agent can call must not print a secret.
+
+### How a call becomes an argv
+
+The MCP server reads a `tools/call` with a strict JSON parser. It accepts all JSON whitespace (space, tab, CR, LF). A key that occurs two times in one object gets `-32602`, and text that is not JSON gets `-32700`. In each case, the script does not start.
+
+Each argument becomes at most one argv element:
+
+| Flag | JSON value | argv |
+|------|------------|------|
+| boolean (`:+`) | `true` | `--name` |
+| boolean (`:+`) | `false` | nothing |
+| boolean (`:+`) | any other value | error `-32602` |
+| value flag | string or number | `--name=value` (one element) |
+| value flag | any other value (also `null` and a boolean) | error `-32602` |
+
+The parser reads the text after the first `=` as the value, also when it starts with `-`. Thus a value cannot become a flag. A key that is not a flag of the tool is ignored.
 
 ## Structured Output
 
@@ -344,7 +372,7 @@ argsh types map to JSON Schema types in `inputSchema`:
 
 | argsh type | JSON Schema | Notes |
 |-----------|-------------|-------|
-| `:+` (boolean flag) | `"boolean"` | `true` → `--flag`, `false`/absent → omitted |
+| `:+` (boolean flag) | `"boolean"` | `true` → `--flag`, `false`/absent → omitted, any other value → error |
 | `:~int` | `"integer"` | |
 | `:~float` | `"number"` | |
 | default (string) | `"string"` | |

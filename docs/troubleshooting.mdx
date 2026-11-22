@@ -114,7 +114,7 @@ In `argsh.min.sh`, all library functions are inlined. Calls to `import` will pri
 | `field already flagged as required` | Duplicate `!` modifier | `flag\|f:!!` |
 | `unknown modifier: X` | Invalid character after `:` | `flag\|f:?` |
 
-Valid modifiers: `+` (boolean), `~` (type), `!` (required). They can be combined: `:~int!` means required integer.
+Valid modifiers: `+` (boolean), `~` (type), `!` (required), `^` (inherited), `#` (hidden from help) and `@` (not for agents). They can be combined: `:~int!` means required integer.
 
 ### "missing required argument" / "missing required flag"
 

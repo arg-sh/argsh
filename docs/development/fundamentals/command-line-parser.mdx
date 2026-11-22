@@ -509,10 +509,12 @@ local -a args=(
 - The [MCP server](/ai/mcp) does not list the flag in the tool schema. It refuses a `tools/call` that sends the flag by any of its names, and it does not run the script.
 - The `docgen llm` tool schemas do not list the flag.
 - `--help`, the other `docgen` formats and the shell completion still show the flag, and it works on the command line.
+- A child command that inherits the flag (`"${args[@]:-}"`, also with `:^`) keeps the `:@` modifier for MCP.
+- A tool with a required `:@` flag (`:@` with `!`) is not in an agent schema: an agent cannot set the flag.
 
-:::warning
-`:@` needs the argsh builtin for now. The pure-bash path of `args.sh` (argsh without the builtin) does not know the modifier yet: it stops with `:args error: unknown modifier: @`. That path needs a change to `args.sh` before a script that can run without the builtin uses `:@`.
-:::
+The pure-bash path of `args.sh` (argsh without the builtin) reads `:@`, but the modifier has no effect there: only the builtin has an MCP server. A type name ends at `@`, so `'token|k:~string@'` is a `string` flag. A custom type name cannot contain `@`.
+
+`:@` does not make the name of the flag secret, and it does not filter the output of the script. See [Flags Not for Agents](/ai/mcp#flags-not-for-agents) for the limits.
 
 ## Custom help
 

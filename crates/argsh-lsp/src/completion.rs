@@ -301,6 +301,13 @@ fn complete_args_modifiers() -> Vec<CompletionItem> {
             insert_text: Some("^".to_string()),
             ..Default::default()
         },
+        CompletionItem {
+            label: ":@".to_string(),
+            kind: Some(CompletionItemKind::KEYWORD),
+            detail: Some("Not for agents (no MCP or docgen llm schema lists it)".to_string()),
+            insert_text: Some("@".to_string()),
+            ..Default::default()
+        },
     ]
 }
 

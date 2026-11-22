@@ -76,7 +76,7 @@ pub fn field_name(field: &str, asref: bool) -> String {
 /// - `:~type` — typed parameter (int, float, file, boolean, string, or custom)
 /// - `:!` — required
 /// - `:#` — hidden (also `#` prefix on name)
-/// - `:@` — not offered to agents (MCP, `docgen llm`); `--help` still shows it
+/// - `:@`: not offered to agents (MCP, `docgen llm`); `--help` still shows it
 /// - Error on conflicting modifiers (`:+` with `:~type`)
 /// - Error on unknown modifiers
 pub fn parse_field(spec: &str) -> Result<FieldDef, FieldError> {

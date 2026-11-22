@@ -58,7 +58,7 @@ pub struct FieldDef {
     pub required: bool,       // :! modifier
     pub is_positional: bool,  // no | in definition
     pub is_hidden: bool,      // # prefix
-    pub is_mcp_hidden: bool, // :@ modifier: not in agent tool schemas (MCP, docgen llm)
+    pub is_mcp_hidden: bool,  // :@ modifier: not in agent tool schemas (MCP, docgen llm)
     pub is_inherited: bool,   // :^ modifier — yields to non-:^ duplicates
     pub is_array: bool,       // variable declared as array in shell
     pub has_default: bool,    // variable already initialized
