@@ -40,6 +40,7 @@ Characters after `:` in a field spec that control parsing behavior:
 | `:+` | Boolean flag (no value, sets to `1`) | `verbose\|v:+` |
 | `:~type` | Type constraint for validation | `port\|p:~int` |
 | `:!` | Required flag (must be provided; flags only — positional required/optional is controlled by variable initialization) | `env\|e:!` |
+| `:@` | Not for agents: no MCP or `docgen llm` tool schema lists the flag, and the MCP server refuses it; `--help` still shows it | `print-token\|t:+@` |
 
 Modifiers combine: `:~int!` means required integer.
 

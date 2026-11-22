@@ -842,7 +842,7 @@ args::field_name() {
     ""  # 8 display name
   )
 
-  local seps="+~!^:#"
+  local seps="+~!^:#@"
   local mods="${field#*[:]}"
   [ "${mods}" != "${field}" ] || mods=""
   # set name
@@ -911,6 +911,12 @@ args::field_name() {
     # hidden modifier (via :# syntax, in addition to # prefix)
     if [[ ${mods:0:1} == "#" ]]; then
       attrs[7]=1
+      mods="${mods:1}"
+      continue
+    fi
+    # not for agents (:@): only the MCP server of the builtin reads it. The
+    # bash path has no MCP server, so the modifier has no effect here.
+    if [[ ${mods:0:1} == "@" ]]; then
       mods="${mods:1}"
       continue
     fi

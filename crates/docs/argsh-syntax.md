@@ -72,6 +72,7 @@ assert!(!field.is_positional); // has | separator → it's a flag
 | `is_positional` | No `\|` in definition — positional parameter (not a `--flag`) |
 | `is_inherited` | `:^` modifier — yields to non-`:^` duplicates (for parent/child inheritance) |
 | `hidden` | `#` prefix — excluded from help text |
+| `mcp_hidden` | `:@` modifier: not in an agent tool schema (MCP, `docgen llm`), and the MCP server refuses it; `--help` still shows it |
 | `display_name` | Original name preserving dashes (vs `name` which replaces `-` with `_`) |
 | `raw` | Original spec string, preserved for diagnostics |
 

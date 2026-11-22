@@ -494,6 +494,28 @@ secrets::init() {
 - If all entries for a name are `:^`, last one wins
 - Trailing empty strings from `"${args[@]:-}"` are stripped automatically
 
+### Flags not for agents (`:@`)
+
+The `:@` modifier keeps a flag away from AI agents. Use it for a flag whose output must not reach an agent, for example a flag that prints a credential.
+
+```bash
+local print_token
+local -a args=(
+  'print-token|t:+@' "Print the access token"
+)
+:args "Log in" "${@}"
+```
+
+- The [MCP server](/ai/mcp) does not list the flag in the tool schema. It refuses a `tools/call` that sends the flag by any of its names, and it does not run the script.
+- The `docgen llm` tool schemas do not list the flag.
+- `--help`, the other `docgen` formats and the shell completion still show the flag, and it works on the command line.
+- A child command that inherits the flag (`"${args[@]:-}"`, also with `:^`) keeps the `:@` modifier for MCP.
+- A tool with a required `:@` flag (`:@` with `!`) is not in an agent schema: an agent cannot set the flag.
+
+The pure-bash path of `args.sh` (argsh without the builtin) reads `:@`, but the modifier has no effect there: only the builtin has an MCP server. A type name ends at `@`, so `'token|k:~string@'` is a `string` flag. A custom type name cannot contain `@`.
+
+`:@` does not make the name of the flag secret, and it does not filter the output of the script. See [Flags Not for Agents](/ai/mcp#flags-not-for-agents) for the limits.
+
 ## Custom help
 
 When `:usage` or `:args` encounters `--help`, it doesn't exit immediately. The actual help is displayed when you call `"${usage[@]}"`. This gives you two ways to customize help output.

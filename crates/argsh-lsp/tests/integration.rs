@@ -623,6 +623,39 @@ serve() {
 }
 
 #[test]
+fn test_hover_on_mcp_hidden_modifier() {
+    let mut client = LspTestClient::new();
+    client.initialize();
+
+    let content = r#"#!/usr/bin/env bash
+source argsh
+
+login() {
+  local print_token
+  local -a args=(
+    'print-token|t:+@' "Print the access token"
+  )
+  :args "Log in" "${@}"
+}
+"#;
+
+    let uri = "file:///test_hover_mcp_hidden.sh";
+    client.open_document(uri, content);
+
+    // Hover on the "@" of 'print-token|t:+@' (line 6, col 20)
+    let resp = client.hover(uri, 6, 20);
+    assert!(resp.get("error").is_none(), "Got error: {:?}", resp["error"]);
+    let value = resp["result"]["contents"]["value"].as_str().unwrap_or("");
+    assert!(
+        value.contains("`:@` Not for agents"),
+        "Expected the :@ modifier hover, got: {}",
+        value
+    );
+
+    client.shutdown();
+}
+
+#[test]
 fn test_hover_on_usage_entry() {
     let mut client = LspTestClient::new();
     client.initialize();

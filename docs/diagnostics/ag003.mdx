@@ -41,8 +41,10 @@ Correct the field spec to use valid syntax. The general format is:
 '<name>|<short>[<modifiers>]' "Description"
 ```
 
-Valid modifiers include `!` (required), `+` (multi-value), `=` (key-value),
-`:^` (inherited), `:!` (flags-only), among others.
+The modifiers come after a `:`. They are `+` (boolean), `~type` (type),
+`!` (required), `^` (inherited), `#` (hidden from help) and `@` (not for
+agents). A `:` between two modifiers is a separator. Any other character
+after the `:` is an unknown modifier.
 
 ```bash
 my_func() {

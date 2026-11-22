@@ -847,6 +847,11 @@ module.exports = {
           id: "diagnostics/ag015",
           label: "AG015 — Source path not found",
         },
+        {
+          type: "doc",
+          id: "diagnostics/ag016",
+          label: "AG016: :@ on a positional",
+        },
       ],
     },
     {

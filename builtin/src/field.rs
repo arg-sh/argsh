@@ -58,6 +58,7 @@ pub struct FieldDef {
     pub required: bool,       // :! modifier
     pub is_positional: bool,  // no | in definition
     pub is_hidden: bool,      // # prefix
+    pub is_mcp_hidden: bool,  // :@ modifier: not in agent tool schemas (MCP, docgen llm)
     pub is_inherited: bool,   // :^ modifier — yields to non-:^ duplicates
     pub is_array: bool,       // variable declared as array in shell
     pub has_default: bool,    // variable already initialized
@@ -87,6 +88,28 @@ pub fn field_name(field: &str, asref: bool) -> String {
 /// Parse a field definition string into a FieldDef.
 /// Returns Err(msg) for invalid modifier combinations (matching bash :args::field_attrs behavior).
 pub fn parse_field(field: &str) -> Result<FieldDef, String> {
+    let mut def = parse_field_spec(field)?;
+
+    // Check shell variable state
+    let is_arr = shell::is_array(&def.name);
+    let is_uninit = shell::is_uninitialized(&def.name);
+    def.is_array = is_arr;
+    def.is_multiple = is_arr;
+    def.has_default = if is_arr {
+        !is_uninit && {
+            let arr = shell::read_array(&def.name);
+            !arr.is_empty()
+        }
+    } else {
+        !is_uninit
+    };
+    Ok(def)
+}
+
+/// Parse only the text of a field definition: its names and modifiers.
+/// It reads no shell state, so `is_array`, `has_default` and `is_multiple`
+/// are false. Use `parse_field` when the variable state matters.
+pub fn parse_field_spec(field: &str) -> Result<FieldDef, String> {
     let raw = field.to_string();
     let name = field_name(field, true);
     let display_name = field_name(field, false);
@@ -111,6 +134,7 @@ pub fn parse_field(field: &str) -> Result<FieldDef, String> {
     let mut type_name = String::new();
     let mut required = false;
     let mut is_inherited = false;
+    let mut is_mcp_hidden = false;
 
     if let Some(colon_pos) = field.find(':') {
         let mods = &field[colon_pos + 1..];
@@ -135,7 +159,14 @@ pub fn parse_field(field: &str) -> Result<FieldDef, String> {
                     // Collect type name until next modifier
                     let mut tname = String::new();
                     while let Some(&tc) = chars.peek() {
-                        if tc == '+' || tc == '~' || tc == '!' || tc == '^' || tc == '#' || tc == ':' {
+                        if tc == '+'
+                            || tc == '~'
+                            || tc == '!'
+                            || tc == '^'
+                            || tc == '#'
+                            || tc == '@'
+                            || tc == ':'
+                        {
                             break;
                         }
                         tname.push(tc);
@@ -159,6 +190,12 @@ pub fn parse_field(field: &str) -> Result<FieldDef, String> {
                     is_hidden = true;
                     chars.next();
                 }
+                '@' => {
+                    // not for agents: --help still shows the flag, but no
+                    // agent tool schema lists it and MCP refuses it
+                    is_mcp_hidden = true;
+                    chars.next();
+                }
                 ':' => {
                     // separator between chained modifiers
                     chars.next();
@@ -175,19 +212,6 @@ pub fn parse_field(field: &str) -> Result<FieldDef, String> {
         type_name = "string".to_string();
     }
 
-    // Check shell variable state
-    let is_arr = shell::is_array(&name);
-    let is_uninit = shell::is_uninitialized(&name);
-    let is_multiple = is_arr;
-    let has_default = if is_arr {
-        !is_uninit && {
-            let arr = shell::read_array(&name);
-            !arr.is_empty()
-        }
-    } else {
-        !is_uninit
-    };
-
     Ok(FieldDef {
         name,
         display_name,
@@ -197,12 +221,30 @@ pub fn parse_field(field: &str) -> Result<FieldDef, String> {
         required,
         is_positional,
         is_hidden,
+        is_mcp_hidden,
         is_inherited,
-        is_array: is_arr,
-        has_default,
-        is_multiple,
+        is_array: false,
+        has_default: false,
+        is_multiple: false,
         raw,
     })
+}
+
+/// The `|` parts of a field definition, as `field_lookup` compares them:
+/// the text before the first `:`, without a `#` prefix.
+fn spec_names(def: &str) -> std::str::Split<'_, char> {
+    let without_mods = def.split(':').next().unwrap_or(def);
+    let without_hash = without_mods.strip_prefix('#').unwrap_or(without_mods);
+    without_hash.split('|')
+}
+
+/// Every name that the parser accepts for a field: the long name, the short
+/// name and any further `|` alias (`'token|t|tok'` → token, t, tok).
+pub fn field_names(field: &str) -> Vec<String> {
+    spec_names(field)
+        .filter(|n| !n.is_empty())
+        .map(str::to_string)
+        .collect()
 }
 
 /// Deduplicate args array entries based on `:^` (inherited) modifier.
@@ -420,20 +462,10 @@ pub fn format_field(def: &FieldDef) -> String {
 /// Lookup a flag by name/short in the args array.
 /// Returns the index of the matching definition.
 pub fn field_lookup(flag: &str, args: &[String]) -> Option<usize> {
-    for i in (0..args.len()).step_by(2) {
-        let def = &args[i];
-        let without_mods = def.split(':').next().unwrap_or(def);
-        let without_hash = without_mods.strip_prefix('#').unwrap_or(without_mods);
-        let parts: Vec<&str> = without_hash.split('|').collect();
-
-        // Check long name (first part) or short name (second part)
-        for part in &parts {
-            if *part == flag {
-                return Some(i);
-            }
-        }
-    }
-    None
+    // Check long name (first part), short name (second part) or an alias
+    (0..args.len())
+        .step_by(2)
+        .find(|&i| spec_names(&args[i]).any(|part| part == flag))
 }
 
 /// Find the nth positional field. If a field is an array, it always matches

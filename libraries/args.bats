@@ -1200,12 +1200,45 @@ source "${PATH_FIXTURES}/fmt.sh"
   (
     local myfield
     local -a args=(
-      'myfield|m:@' "Unknown modifier"
+      'myfield|m:?' "Unknown modifier"
     )
     :args "Modifier test" --myfield val
   ) >"${stdout}" 2>"${stderr}" || status=$?
 
   assert "${status}" -eq 2
+}
+
+@test "attrs: the :@ modifier is read and ends a type name" {
+  (
+    local token count print_token
+    local -a args=(
+      'token|k:~string@' "Token"
+      'count|c:~int@!'   "Count"
+      'print-token|t:+@' "Print the token"
+    )
+    :args "Modifier test" --token abc --count 5 --print-token
+    echo "token=${token} count=${count} print=${print_token}"
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains 'token=abc count=5 print=1' stdout
+}
+
+@test "attrs: an inline value that starts with a dash stays the value" {
+  (
+    local name print_token
+    local -a args=(
+      'name|n'           "Name"
+      'print-token|t:+@' "Print the token"
+    )
+    :args "Value test" --name=--print-token
+    echo "name=${name} print=${print_token:-0}"
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  contains 'name=--print-token print=0' stdout
 }
 
 # -----------------------------------------------------------------------------
@@ -2913,6 +2946,56 @@ source "${PATH_FIXTURES}/fmt.sh"
 
   assert "${status}" -eq 0
   contains 'building' stdout
+}
+
+# ── :@ flags over MCP (the real script, builtin mode) ────
+
+@test "usage: mcp tools/call refuses a string for a boolean flag and does not start the script" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  local fixture="${PATH_FIXTURES}/mcp_hidden_test.sh"
+  [[ -x "${fixture}" ]] || skip "mcp_hidden_test.sh fixture not found"
+  local starts="${BATS_TEST_TMPDIR}/starts"
+  printf '%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
+    '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"args_sh_login","arguments":{"verbose":"--print-token"}}}' \
+  | MCP_TEST_STARTS="${starts}" "${fixture}" mcp >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains '"id":2,"error":\{"code":-32602,"message":"Flag --verbose takes a boolean"\}' stdout
+  assert "$(grep -c 'token=printed' "${stdout}" || true)" -eq 0
+  assert ! -e "${starts}"
+}
+
+@test "usage: mcp tools/call refuses a :@ flag after a CR before the colon and does not start the script" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  local fixture="${PATH_FIXTURES}/mcp_hidden_test.sh"
+  [[ -x "${fixture}" ]] || skip "mcp_hidden_test.sh fixture not found"
+  local starts="${BATS_TEST_TMPDIR}/starts"
+  printf '%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
+    $'{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"args_sh_login","arguments":{"name":"x","print-token"\r:true}}}' \
+  | MCP_TEST_STARTS="${starts}" "${fixture}" mcp >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains '"id":2,"error":\{"code":-32602,"message":"Flag not available over MCP: print-token"\}' stdout
+  assert ! -e "${starts}"
+}
+
+@test "usage: mcp tools/call sends a value as one --name=value element" {
+  if [[ "${ARGSH_BUILTIN_TEST:-}" != "1" ]]; then set +u; skip "builtin test"; fi
+  local fixture="${PATH_FIXTURES}/mcp_hidden_test.sh"
+  [[ -x "${fixture}" ]] || skip "mcp_hidden_test.sh fixture not found"
+  local starts="${BATS_TEST_TMPDIR}/starts"
+  printf '%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
+    '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"args_sh_login","arguments":{"verbose":true,"name":"--print-token"}}}' \
+  | MCP_TEST_STARTS="${starts}" "${fixture}" mcp >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  contains 'logged in as --print-token' stdout
+  contains 'verbose=on' stdout
+  assert "$(grep -c 'token=printed' "${stdout}" || true)" -eq 0
+  assert "$(cat "${starts}")" = "login --verbose --name=--print-token"
 }
 
 # ── :^ inherited modifier ────────────────────────────────

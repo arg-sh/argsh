@@ -210,6 +210,9 @@ fn hover_modifier(
         (Some(':'), '^') | (_, '^') if is_after_colon_in_spec(line, col) => {
             Some(("`:^` Inherited field", "This field yields to non-`:^` duplicates with the same name. When combined with `\"${args[@]:-}\"` expansion, the last non-`:^` entry wins."))
         }
+        (Some(':'), '@') | (_, '@') if is_after_colon_in_spec(line, col) => {
+            Some(("`:@` Not for agents", "The flag is not offered to agents: no MCP or `docgen llm` tool schema lists it, and the MCP server refuses a call that sends it. `--help` still shows it, and it works on the command line."))
+        }
         _ => None,
     };
 
