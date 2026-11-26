@@ -201,7 +201,7 @@ Directory containing the argsh library files. Defaults to the directory of `impo
 
 ### MIN_COVERAGE
 
-Minimum code coverage percentage required for CI to pass. Used by the coverage tooling.
+Minimum code coverage percentage required for CI to pass (default `70`). `argsh coverage <target>` exits with a non-zero code when the coverage of that target is below it, or when no coverage number was read.
 
 ### BATS_LOAD
 
