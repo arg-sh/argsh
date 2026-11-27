@@ -190,6 +190,51 @@ _require_rust() {
   } >&2
 }
 
+# Print the coverage line of a component, and fail when its coverage is below
+# MIN_COVERAGE. A value that is not a percent (no report, "null") also fails,
+# and so does a MIN_COVERAGE that is not a number.
+# $1: percent_covered from the component's coverage.json, for example "76.48".
+_coverage_gate() {
+  local pct="${1}" num='^[0-9]+([.][0-9]+)?$'
+  echo "Coverage: ${pct}% of required ${MIN_COVERAGE}%"
+  [[ "${MIN_COVERAGE}" =~ ${num} ]] || {
+    echo "Coverage check failed: MIN_COVERAGE=${MIN_COVERAGE} is not a number"
+    return 1
+  } >&2
+  [[ "${pct}" =~ ${num} ]] || {
+    echo "Coverage check failed: '${pct}' is not a percent (MIN_COVERAGE=${MIN_COVERAGE}%)"
+    return 1
+  } >&2
+  awk -v pct="${pct}" -v min="${MIN_COVERAGE}" 'BEGIN { exit !(pct + 0 >= min + 0) }' || {
+    echo "Coverage check failed: ${pct}% is below MIN_COVERAGE=${MIN_COVERAGE}%"
+    return 1
+  } >&2
+}
+
+# Build builtin/target/release/libargsh.so inside Docker (rust:1-slim-bookworm),
+# linked by bookworm's lld. The export symbols of the builtins start with a
+# colon (`:args_builtin_load`), and the rustc version script lists them
+# unquoted. rust-lld (the host toolchain's default), lld >= 20 and GNU ld
+# reject that ("; expected"). Bookworm's lld accepts it. Using trixie here
+# breaks for the same reason; the Dockerfile's builtin-build stage quotes the
+# symbols with a shim instead. The sources are mounted at the same absolute
+# path, so llvm-cov finds them on the host.
+# See: https://github.com/rust-lang/rust/issues/38238
+# $1: the env assignments for cargo (RUSTFLAGS and the profile overrides).
+_builtin_build_bookworm() {
+  local cargo_env="${1}"
+  local _uid; _uid="$(id -u):$(id -g)"
+  docker run --rm \
+    -v "${PATH_BASE}/builtin:${PATH_BASE}/builtin" \
+    -w "${PATH_BASE}/builtin" \
+    rust:1-slim-bookworm \
+    bash -c "apt-get update -qq && apt-get install -y -qq lld >/dev/null 2>&1 && \
+      ln -sf /usr/bin/ld.lld \"\$(rustc --print sysroot)/lib/rustlib/\$(rustc -vV | awk '/host/{print \$2}')/bin/gcc-ld/ld.lld\" && \
+      ${cargo_env} \
+      cargo build --release && \
+      chown -R ${_uid} target/"
+}
+
 lint::builtin() {
   :args "Run clippy on native builtins" "${@}"
   _require_rust
@@ -229,25 +274,11 @@ coverage::builtin() {
     rustup component add llvm-tools
   }
 
-  # Build coverage-instrumented .so inside Docker (rust:1-slim-bookworm).
-  # Must match the Dockerfile's builtin-build stage to use the same lld version.
-  # Using trixie here breaks because its lld regressed on colon-prefixed symbols.
-  # Mount sources at the same absolute path so llvm-cov finds them on the host.
-  # See: https://github.com/rust-lang/rust/issues/38238
   echo "Building with coverage instrumentation (via Docker)..."
-  local _uid; _uid="$(id -u):$(id -g)"
-  docker run --rm \
-    -v "${PATH_BASE}/builtin:${PATH_BASE}/builtin" \
-    -w "${PATH_BASE}/builtin" \
-    rust:1-slim-bookworm \
-    bash -c "apt-get update -qq && apt-get install -y -qq lld >/dev/null 2>&1 && \
-      ln -sf /usr/bin/ld.lld \"\$(rustc --print sysroot)/lib/rustlib/\$(rustc -vV | awk '/host/{print \$2}')/bin/gcc-ld/ld.lld\" && \
-      RUSTFLAGS='-C instrument-coverage -C link-arg=-fuse-ld=lld' \
-      CARGO_PROFILE_RELEASE_STRIP=none \
-      CARGO_PROFILE_RELEASE_LTO=false \
-      CARGO_PROFILE_RELEASE_PANIC=unwind \
-      cargo build --release && \
-      chown -R ${_uid} target/"
+  _builtin_build_bookworm "RUSTFLAGS='-C instrument-coverage -C link-arg=-fuse-ld=lld' \
+    CARGO_PROFILE_RELEASE_STRIP=none \
+    CARGO_PROFILE_RELEASE_LTO=false \
+    CARGO_PROFILE_RELEASE_PANIC=unwind"
 
   rm -rf "${cov_dir}"
   mkdir -p "${cov_dir}"
@@ -331,20 +362,24 @@ coverage::builtin() {
   ' "${_cov_tmp}" > "${PATH_BASE}/builtin/coverage.json"
   rm -f "${_cov_tmp}"
 
-  local pct
+  local pct gate=0
   pct="$(jq -r '.percent_covered' "${PATH_BASE}/builtin/coverage.json")"
   echo ""
-  echo "Coverage: ${pct}% of required ${MIN_COVERAGE}%"
+  _coverage_gate "${pct}" || gate=1
 
   # Clean up coverage artifacts (profraw files from instrumented .so in main process)
   rm -rf "${cov_dir}"
   find "${PATH_BASE}" -maxdepth 2 -name '*.profraw' -delete 2>/dev/null || true
 
-  # Rebuild without instrumentation for normal use
-  echo "Rebuilding without instrumentation..."
-  cargo build --release \
-    --manifest-path "${PATH_BASE}/builtin/Cargo.toml"
+  # Rebuild without instrumentation for normal use, in the same image: a
+  # host build links with the toolchain's rust-lld, which rejects the
+  # colon-prefixed export symbols (see _builtin_build_bookworm).
+  echo "Rebuilding without instrumentation (via Docker)..."
+  _builtin_build_bookworm "RUSTFLAGS='-C link-arg=-fuse-ld=lld'"
   rm -f "${PATH_BIN}/argsh.so" && cp "${so_path}" "${PATH_BIN}/argsh.so"
+
+  # Report a failed gate only now: the clean-up and the rebuild run either way.
+  return "${gate}"
 }
 
 ###
@@ -490,14 +525,17 @@ coverage::shdoc() {
   ' "${_cov_tmp}" > "${PATH_BASE}/shdoc/coverage.json"
   rm -f "${_cov_tmp}"
 
-  local pct
+  local pct gate=0
   pct="$(jq -r '.percent_covered' "${PATH_BASE}/shdoc/coverage.json")"
   echo ""
-  echo "Coverage: ${pct}% of required ${MIN_COVERAGE}%"
+  _coverage_gate "${pct}" || gate=1
 
   # Clean up coverage artifacts
   rm -rf "${cov_dir}"
   find "${PATH_BASE}/shdoc" -maxdepth 2 -name '*.profraw' -delete 2>/dev/null || true
+
+  # Report a failed gate only now: the clean-up runs either way.
+  return "${gate}"
 }
 
 ###
@@ -647,14 +685,17 @@ coverage::lsp() {
   ' "${_cov_tmp}" > "${PATH_BASE}/crates/argsh-lsp/coverage.json"
   rm -f "${_cov_tmp}"
 
-  local pct
+  local pct gate=0
   pct="$(jq -r '.percent_covered' "${PATH_BASE}/crates/argsh-lsp/coverage.json")"
   echo ""
-  echo "Coverage: ${pct}% of required ${MIN_COVERAGE}%"
+  _coverage_gate "${pct}" || gate=1
 
   # Clean up coverage artifacts
   rm -rf "${cov_dir}"
   find "${PATH_BASE}/crates/argsh-lsp" -maxdepth 2 -name '*.profraw' -delete 2>/dev/null || true
+
+  # Report a failed gate only now: the clean-up runs either way.
+  return "${gate}"
 }
 
 ###
@@ -791,14 +832,17 @@ coverage::minifier() {
   ' "${_cov_tmp}" > "${PATH_BASE}/minifier/coverage.json"
   rm -f "${_cov_tmp}"
 
-  local pct
+  local pct gate=0
   pct="$(jq -r '.percent_covered' "${PATH_BASE}/minifier/coverage.json")"
   echo ""
-  echo "Coverage: ${pct}% of required ${MIN_COVERAGE}%"
+  _coverage_gate "${pct}" || gate=1
 
   # Clean up coverage artifacts
   rm -rf "${cov_dir}"
   find "${PATH_BASE}/minifier" -maxdepth 2 -name '*.profraw' -delete 2>/dev/null || true
+
+  # Report a failed gate only now: the clean-up runs either way.
+  return "${gate}"
 }
 
 ###
