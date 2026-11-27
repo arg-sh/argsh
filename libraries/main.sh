@@ -1577,17 +1577,18 @@ argsh::minify() {
       echo "argsh: envsubst rendered ${template} to an empty file; ${out} left untouched" >&2
       exit 1
     }
+    # mv would hand ${out} mktemp's 0600 mode; the old redirect kept the
+    # file's existing perms (or umask for a new one). Restore that contract.
+    # One if/elif chain, not an if inside else: the minifier joins `else`
+    # and the nested `if` into `else if`, which shellcheck rejects (SC1075).
     if [[ -e "${out}" && ! -f "${out}" ]]; then
       # Not a regular file (e.g. the /dev/stdout default) — mv cannot replace it.
       cat "${_render}" >"${out}"
+    elif [[ -f "${out}" ]]; then
+      chmod --reference="${out}" "${_render}" 2>/dev/null || chmod 644 "${_render}"
+      mv "${_render}" "${out}"
     else
-      # mv would hand ${out} mktemp's 0600 mode; the old redirect kept the
-      # file's existing perms (or umask for a new one). Restore that contract.
-      if [[ -f "${out}" ]]; then
-        chmod --reference="${out}" "${_render}" 2>/dev/null || chmod 644 "${_render}"
-      else
-        chmod 644 "${_render}"
-      fi
+      chmod 644 "${_render}"
       mv "${_render}" "${out}"
     fi
   )

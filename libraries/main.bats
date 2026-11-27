@@ -352,6 +352,34 @@ EOF
   rm -rf "${_tmp}"
 }
 
+@test "argsh::minify: a re-render keeps the mode of the existing output" {
+  local _tmp; _tmp="$(mktemp -d)"
+  minify_fixture "${_tmp}"
+  cat >"${_tmp}/bin/envsubst" <<'EOF'
+#!/usr/bin/env bash
+if [[ "${1:-}" == "--version" ]]; then
+  echo "envsubst (GNU gettext-runtime) 0.22"
+  exit 0
+fi
+content="$(cat)"
+printf '%s\n' "${content//'${data}'/${data}}"
+EOF
+  chmod +x "${_tmp}/bin/envsubst"
+  echo "previous artifact" >"${_tmp}/out"
+  chmod 640 "${_tmp}/out"
+
+  (
+    PATH="${_tmp}/bin:${PATH}" \
+      argsh::minify -t "${_tmp}/template" -o "${_tmp}/out" "${_tmp}/in.sh"
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+
+  assert "${status}" -eq 0
+  is_empty stderr
+  grep -q "echo minified" "${_tmp}/out"
+  assert "$(stat -c '%a' "${_tmp}/out")" = "640"
+  rm -rf "${_tmp}"
+}
+
 @test "argsh::minify: failed template render leaves existing output untouched" {
   local _tmp; _tmp="$(mktemp -d)"
   minify_fixture "${_tmp}"
@@ -1722,4 +1750,141 @@ YAML
   }
 
   rm -rf "${_tmp}"
+}
+
+@test "ARGSH_TRACE: unset does not end a script that contains trace.sh" {
+  # argsh.min.sh joins trace.sh with the other libraries into one script.
+  # A top-level return or exit in trace.sh ends that script early.
+  local _tmp _script
+  _tmp="$(mktemp -d)"
+  _script="${_tmp}/joined.sh"
+  {
+    cat "${BATS_TEST_DIRNAME}/trace.sh"
+    echo 'echo "after trace.sh"'
+  } >"${_script}"
+
+  # Run as a script, as `bash argsh.min.sh` does.
+  (
+    unset ARGSH_TRACE
+    bash "${_script}"
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+  assert "${status}" -eq 0
+  contains "after trace.sh" stdout
+
+  # Sourced, as BATS_LOAD=argsh.min.sh does.
+  status=0
+  (
+    unset ARGSH_TRACE
+    # shellcheck disable=SC1090
+    source "${_script}"
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+  assert "${status}" -eq 0
+  contains "after trace.sh" stdout
+
+  rm -rf "${_tmp}"
+}
+
+@test "ARGSH_TRACE: a second source of trace.sh follows the current ARGSH_TRACE" {
+  local _tmp _trace
+  _tmp="$(mktemp -d)"
+  _trace="${_tmp}/trace.md"
+
+  # Unset: only the no-op stubs.
+  (
+    unset ARGSH_TRACE
+    source "${BATS_TEST_DIRNAME}/trace.sh"
+    source "${BATS_TEST_DIRNAME}/trace.sh"
+    declare -F __argsh_trace_init __argsh_trace_args __argsh_trace_usage >/dev/null || {
+      echo "a no-op stub is missing"; exit 1
+    }
+    if declare -F __argsh_trace_debug_hook >/dev/null; then
+      echo "a trace function is defined with ARGSH_TRACE unset"; exit 1
+    fi
+    __argsh_trace_init
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+  assert "${status}" -eq 0
+  is_empty stdout
+
+  # Set: the trace functions, and the second source resets the state.
+  status=0
+  (
+    export ARGSH_TRACE="${_trace}"
+    source "${BATS_TEST_DIRNAME}/trace.sh"
+    __ARGSH_TRACE_STEP=5
+    source "${BATS_TEST_DIRNAME}/trace.sh"
+    declare -F __argsh_trace_debug_hook __argsh_trace_exit_hook >/dev/null || {
+      echo "a trace function is missing"; exit 1
+    }
+    [[ "${__ARGSH_TRACE_FILE}" == "${_trace}" ]] || { echo "wrong trace file"; exit 1; }
+    (( __ARGSH_TRACE_STEP == 0 )) || { echo "state not reset"; exit 1; }
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+  assert "${status}" -eq 0
+  is_empty stdout
+
+  # Set, then unset: the second source puts the no-op stubs back.
+  status=0
+  (
+    export ARGSH_TRACE="${_trace}"
+    source "${BATS_TEST_DIRNAME}/trace.sh"
+    unset ARGSH_TRACE
+    source "${BATS_TEST_DIRNAME}/trace.sh"
+    __argsh_trace_init
+    __argsh_trace_args "Title"
+    __argsh_trace_usage "func" "cmd"
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+  assert "${status}" -eq 0
+  is_empty stdout
+  assert ! -f "${_trace}"
+
+  # Unset, then set: the second source replaces the stubs.
+  status=0
+  (
+    unset ARGSH_TRACE
+    source "${BATS_TEST_DIRNAME}/trace.sh"
+    export ARGSH_TRACE="${_trace}"
+    source "${BATS_TEST_DIRNAME}/trace.sh"
+    __argsh_trace_init "Alice"
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+  assert "${status}" -eq 0
+  assert -f "${_trace}"
+  [[ "$(cat "${_trace}")" == *"# Process Trace"* ]] || {
+    echo "missing '# Process Trace' header"; cat "${_trace}"; false
+  }
+
+  rm -rf "${_tmp}"
+}
+
+@test "ARGSH_TRACE: the :args trace without an args array closes its block" {
+  local _tmp _trace
+  _tmp="$(mktemp -d)"
+  _trace="${_tmp}/trace.md"
+
+  (
+    export ARGSH_TRACE="${_trace}"
+    source "${BATS_TEST_DIRNAME}/trace.sh"
+    unset args
+    __argsh_trace_args "No args"
+  ) >"${stdout}" 2>"${stderr}" || status=$?
+  assert "${status}" -eq 0
+  # The opening and the closing fence, then the end of the details block.
+  assert "$(grep -c '^  ```$' "${_trace}")" -eq 2
+  grep -q '^  </details>$' "${_trace}" || {
+    echo "missing </details>"; cat "${_trace}"; false
+  }
+
+  rm -rf "${_tmp}"
+}
+
+# ---------------------------------------------------------------------------
+# argsh.min.sh — the minified CLI
+# ---------------------------------------------------------------------------
+
+@test "argsh.min.sh: -h prints the help" {
+  # The CI image runs the committed argsh.min.sh as its CLI. If the file
+  # ends before its command dispatch, each CI step exits 0 and does nothing.
+  ARGSH_NO_AUTO_DOWNLOAD=1 bash "${BATS_TEST_DIRNAME}/../argsh.min.sh" -h \
+    >"${stdout}" 2>"${stderr}" || status=$?
+  assert "${status}" -eq 0
+  contains "Usage:" stdout
+  contains "Minify Bash files" stdout
 }
